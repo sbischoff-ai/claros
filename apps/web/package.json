@@ -1,0 +1,21 @@
+{
+  "name": "@claros/web",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "3.0.0",
+    "@sveltejs/kit": "2.0.0",
+    "svelte": "4.2.19",
+    "vite": "5.0.12",
+    "typescript": "*",
+    "vitest": "*",
+    "@sveltejs/vite-plugin-svelte": "^3.0.0"
+  }
+}

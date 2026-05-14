@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.claros/state/
+*.db
+*.db-shm
+*.db-wal
+.turbo/
+.svelte-kit/
+*.tsbuildinfo
+*.timestamp-*.mjs
+core
