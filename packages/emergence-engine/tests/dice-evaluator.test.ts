@@ -79,6 +79,33 @@ describe("rollDice", () => {
       expect(r.total).toBe(15)
       expect(r.rolls).toEqual([6, 6, 3])
     })
+
+    it("rolls each die in a multi-die exploding pool independently", () => {
+      // 2d6!: first die rolls 6 then 3 (explodes once), second die rolls 4 (no explode)
+      const r = rollDice("2d6!", seqRNG([6, 3, 4]))
+      expect(r.rolls).toEqual([6, 3, 4])
+      expect(r.kept).toEqual([6, 3, 4])
+      expect(r.total).toBe(13)
+    })
+
+    it("2d6! with no explosions sums both dice normally", () => {
+      const r = rollDice("2d6!", seqRNG([2, 5]))
+      expect(r.rolls).toEqual([2, 5])
+      expect(r.total).toBe(7)
+    })
+
+    it("3d6! each die explodes independently", () => {
+      // die 1: 6,6,2 (double explode); die 2: 4; die 3: 6,1 (one explode)
+      const r = rollDice("3d6!", seqRNG([6, 6, 2, 4, 6, 1]))
+      expect(r.rolls).toEqual([6, 6, 2, 4, 6, 1])
+      expect(r.total).toBe(6 + 6 + 2 + 4 + 6 + 1)
+    })
+
+    it("4d6! with no explosions sums all four dice", () => {
+      const r = rollDice("4d6!", seqRNG([1, 2, 3, 4]))
+      expect(r.rolls).toEqual([1, 2, 3, 4])
+      expect(r.total).toBe(10)
+    })
   })
 
   describe("d100 derived properties", () => {

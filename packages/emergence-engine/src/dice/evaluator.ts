@@ -14,11 +14,13 @@ export function rollDice(expr: DiceExpression | string, rng: RNG = defaultRNG): 
   let total = 0;
 
   if (parsed.explode) {
-    let roll: number;
-    do {
-      roll = rng(1, parsed.sides);
-      rolls.push(roll);
-    } while (roll === parsed.sides);
+    for (let i = 0; i < parsed.count; i += 1) {
+      let roll: number;
+      do {
+        roll = rng(1, parsed.sides);
+        rolls.push(roll);
+      } while (roll === parsed.sides);
+    }
 
     kept = [...rolls];
     total = sum(kept) + parsed.modifier;
