@@ -18,5 +18,8 @@
   "devDependencies": {
     "typescript": "*",
     "vitest": "*"
+  },
+  "dependencies": {
+    "@claros/story-format": "workspace:*"
   }
 }

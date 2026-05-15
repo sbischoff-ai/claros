@@ -16,7 +16,12 @@
     "lint": "eslint src"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.8.0",
     "typescript": "*",
     "vitest": "*"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.1"
   }
 }
