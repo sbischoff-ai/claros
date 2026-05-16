@@ -5,11 +5,11 @@
 Claros is a modular system with a strict separation between the file format, the emergence engine, derived state, and the editor UI. These concerns are independent packages that interact only through well-defined interfaces.
 
 ```
-story-format          Canonical file format and project conventions
+story-format          Canonical file format, project conventions, state schemas, StateAdapter interface
       ↑
-story-state           Derived-state indexing: wikilinks, backlinks, search, git
+story-state           FileStateAdapter + derived-index layer (wikilinks, backlinks, search, git)
 
-emergence-engine      Oracle/dice/macro engine — completely independent
+emergence-engine      Oracle/dice/macro engine — standalone; InMemoryStateAdapter for testing
 
 editor-core
   ├── story-state
@@ -20,7 +20,7 @@ apps/desktop          Tauri shell (thin — no logic)
 apps/cli              Command-line tools
 ```
 
-The file format is the durable public standard. All other systems are implementations built around it. If the editor, engine, or state layer were replaced, the markdown project files would remain valid and complete.
+The file format is the durable public standard. All other systems are implementations built around it.
 
 ---
 
@@ -34,40 +34,41 @@ Defines:
 - Wikilink syntax
 - Emergence block syntax (fenced and inline)
 - Table YAML format (random-table and matrix types)
+- State file schemas and types (`StateData`, `StateScope`, `StateFile`, `NoteFrontmatter`)
+- `StateAdapter` interface — the contract between the emergence engine and any storage backend
+- Dot-path utilities for navigating nested state (`getAtPath`, `setAtPath`)
 
-Has no dependencies on any other Claros package. This is the canonical layer.
+Has no dependencies on any other Claros package.
 
-**Stable exports:** `parseTable`, table types (`RandomTable`, `MatrixTable`, `AnyTable`)
+**Stable exports:** `parseTable`, table types, `parseStateFile`, `serializeStateFile`, `parseNoteFrontmatter`, `serializeNoteFrontmatter`, `getAtPath`, `setAtPath`, `StateAdapter`, and associated types.
 
 ### `@claros/emergence-engine`
 
 Implements:
-- Dice expression parser and evaluator (all standard notation + kh/kl/pool/exploding/d100)
+- Dice expression parser and evaluator
 - Random table lookup (1D range, 2D matrix + classify)
-- Expression language (jexl-based, with `and`/`or`/`not` English aliases)
-- Macro YAML parser (`parseMacro`) and executor (`executeMacro`)
+- Expression language (jexl-based)
+- Macro YAML parser and executor (with `invoke`, state param resolution, effects, hooks)
+- `InMemoryStateAdapter` — for testing; implements `StateAdapter` from story-format
+- `ModuleRegistry` — macro and table registry for invoke resolution and hook dispatch
 
-Completely standalone — no dependency on any other Claros package. Accepts an injectable RNG for deterministic testing.
+Imports `StateAdapter` from `@claros/story-format`. Has no dependency on `@claros/story-state`.
 
-**Stable exports (Iter 01–04):**
-- `parseDice`, `rollDice`, `defaultRNG`, `fixedRNG`
-- `lookup`, `matrixLookup`, `LookupError`
-- `createEvaluator`, `ExpressionEvaluator`
-- `parseMacro`, `executeMacro`, `MacroParseError`, `NotImplementedError`
-- All associated TypeScript types
-
-**Planned (Iter 05–06):** macro composition, sub-macro invocation, state model, Mythic GME integration milestone
+**Stable exports (Iter 01–04):** dice, table, expression, and macro APIs + all types.
+**Planned (Iter 06):** macro composition, `InMemoryStateAdapter`, `ModuleRegistry`, hook dispatch.
 
 ### `@claros/story-state`
 
 Will implement:
-- Project folder scanner
-- Wikilink resolution and backlink tracking
-- Entity indexing (SQLite on desktop, IndexedDB in browser)
-- Filesystem adapters (local, eventually WebDAV)
-- isomorphic-git integration (auto-commit, checkpoints, history)
+- `FileStateAdapter` — reads/writes authoritative state YAML files; implements `StateAdapter`
+- `advanceScene` — creates a new scene state file from the previous scene's state
+- Entity state read/write via wiki note frontmatter
+- Project folder scanner (Iter 09)
+- Wikilink resolution and backlink tracking (Iter 09)
+- Entity indexing — SQLite (desktop) / IndexedDB (browser) for **derived indexes only** (Iter 11)
+- isomorphic-git integration (Iter 12)
 
-**Current state:** Empty stub. Implementation begins Iter 09.
+**Current state:** Empty stub. FileStateAdapter implementation begins Iter 07.
 
 ### `@claros/editor-core`
 
@@ -76,73 +77,53 @@ Will implement:
 - Inline emergence UX (pending/resolved block rendering)
 - Wikilink rendering extension
 - Command palette
-- Yjs CRDT document model
 
-**Current state:** Empty stub. Free to develop in parallel with emergence engine iterations.
+**Current state:** Empty stub.
 
 ### `@claros/export`
 
-Will implement:
-- Pandoc pipeline for clean manuscript export
-- Output formats: DOCX, PDF, EPUB, markdown
-- Separation of prose from procedural metadata
-
-**Current state:** Stub. Deferred.
-
----
-
-## Dependency Constraints
-
-Enforced:
-- `story-format` has no internal dependencies
-- `emergence-engine` has no internal dependencies
-- `story-state` depends on `story-format`
-- `editor-core` depends on `story-state` and `emergence-engine`
-- Apps depend on packages; packages do not depend on apps
-
-Violated by:
-- Any import of `editor-core` from `emergence-engine` or `story-format`
-- Any import of `story-state` from `emergence-engine`
-- Any business logic in `apps/desktop` (logic goes in packages or `apps/web`)
+Will implement Pandoc export pipeline. **Current state:** Stub.
 
 ---
 
 ## State Model
 
-The state model has three lifetime scopes:
+Authoritative state is file-based YAML in a `state/` folder at the project root, tracked by git.
 
-| Scope | Lifetime | Path prefix |
-|---|---|---|
-| `story` | Entire project | `state.story.*` |
-| `chapter` | Current chapter | `state.chapter.*` |
-| `scene` | Current scene (resets on scene change) | `state.scene.*` |
+```
+state/
+  story.yaml                  state.story.* — project-global
+  chapters/<id>.yaml          state.chapter.* — per chapter
+  scenes/<id>.yaml            state.scene.* — per scene snapshot
+```
 
-RPG system state uses a system prefix: `state.story.mythic.*`, `state.story.ironsworn.*`, etc.
+Entity state (character sheets, NPC stats, faction standing) lives in wiki note frontmatter under a `state:` key. The entity's file slug is its ID.
 
-State is persisted by `story-state` (implementation Iter 09). During macro execution, state is passed in as part of the execution context (added in Iter 05).
+SQLite and IndexedDB are for **derived indexes only** (wikilinks, backlinks, full-text search) — never for authoritative state.
+
+State scopes (story/chapter/scene) are organisational conventions. The system enforces no lifecycle rules and makes no assumptions about narrative order. See `decisions.md` ADR-015–018.
 
 ---
 
-## Macro System
-
-Macros are YAML files in a project's `modules/` directory. They are the public API for all oracle/RPG behavior — no oracle logic lives in engine code.
-
-The engine stack is three layers:
+## Dependency Constraints
 
 ```
-Layer 1  Dice expression evaluator
-         "2d20kh1+5" → {rolls: [14, 7], kept: [14], total: 19}
-
-Layer 2  Table resolver
-         lookup / matrix-lookup → row result or classified cell value
-
-Layer 3  Macro runner
-         named YAML recipes composing layers 1 + 2
+story-format          (no internal deps)
+      ↑
+story-state
+      ↑
+emergence-engine → story-format
+      ↑
+editor-core → story-state + emergence-engine
+      ↑
+apps → editor-core
 ```
 
-A macro can `roll`, `lookup`, `matrix-lookup`, and `invoke` other macros. It evaluates `when:` conditions to skip steps conditionally, resolves `output:` values as expressions, and declares `effects:` for state mutations.
-
-Full macro DSL reference: see `spec-macro-dsl.md` (Nextcloud: `Projects/claros/spec-macro-dsl.md`).
+- `story-format` has no internal dependencies
+- `emergence-engine` depends on `story-format`; does **not** depend on `story-state`
+- `story-state` depends on `story-format`; does **not** depend on `emergence-engine`
+- `editor-core` depends on both `story-state` and `emergence-engine`
+- Apps depend on packages; packages do not depend on apps
 
 ---
 
@@ -156,7 +137,8 @@ Full macro DSL reference: see `spec-macro-dsl.md` (Nextcloud: `Projects/claros/s
 | Web app | SvelteKit |
 | Editor | TipTap (ProseMirror) + Yjs |
 | Desktop | Tauri (shell only) |
-| Persistence | SQLite (desktop) / IndexedDB (browser) — derived state only |
+| Authoritative state | YAML files in `state/` (git-tracked) |
+| Derived indexes | SQLite (desktop) / IndexedDB (browser) |
 | Versioning | isomorphic-git |
 | Export | Pandoc |
 | Expression evaluation | jexl v2 |
@@ -166,10 +148,12 @@ Full macro DSL reference: see `spec-macro-dsl.md` (Nextcloud: `Projects/claros/s
 
 ## Design Principles
 
-**Canonical files.** Markdown files are the source of truth. Databases, indexes, and caches are always disposable. A project must be usable from any text editor.
+**Canonical files.** Markdown and state YAML files are the source of truth. Databases and indexes are always disposable and rebuildable.
 
-**Adapter-based persistence.** Filesystem access is abstracted behind adapters. The same editor core works against a local filesystem (Tauri), browser filesystem API, or future sync backends.
+**Adapter-based state.** The macro executor reads/writes state through `StateAdapter`. The in-memory adapter (emergence-engine) is for testing; the file adapter (story-state) is for real projects. The editor wires the correct adapter at runtime.
 
-**Moddable by design.** All oracle systems and RPG rulesets are text files (YAML macros and tables) in the project's `modules/` directory. No system-specific logic belongs in engine code.
+**Moddable by design.** All oracle systems are YAML macro + table files in `modules/`. No system-specific logic in engine code.
 
-**Editor independence.** The editor never owns the data model. Projects should be usable through the web editor, CLI tools, Obsidian, or any markdown editor without loss of data.
+**Editor independence.** The editor never owns the data model. Projects are usable via the web editor, CLI, Obsidian, or any text editor.
+
+**No temporal inference.** The system does not infer narrative order from file structure or commit history. The author controls state consistency. Git provides the audit trail for retcons.
