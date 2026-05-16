@@ -83,13 +83,13 @@ export function matrixLookup(
 
     let classified: string | undefined;
     let defaultLabel: string | undefined;
+    const evaluator = createEvaluator();
 
     for (const [label, expr] of Object.entries(cellFormat.classify)) {
       if (label === "_default") {
         defaultLabel = expr; // "_default" value is the fallback label string
         continue;
       }
-      const evaluator = createEvaluator();
       if (evaluator.evaluateBool(expr, { value: classify, ...fieldMap })) {
         classified = label;
         break;
