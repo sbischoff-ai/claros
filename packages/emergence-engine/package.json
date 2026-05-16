@@ -15,13 +15,15 @@
     "test": "vitest run",
     "lint": "eslint src"
   },
-  "devDependencies": {
-    "@types/jexl": "^2.3.4",
-    "typescript": "*",
-    "vitest": "*"
-  },
   "dependencies": {
     "@claros/story-format": "workspace:*",
-    "jexl": "^2.3.0"
+    "jexl": "^2.3.0",
+    "js-yaml": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/jexl": "^2.3.4",
+    "@types/js-yaml": "^4.0.9",
+    "typescript": "*",
+    "vitest": "*"
   }
 }
