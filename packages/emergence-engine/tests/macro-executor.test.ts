@@ -113,6 +113,36 @@ output:
       const result = await executeMacro(macro, {}, tables, fixedRNG(3));
       expect(result.output.result).toBe("High");
     });
+
+    it("auto-rolls using the table's dice expression when no roll: is given", async () => {
+      const tableYaml = `
+id: test.autoroll
+type: random-table
+dice: 1d4
+rows:
+  - range: [1, 2]
+    result: "Low"
+  - range: [3, 4]
+    result: "High"
+`;
+      const table = parseTable(tableYaml) as RandomTable;
+      const tables = new Map([["test.autoroll", table]]);
+
+      const macro = parseMacro(`
+id: test.lookup-auto
+name: "Lookup Auto Roll"
+params: {}
+steps:
+  - id: result
+    lookup:
+      table: test.autoroll
+output:
+  result: "steps.result.matched"
+`);
+      // fixedRNG(4) → table auto-rolls 1d4 → 4 → "High"
+      const result = await executeMacro(macro, {}, tables, fixedRNG(4));
+      expect(result.output.result).toBe("High");
+    });
   });
 
   describe("matrix-lookup steps", () => {

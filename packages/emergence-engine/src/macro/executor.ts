@@ -76,12 +76,11 @@ export async function executeMacro(
       stepResult = rollDice(parsed, rng);
     } else if (hasLookupStep(body)) {
       const table = requireTable(tables, body.lookup.table) as RandomTable;
-      const rollValue = Number(
+      const rollValue =
         body.lookup.roll === undefined
-          ? 0
-          : evaluator.evaluate(normalizeStepAccess(body.lookup.roll), context)
-      );
-      stepResult = lookup(table, rollValue);
+          ? undefined
+          : Number(evaluator.evaluate(normalizeStepAccess(body.lookup.roll), context));
+      stepResult = lookup(table, rollValue, rng);
     } else if (hasMatrixLookupStep(body)) {
       const table = requireTable(tables, body["matrix-lookup"].table) as MatrixTable;
       const rowKey = evaluator.evaluate(normalizeStepAccess(body["matrix-lookup"].row), context);
