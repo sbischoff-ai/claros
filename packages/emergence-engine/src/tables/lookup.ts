@@ -2,6 +2,7 @@ import type { RandomTable, MatrixTable } from "@claros/story-format";
 import { rollDice } from "../dice/evaluator.js";
 import type { RNG } from "../dice/types.js";
 import type { LookupResult, CellResult } from "./types.js";
+import { createEvaluator } from "../expression/evaluator.js";
 
 export class LookupError extends Error {
   constructor(message: string) {
@@ -29,35 +30,6 @@ export function lookup(
   }
 
   return { matched: row.result, row };
-}
-
-// TODO(iter-03): replace with expression evaluator
-// Stub: evaluates only "value <= fieldName" and "value >= fieldName" patterns.
-function evaluateClassifyExpr(
-  expr: string,
-  value: number,
-  fields: Record<string, number>
-): boolean {
-  const leMatch = expr.match(/^value\s*<=\s*(\w+)$/);
-  if (leMatch) {
-    const fieldName = leMatch[1];
-    if (!(fieldName in fields)) {
-      throw new LookupError(`classify expression references unknown field "${fieldName}"`);
-    }
-    return value <= fields[fieldName];
-  }
-
-  const geMatch = expr.match(/^value\s*>=\s*(\w+)$/);
-  if (geMatch) {
-    const fieldName = geMatch[1];
-    if (!(fieldName in fields)) {
-      throw new LookupError(`classify expression references unknown field "${fieldName}"`);
-    }
-    return value >= fields[fieldName];
-  }
-
-  // Unrecognised pattern — never matches (iter-03 will fix this)
-  return false;
 }
 
 export function matrixLookup(
@@ -111,14 +83,14 @@ export function matrixLookup(
 
     let classified: string | undefined;
     let defaultLabel: string | undefined;
+    const evaluator = createEvaluator();
 
     for (const [label, expr] of Object.entries(cellFormat.classify)) {
       if (label === "_default") {
         defaultLabel = expr; // "_default" value is the fallback label string
         continue;
       }
-      // TODO(iter-03): replace with expression evaluator
-      if (evaluateClassifyExpr(expr, classify, fieldMap)) {
+      if (evaluator.evaluateBool(expr, { value: classify, ...fieldMap })) {
         classified = label;
         break;
       }
