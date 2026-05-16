@@ -16,12 +16,12 @@
     "lint": "eslint src"
   },
   "devDependencies": {
+    "@types/jexl": "^2.3.4",
     "typescript": "*",
     "vitest": "*"
   },
   "dependencies": {
     "@claros/story-format": "workspace:*",
-    "@types/jexl": "^2.3.4",
     "jexl": "^2.3.0"
   }
 }

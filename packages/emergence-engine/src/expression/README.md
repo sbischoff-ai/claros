@@ -40,7 +40,7 @@ the pattern is stable).
 #### `evaluateBool` never throws
 
 `evaluateBool` wraps `evaluate` in a try/catch and coerces the result with `Boolean()`.
-A parse error in the expression expression returns `false` rather than crashing.
+A parse error in the expression returns `false` rather than crashing.
 
 #### Missing paths
 
