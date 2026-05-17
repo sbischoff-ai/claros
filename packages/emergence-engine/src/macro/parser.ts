@@ -65,9 +65,7 @@ function parseStepBody(rawStep: Record<string, unknown>, stepId: string): StepBo
       throw new MacroParseError(`step "${stepId}" field 'matrix-lookup.column' must be a string`);
     }
     if (matrixObj["classify"] !== undefined && typeof matrixObj["classify"] !== "string") {
-      throw new MacroParseError(
-        `step "${stepId}" field 'matrix-lookup.classify' must be a string`
-      );
+      throw new MacroParseError(`step "${stepId}" field 'matrix-lookup.classify' must be a string`);
     }
 
     const result: { table: string; row: string; column: string; classify?: string } = {
@@ -99,7 +97,9 @@ function parseStepBody(rawStep: Record<string, unknown>, stepId: string): StepBo
     }
   }
 
-  return withMap !== undefined ? { invoke: rawStep["invoke"], with: withMap } : { invoke: rawStep["invoke"] };
+  return withMap !== undefined
+    ? { invoke: rawStep["invoke"], with: withMap }
+    : { invoke: rawStep["invoke"] };
 }
 
 function parseParams(raw: unknown): Record<string, ParamDefinition> {

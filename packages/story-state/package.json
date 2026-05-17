@@ -13,7 +13,8 @@
   "scripts": {
     "build": "tsc --build",
     "test": "vitest run",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "check": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
     "typescript": "*",

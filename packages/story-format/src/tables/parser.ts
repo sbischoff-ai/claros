@@ -27,33 +27,27 @@ function parseRandomTable(raw: Record<string, unknown>): RandomTable {
     throw new TableParseError("random-table: 'rows' must be an array");
   }
 
-  const rows: RandomTableRow[] = (raw["rows"] as unknown[]).map(
-    (row, i): RandomTableRow => {
-      if (typeof row !== "object" || row === null) {
-        throw new TableParseError(`random-table row[${i}]: must be an object`);
-      }
-      const r = row as Record<string, unknown>;
-      if (
-        !Array.isArray(r["range"]) ||
-        r["range"].length !== 2 ||
-        typeof r["range"][0] !== "number" ||
-        typeof r["range"][1] !== "number"
-      ) {
-        throw new TableParseError(
-          `random-table row[${i}]: 'range' must be [number, number]`
-        );
-      }
-      if (typeof r["result"] !== "string") {
-        throw new TableParseError(
-          `random-table row[${i}]: 'result' must be a string`
-        );
-      }
-      return {
-        range: [r["range"][0] as number, r["range"][1] as number],
-        result: r["result"] as string,
-      };
+  const rows: RandomTableRow[] = (raw["rows"] as unknown[]).map((row, i): RandomTableRow => {
+    if (typeof row !== "object" || row === null) {
+      throw new TableParseError(`random-table row[${i}]: must be an object`);
     }
-  );
+    const r = row as Record<string, unknown>;
+    if (
+      !Array.isArray(r["range"]) ||
+      r["range"].length !== 2 ||
+      typeof r["range"][0] !== "number" ||
+      typeof r["range"][1] !== "number"
+    ) {
+      throw new TableParseError(`random-table row[${i}]: 'range' must be [number, number]`);
+    }
+    if (typeof r["result"] !== "string") {
+      throw new TableParseError(`random-table row[${i}]: 'result' must be a string`);
+    }
+    return {
+      range: [r["range"][0] as number, r["range"][1] as number],
+      result: r["result"] as string,
+    };
+  });
 
   return {
     id: raw["id"] as string,
@@ -73,26 +67,18 @@ function parseCellFormat(raw: unknown): CellFormat {
   }
   const fields = (cf["fields"] as unknown[]).map((f, i) => {
     if (typeof f !== "string") {
-      throw new TableParseError(
-        `matrix: 'cell-format.fields[${i}]' must be a string`
-      );
+      throw new TableParseError(`matrix: 'cell-format.fields[${i}]' must be a string`);
     }
     return f as string;
   });
 
   if (typeof cf["classify"] !== "object" || cf["classify"] === null) {
-    throw new TableParseError(
-      "matrix: 'cell-format.classify' must be an object"
-    );
+    throw new TableParseError("matrix: 'cell-format.classify' must be an object");
   }
   const classify: Record<string, string> = {};
-  for (const [label, expr] of Object.entries(
-    cf["classify"] as Record<string, unknown>
-  )) {
+  for (const [label, expr] of Object.entries(cf["classify"] as Record<string, unknown>)) {
     if (typeof expr !== "string") {
-      throw new TableParseError(
-        `matrix: 'cell-format.classify["${label}"]' must be a string`
-      );
+      throw new TableParseError(`matrix: 'cell-format.classify["${label}"]' must be a string`);
     }
     classify[label] = expr as string;
   }
@@ -115,47 +101,37 @@ function parseMatrixTable(raw: Record<string, unknown>): MatrixTable {
   }
 
   const cellFormat =
-    raw["cell-format"] !== undefined
-      ? parseCellFormat(raw["cell-format"])
-      : undefined;
+    raw["cell-format"] !== undefined ? parseCellFormat(raw["cell-format"]) : undefined;
 
-  const rows: MatrixRow[] = (raw["rows"] as unknown[]).map(
-    (row, i): MatrixRow => {
-      if (typeof row !== "object" || row === null) {
-        throw new TableParseError(`matrix row[${i}]: must be an object`);
+  const rows: MatrixRow[] = (raw["rows"] as unknown[]).map((row, i): MatrixRow => {
+    if (typeof row !== "object" || row === null) {
+      throw new TableParseError(`matrix row[${i}]: must be an object`);
+    }
+    const r = row as Record<string, unknown>;
+    if (typeof r["key"] !== "string") {
+      throw new TableParseError(`matrix row[${i}]: 'key' must be a string`);
+    }
+    if (typeof r["columns"] !== "object" || r["columns"] === null) {
+      throw new TableParseError(`matrix row[${i}]: 'columns' must be an object`);
+    }
+    const columns: Record<string | number, number[]> = {};
+    for (const [colKey, cell] of Object.entries(r["columns"] as Record<string, unknown>)) {
+      if (!Array.isArray(cell)) {
+        throw new TableParseError(`matrix row[${i}].columns["${colKey}"]: must be an array`);
       }
-      const r = row as Record<string, unknown>;
-      if (typeof r["key"] !== "string") {
-        throw new TableParseError(`matrix row[${i}]: 'key' must be a string`);
-      }
-      if (typeof r["columns"] !== "object" || r["columns"] === null) {
-        throw new TableParseError(
-          `matrix row[${i}]: 'columns' must be an object`
-        );
-      }
-      const columns: Record<string | number, number[]> = {};
-      for (const [colKey, cell] of Object.entries(
-        r["columns"] as Record<string, unknown>
-      )) {
-        if (!Array.isArray(cell)) {
+      // Accept numeric string keys as numbers when possible
+      const key = /^\d+$/.test(colKey) ? Number(colKey) : colKey;
+      columns[key] = (cell as unknown[]).map((v, vi) => {
+        if (typeof v !== "number") {
           throw new TableParseError(
-            `matrix row[${i}].columns["${colKey}"]: must be an array`
+            `matrix row[${i}].columns["${colKey}"][${vi}]: must be a number`
           );
         }
-        // Accept numeric string keys as numbers when possible
-        const key = /^\d+$/.test(colKey) ? Number(colKey) : colKey;
-        columns[key] = (cell as unknown[]).map((v, vi) => {
-          if (typeof v !== "number") {
-            throw new TableParseError(
-              `matrix row[${i}].columns["${colKey}"][${vi}]: must be a number`
-            );
-          }
-          return v as number;
-        });
-      }
-      return { key: r["key"] as string, columns };
+        return v as number;
+      });
     }
-  );
+    return { key: r["key"] as string, columns };
+  });
 
   const result: MatrixTable = {
     id: raw["id"] as string,

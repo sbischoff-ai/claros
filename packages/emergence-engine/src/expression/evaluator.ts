@@ -10,7 +10,7 @@ function buildJexl(): InstanceType<typeof Jexl> {
   //
   // Precedence 10 matches jexl's built-in && and || precedence.
   jexl.addBinaryOp("and", 10, (left: unknown, right: unknown) => !!(left && right));
-  jexl.addBinaryOp("or",  10, (left: unknown, right: unknown) => !!(left || right));
+  jexl.addBinaryOp("or", 10, (left: unknown, right: unknown) => !!(left || right));
   jexl.addUnaryOp("not", (v: unknown) => !v);
 
   return jexl;

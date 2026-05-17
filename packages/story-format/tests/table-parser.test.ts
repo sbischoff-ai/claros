@@ -36,11 +36,13 @@ rows:
 
   it("throws on missing required fields", () => {
     expect(() => parseTable(`type: random-table\ndice: 2d6\nrows: []`)).toThrow(); // no id
-    expect(() => parseTable(`id: x\ntype: random-table\nrows: []`)).toThrow();     // no dice
+    expect(() => parseTable(`id: x\ntype: random-table\nrows: []`)).toThrow(); // no dice
   });
 
   it("throws a typed TableParseError", () => {
-    expect(() => parseTable(`type: random-table\ndice: 2d6\nrows: []`)).toThrowError(TableParseError);
+    expect(() => parseTable(`type: random-table\ndice: 2d6\nrows: []`)).toThrowError(
+      TableParseError
+    );
   });
 });
 

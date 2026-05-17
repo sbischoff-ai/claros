@@ -43,10 +43,7 @@ export function parseNoteFrontmatter(markdown: string): {
  * Serialize frontmatter + body back to a markdown string.
  * The body is preserved exactly — no whitespace is added or stripped.
  */
-export function serializeNoteFrontmatter(
-  frontmatter: NoteFrontmatter,
-  body: string
-): string {
+export function serializeNoteFrontmatter(frontmatter: NoteFrontmatter, body: string): string {
   const yamlStr = dump(frontmatter, { lineWidth: -1 }).trimEnd();
   return `---\n${yamlStr}\n---\n${body}`;
 }

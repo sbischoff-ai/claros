@@ -8,7 +8,12 @@ export function getAtPath(data: StateData, path: string): unknown {
   const segments = path.split(".");
   let current: unknown = data;
   for (const segment of segments) {
-    if (current === null || current === undefined || typeof current !== "object" || Array.isArray(current)) {
+    if (
+      current === null ||
+      current === undefined ||
+      typeof current !== "object" ||
+      Array.isArray(current)
+    ) {
       return undefined;
     }
     current = (current as Record<string, unknown>)[segment];
@@ -25,17 +30,16 @@ export function setAtPath(data: StateData, path: string, value: unknown): StateD
   return setAtSegments(data, segments, value) as StateData;
 }
 
-function setAtSegments(
-  current: unknown,
-  segments: string[],
-  value: unknown
-): unknown {
+function setAtSegments(current: unknown, segments: string[], value: unknown): unknown {
   if (segments.length === 0) {
     return value;
   }
   const [head, ...rest] = segments;
   const obj: Record<string, unknown> =
-    current !== null && current !== undefined && typeof current === "object" && !Array.isArray(current)
+    current !== null &&
+    current !== undefined &&
+    typeof current === "object" &&
+    !Array.isArray(current)
       ? { ...(current as Record<string, unknown>) }
       : {};
   obj[head] = setAtSegments(obj[head], rest, value);

@@ -2,13 +2,13 @@
 
 ## Package Domains
 
-| Package | Domain | Spec-sensitive? |
-|---|---|---|
-| `@claros/story-format` | Canonical file format, project structure, frontmatter, wikilinks, emergence block syntax | **YES** |
-| `@claros/emergence-engine` | Dice evaluator, table resolver, macro runner, expression language | **YES** |
-| `@claros/story-state` | Project indexing, wikilink resolution, backlinks, git integration, persistence adapters | Yes |
-| `@claros/editor-core` | TipTap/ProseMirror editor, inline emergence UX, collaboration | No |
-| `@claros/export` | Pandoc pipeline, clean/annotated/actual-play export | No |
+| Package                    | Domain                                                                                   | Spec-sensitive? |
+| -------------------------- | ---------------------------------------------------------------------------------------- | --------------- |
+| `@claros/story-format`     | Canonical file format, project structure, frontmatter, wikilinks, emergence block syntax | **YES**         |
+| `@claros/emergence-engine` | Dice evaluator, table resolver, macro runner, expression language                        | **YES**         |
+| `@claros/story-state`      | Project indexing, wikilink resolution, backlinks, git integration, persistence adapters  | Yes             |
+| `@claros/editor-core`      | TipTap/ProseMirror editor, inline emergence UX, collaboration                            | No              |
+| `@claros/export`           | Pandoc pipeline, clean/annotated/actual-play export                                      | No              |
 
 **Spec-sensitive packages:** Before modifying `story-format` or `emergence-engine`, check the governing specs in `docs/specs/`. These packages have detailed test suites; any change that causes test failures must be discussed, not silently fixed by relaxing tests.
 
@@ -31,6 +31,10 @@
 ## Codex Note
 
 This repo may receive independent commits from a local Codex session. If you find changes in spec-sensitive packages that don't correspond to a delegated task, flag them in your response rather than silently building on them.
+
+## NixOS Runtime Requirements
+
+This repository provides a `shell.nix` with the runtime and development tools needed for local work. On NixOS systems, if a required command such as `node`, `pnpm`, `git`, or `pandoc` is missing from the ambient environment, run the command through the project shell with `nix-shell --run '<command>'`.
 
 ## Dependency Direction
 
