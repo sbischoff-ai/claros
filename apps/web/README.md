@@ -2,7 +2,7 @@
 
 SvelteKit web application for Claros.
 
-**Current state:** Scaffold only — routes exist, no editor functionality yet.
+**Current state:** Early single-document Markdown editor host.
 
 ---
 
@@ -28,8 +28,8 @@ pnpm test
 ## Stack
 
 - **SvelteKit** — app framework and routing
-- **TipTap** (planned) — rich text editor, via `@claros/editor-core`
-- **Yjs** (planned) — CRDT document model, via `@claros/editor-core`
+- **CodeMirror 6** — prose-first Markdown editor, via `@claros/editor-core`
+- **Yjs** (future) — CRDT document model, via `@claros/editor-core`
 
 The web app is a thin consumer of `@claros/editor-core`. Business logic belongs in packages, not here.
 
@@ -39,7 +39,7 @@ The web app is a thin consumer of `@claros/editor-core`. Business logic belongs 
 
 - SvelteKit routing and layout
 - Project open/save UI (file picker, recent projects)
-- Editor page that hosts the `@claros/editor-core` editor component
+- Editor page that hosts the `@claros/editor-core` Markdown editor
 - Command palette shell
 - Settings and preferences
 
@@ -49,7 +49,8 @@ The web app is a thin consumer of `@claros/editor-core`. Business logic belongs 
 
 All editor logic that should be reusable outside the web app belongs in `@claros/editor-core`:
 
-- TipTap editor setup and extensions
+- CodeMirror editor setup and extensions
+- Theme tokens and prose-first Markdown presentation
 - Wikilink rendering
 - Emergence block rendering and interaction
 - Keyboard shortcuts and vim-mode (when implemented)
