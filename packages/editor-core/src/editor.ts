@@ -13,7 +13,15 @@ import {
 import { vim } from "@replit/codemirror-vim";
 
 import { markdownMarkerDecorations } from "./markdown-markers";
-import { applyThemeTokens, createClarosEditorTheme, type ClarosThemeTokens } from "./theme";
+import { markdownPresentationDecorations } from "./markdown-presentation";
+import {
+  DEFAULT_CLAROS_THEME_ID,
+  applyNamedTheme,
+  applyThemeTokens,
+  createClarosEditorTheme,
+  type ClarosThemeId,
+  type ClarosThemeTokens,
+} from "./theme";
 
 export const defaultMarkdown = `# The Abandoned Temple
 
@@ -28,7 +36,7 @@ export interface MarkdownEditorOptions {
   parent: HTMLElement;
   doc?: string;
   vimMode?: boolean;
-  theme?: Partial<ClarosThemeTokens>;
+  theme?: ClarosThemeId | Partial<ClarosThemeTokens>;
   onChange?: (markdown: string) => void;
 }
 
@@ -37,13 +45,12 @@ export interface ClarosMarkdownEditor {
   getMarkdown(): string;
   setMarkdown(markdown: string): void;
   setVimMode(enabled: boolean): void;
-  setTheme(theme: Partial<ClarosThemeTokens>): void;
+  setTheme(theme: ClarosThemeId | Partial<ClarosThemeTokens>): void;
   destroy(): void;
 }
 
 export function createMarkdownEditor(options: MarkdownEditorOptions): ClarosMarkdownEditor {
-  options.parent.setAttribute("data-claros-theme", "default");
-  applyThemeTokens(options.parent, options.theme);
+  applyEditorTheme(options.parent, options.theme ?? DEFAULT_CLAROS_THEME_ID);
 
   const vimCompartment = new Compartment();
   const updateListener = EditorView.updateListener.of((update) => {
@@ -85,8 +92,8 @@ export function createMarkdownEditor(options: MarkdownEditorOptions): ClarosMark
         effects: vimCompartment.reconfigure(enabled ? vim() : []),
       });
     },
-    setTheme(theme: Partial<ClarosThemeTokens>): void {
-      applyThemeTokens(options.parent, theme);
+    setTheme(theme: ClarosThemeId | Partial<ClarosThemeTokens>): void {
+      applyEditorTheme(options.parent, theme);
     },
     destroy(): void {
       view.destroy();
@@ -106,7 +113,21 @@ function baseExtensions(): Extension[] {
     highlightSelectionMatches(),
     EditorView.lineWrapping,
     createClarosEditorTheme(),
+    markdownPresentationDecorations,
     markdownMarkerDecorations,
     keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
   ];
+}
+
+function applyEditorTheme(
+  parent: HTMLElement,
+  theme: ClarosThemeId | Partial<ClarosThemeTokens>
+): void {
+  if (typeof theme === "string") {
+    applyNamedTheme(parent, theme);
+    return;
+  }
+
+  parent.setAttribute("data-claros-theme", "custom");
+  applyThemeTokens(parent, theme);
 }
