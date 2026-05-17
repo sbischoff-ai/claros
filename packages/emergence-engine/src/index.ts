@@ -11,7 +11,9 @@ export type { ExpressionEvaluator, ExpressionContext } from "./expression/types.
 
 export { parseMacro } from "./macro/parser.js";
 export { executeMacro } from "./macro/executor.js";
-export { MacroParseError, NotImplementedError } from "./macro/errors.js";
+export type { UserPromptFn } from "./macro/executor.js";
+export { MacroParseError, NotImplementedError, MissingParamError } from "./macro/errors.js";
+export type { MacroInvocationContext } from "./macro/context.js";
 export type {
   MacroDefinition,
   MacroStep,
@@ -31,3 +33,9 @@ export type {
   MacroExecutionContext,
   MacroResult,
 } from "./macro/execution.js";
+
+export { createInMemoryStateAdapter } from "./state/adapter.js";
+export { createRegistry } from "./registry/types.js";
+export type { ModuleRegistry } from "./registry/types.js";
+export { createHookDispatcher } from "./hooks/types.js";
+export type { HookDispatcher, HookName } from "./hooks/types.js";

@@ -13,6 +13,12 @@ function buildJexl(): InstanceType<typeof Jexl> {
   jexl.addBinaryOp("or", 10, (left: unknown, right: unknown) => !!(left || right));
   jexl.addUnaryOp("not", (v: unknown) => !v);
 
+  // Array helper — jexl 2.x maps `.property` over array elements rather than
+  // accessing native JS array properties, so `.length` returns each element's
+  // length, not the array size. Use the `count` transform instead:
+  //   state.story.mythic.npcs | count  →  2
+  jexl.addTransform("count", (val: unknown) => (Array.isArray(val) ? val.length : 0));
+
   return jexl;
 }
 
