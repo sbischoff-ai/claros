@@ -30,7 +30,7 @@ claros/
     story-format/        Canonical file format, project folder conventions, table YAML parser
     emergence-engine/    Dice evaluator, random table resolver, macro parser + executor
     story-state/         Wikilink index, backlinks, search, git integration  [stub]
-    editor-core/         TipTap/ProseMirror editor package                   [stub]
+    editor-core/         CodeMirror prose Markdown editor package            [early]
     export/              Pandoc export pipeline                               [stub]
 
   apps/
@@ -115,4 +115,5 @@ pnpm --filter @claros/web dev
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full system architecture.
 See [`docs/EDITOR.md`](docs/EDITOR.md) for the editor development guide.
+See [`docs/EDITOR_USER_MANUAL.md`](docs/EDITOR_USER_MANUAL.md) for the current editor user manual.
 See [`AGENTS.md`](AGENTS.md) for AI agent and spec-sensitive contributor guidance.

@@ -19,5 +19,8 @@
     "typescript": "*",
     "vite": "5.0.12",
     "vitest": "*"
+  },
+  "dependencies": {
+    "@claros/editor-core": "workspace:^"
   }
 }

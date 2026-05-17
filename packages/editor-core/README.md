@@ -1,21 +1,23 @@
 # @claros/editor-core
 
-TipTap/ProseMirror editor package for Claros.
+CodeMirror-based prose Markdown editor package for Claros.
 
-**Current state:** Empty stub — ready to build. This package is not spec-gated and can be developed freely in parallel with the emergence engine iteration plan.
+**Current state:** Early editor foundation. This package is not spec-gated and can be developed freely in parallel with the emergence engine iteration plan.
 
 ---
 
 ## Purpose
 
-`editor-core` is the reusable editor component library. It provides:
+`editor-core` is the reusable editor package. It provides:
 
-- The TipTap editor instance and configuration
-- ProseMirror extensions for Claros-specific markup (wikilinks, emergence blocks, frontmatter)
-- The Yjs document model for offline-first and future collaborative editing
-- Keyboard shortcut handling
+- The CodeMirror editor instance and configuration
+- Prose-first Markdown editing with subtle syntax treatment
+- Theme tokens for app, editor, prose, selection, marker, and widget surfaces
+- Keyboard shortcut handling, including optional Vim mode
+- Future extensions for Claros-specific markup such as wikilinks, emergence blocks, and frontmatter
+- A future Yjs document model for offline-first and collaborative editing
 
-The `apps/web` SvelteKit app mounts components from this package. Logic lives here; the app is a thin shell.
+The `apps/web` SvelteKit app mounts this package. Logic lives here; the app is a thin shell.
 
 ---
 
@@ -25,58 +27,42 @@ The `apps/web` SvelteKit app mounts components from this package. Logic lives he
 # From repo root
 pnpm --filter @claros/editor-core build
 pnpm --filter @claros/editor-core test
-
-# Watch mode
-pnpm --filter @claros/editor-core dev   # if a dev script is configured
 ```
 
 ---
 
-## Setting Up TipTap
-
-Install TipTap and Yjs:
-
-```bash
-pnpm --filter @claros/editor-core add @tiptap/core @tiptap/starter-kit
-pnpm --filter @claros/editor-core add @tiptap/extension-link @tiptap/extension-code-block
-pnpm --filter @claros/editor-core add yjs y-prosemirror
-```
-
-Configure the editor instance in `src/editor.ts`:
+## Editor API
 
 ```typescript
-import { Editor } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
-// import custom extensions
+import { createMarkdownEditor } from "@claros/editor-core";
 
-export function createEditor(element: HTMLElement) {
-  return new Editor({
-    element,
-    extensions: [
-      StarterKit,
-      // WikilinkExtension,
-      // EmergenceBlockExtension,
-    ],
-  });
-}
+const editor = createMarkdownEditor({
+  parent: element,
+  doc: "# Scene\n\nProse...",
+  vimMode: false,
+  onChange: (markdown) => saveDraft(markdown),
+});
+
+editor.setVimMode(true);
+editor.setTheme({ proseFontSize: "21px" });
 ```
 
 ---
 
 ## Extension Structure
 
-Each Claros-specific feature should be its own TipTap extension:
+Each Claros-specific feature should be its own CodeMirror extension or view plugin:
 
 ```
 src/
   editor.ts                 Editor factory
+  markdown-markers.ts       Quiet Markdown syntax decorations
+  theme.ts                  Semantic theme tokens
   extensions/
     wikilink.ts             [[Target]] link rendering
-    emergence-block.ts      Fenced emergence block node
+    emergence-block.ts      Fenced emergence block treatment
     emergence-inline.ts     {{oracle: ...}} inline syntax
     frontmatter.ts          YAML frontmatter header display
-  components/
-    EmergenceBlock.svelte   (if using Svelte node views)
 ```
 
 ---
@@ -92,31 +78,9 @@ This package depends on:
 
 When `story-state` (Iter 09) is implemented, wire up:
 
-- Wikilink resolution (what file does `[[Target]]` point to?)
+- Wikilink resolution
 - Backlink index
 - Entity autocomplete
-
----
-
-## Emergence Block Integration
-
-The emergence-engine API for macro execution is stable. When wiring up block resolution:
-
-```typescript
-import { parseMacro, executeMacro } from "@claros/emergence-engine";
-import type { MacroResult } from "@claros/emergence-engine";
-
-// Load macro from the project's modules/ directory
-const macro = parseMacro(macroYaml);
-
-// Execute on user trigger
-const result: MacroResult = await executeMacro(macro, userParams, tables);
-
-// Write result back into the block's YAML
-// result.output contains the macro's declared output values
-```
-
-See [`docs/EDITOR.md`](../../docs/EDITOR.md) for the full emergence block lifecycle and file format conventions.
 
 ---
 
@@ -126,10 +90,3 @@ See [`docs/EDITOR.md`](../../docs/EDITOR.md) for the full emergence block lifecy
 - Do not implement oracle logic, dice rolling, or macro resolution here — delegate to `@claros/emergence-engine`
 - Do not implement wikilink indexing here — that belongs in `@claros/story-state`
 - Do not define the canonical file format — that belongs in `@claros/story-format`
-
----
-
-## See Also
-
-- [`docs/EDITOR.md`](../../docs/EDITOR.md) — comprehensive editor development guide, open UX questions, file format conventions
-- [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) — full system architecture

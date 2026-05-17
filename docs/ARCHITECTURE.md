@@ -72,11 +72,11 @@ Imports `StateAdapter` from `@claros/story-format`. **No dependency on `@claros/
 
 Will implement:
 
-- TipTap/ProseMirror editor foundation
+- CodeMirror Markdown editor foundation
 - Inline emergence UX (pending/resolved block rendering)
 - Wikilink rendering extension
 - Command palette
-- Yjs CRDT document model
+- Future Yjs CRDT document model
 
 **Current state:** Empty stub. Free to develop in parallel with emergence engine iterations.
 
@@ -174,7 +174,7 @@ adapter.getAll(sceneId?, chapterId?)  // → ProjectStateSnapshot
 | Monorepo              | pnpm workspaces + Turborepo v2                              |
 | Testing               | Vitest                                                      |
 | Web app               | SvelteKit                                                   |
-| Editor                | TipTap (ProseMirror) + Yjs                                  |
+| Editor                | CodeMirror 6 + future Yjs                                   |
 | Desktop               | Tauri (shell only)                                          |
 | Persistence           | SQLite (desktop) / IndexedDB (browser) — derived state only |
 | Versioning            | isomorphic-git                                              |

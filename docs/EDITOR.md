@@ -2,6 +2,8 @@
 
 This document is the primary reference for developing the editor apps (`apps/web`, `apps/desktop`) and the `@claros/editor-core` package.
 
+For current end-user behavior, see [`EDITOR_USER_MANUAL.md`](EDITOR_USER_MANUAL.md).
+
 ---
 
 ## Scope and Philosophy
@@ -27,12 +29,12 @@ The editor's job is rendering and interaction — not data ownership.
 
 ## Current State
 
-| Component             | State              | Notes                          |
-| --------------------- | ------------------ | ------------------------------ |
-| `apps/web`            | SvelteKit scaffold | Routes exist, no editor yet    |
-| `apps/desktop`        | Placeholder        | Tauri integration deferred     |
-| `@claros/editor-core` | Empty stub         | Ready to build                 |
-| `@claros/story-state` | Empty stub         | Not available until Iter 09–10 |
+| Component             | State             | Notes                          |
+| --------------------- | ----------------- | ------------------------------ |
+| `apps/web`            | Early editor host | Single-document draft editor   |
+| `apps/desktop`        | Placeholder       | Tauri integration deferred     |
+| `@claros/editor-core` | Early editor core | CodeMirror Markdown foundation |
+| `@claros/story-state` | Empty stub        | Not available until Iter 09–10 |
 
 The emergence engine (`@claros/emergence-engine`) is fully implemented through Iter 04 and provides a stable API. State adapter and file backend come in Iter 07.
 
@@ -43,7 +45,8 @@ The emergence engine (`@claros/emergence-engine`) is fully implemented through I
 ### Web app (`apps/web`)
 
 - **SvelteKit** — app framework and routing
-- **TipTap** (ProseMirror) + **Yjs** — editor and CRDT document model
+- **CodeMirror 6** — source Markdown editing, configured as a prose writing surface
+- **Yjs** — future CRDT document model; not part of the first editor slice
 - **Tauri** — thin native shell only; all application logic in web app
 
 ---
@@ -259,9 +262,12 @@ These may resolve to inline results or expand into full fenced blocks. The exact
 
 ## Keyboard-First UX Notes
 
-- Vim-like modal editing is planned but not yet specced — do not implement yet; do not make it hard to add later
+- Vim-like modal editing is optional and must remain a first-class toggle, not the default
 - Command palette (`/` or `Ctrl+P`) is the primary interaction model
 - Minimal chrome — focus on the text
+- The editor must feel like a prose writing tool, not a code editor: no line numbers, code gutters, minimaps, or programmer-oriented chrome in the default experience
+- Markdown remains canonical, but common syntax markers should be visually quiet or hidden when the cursor is not near them
+- Themeability starts with semantic CSS variables for prose, surfaces, selection, focus, Markdown markers, and future Claros widgets
 
 ---
 
@@ -294,28 +300,29 @@ apps/web → editor-core
 ## What You Can Build Now
 
 - ✅ SvelteKit app structure, routing, layout
-- ✅ TipTap editor with basic prose editing
-- ✅ Wikilink rendering extension (resolution deferred to Iter 09)
-- ✅ Emergence block rendering extension (mock resolution for now)
+- ✅ CodeMirror Markdown editor configured as a prose writing surface
+- ✅ Theme tokens and prose typography
+- ✅ Browser-local single-document draft persistence
+- ✅ Wikilink visual treatment (resolution deferred to Iter 09)
+- ✅ Emergence block visual treatment (mock resolution later)
 - ✅ Command palette scaffold
-- ✅ Local filesystem adapter (open/read/write files)
+- ✅ Local filesystem adapter design (implementation waits for project/file adapters)
 - ✅ Frontmatter parsing and display
-- ✅ Yjs document model
-- ✅ Tauri shell setup
+- ✅ Yjs document model design
+- ✅ Tauri shell setup after the writing surface stabilizes
 
 ```bash
-pnpm --filter @claros/editor-core add @tiptap/core @tiptap/starter-kit
-pnpm --filter @claros/editor-core add yjs y-prosemirror
+pnpm --filter @claros/editor-core add @codemirror/state @codemirror/view @codemirror/commands @codemirror/lang-markdown @codemirror/language @codemirror/search @replit/codemirror-vim
 ```
 
-TipTap extensions are the right unit for:
+CodeMirror extensions and view plugins are the right unit for:
 
 - Wikilink rendering
 - Emergence block rendering (pending and resolved states)
 - Frontmatter handling (hide or render as structured header)
 - Inline dice/oracle invocation syntax
 
-Each feature should be its own TipTap `Node` or `Mark` extension in `packages/editor-core/src/extensions/`.
+Each feature should be its own extension or view plugin in `packages/editor-core/src/extensions/`.
 
 ---
 
@@ -323,13 +330,13 @@ Each feature should be its own TipTap `Node` or `Mark` extension in `packages/ed
 
 These are known open questions. Do not make decisions that implicitly resolve them without discussion:
 
-| Question                                                                          | Status           |
-| --------------------------------------------------------------------------------- | ---------------- |
-| Emergence block materialization UX — when/how does a resolved block become prose? | Open             |
-| Vim-like modal editing — modal vs non-modal as default, command set               | Not yet designed |
-| Yjs sync backend — Hocuspocus (self-hosted), WebRTC p2p, or hosted                | Deferred         |
-| Inline invocation syntax (`{{...}}`) vs fenced block as primary authoring mode    | Open             |
-| Command palette design and shortcut conventions                                   | Not yet designed |
+| Question                                                                          | Status   |
+| --------------------------------------------------------------------------------- | -------- |
+| Emergence block materialization UX — when/how does a resolved block become prose? | Open     |
+| Vim-like modal editing — detailed command set beyond the initial toggle           | Open     |
+| Yjs sync backend — Hocuspocus (self-hosted), WebRTC p2p, or hosted                | Deferred |
+| Inline invocation syntax (`{{...}}`) vs fenced block as primary authoring mode    | Open     |
+| Command palette design and shortcut conventions beyond the initial shell          | Open     |
 
 ---
 
@@ -338,14 +345,15 @@ These are known open questions. Do not make decisions that implicitly resolve th
 Safe to implement independently, parallel to the iteration plan:
 
 - ✅ SvelteKit app structure, routing, layout
-- ✅ TipTap editor with basic prose editing (bold, italic, headings, lists)
+- ✅ CodeMirror Markdown editor with prose-first typography and quiet syntax markers
+- ✅ Browser-local single-document draft persistence
 - ✅ Wikilink rendering extension (render `[[Target]]` as a link; resolution comes later)
-- ✅ Emergence block rendering extension (render fenced blocks as interactive UI; mock resolution for now)
+- ✅ Emergence block rendering extension (render fenced blocks as interactive UI; mock resolution later)
 - ✅ Command palette scaffold (UI shell; commands wired up incrementally)
-- ✅ Local filesystem adapter (open/read/write project folder files)
+- ✅ Local filesystem adapter design (open/read/write project folder files later)
 - ✅ Frontmatter parsing and display
-- ✅ Yjs document model integration (even without a sync backend)
-- ✅ Tauri shell setup and file system command bridge
+- ✅ Yjs document model integration design
+- ✅ Tauri shell setup and file system command bridge after the web editor surface stabilizes
 
 Wait for these before wiring up:
 
