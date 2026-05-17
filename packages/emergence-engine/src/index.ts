@@ -25,4 +25,9 @@ export type {
   ParamSource,
   EffectDefinition,
 } from "./macro/types.js";
-export type { ResolvedParams, StepResult, MacroExecutionContext, MacroResult } from "./macro/execution.js";
+export type {
+  ResolvedParams,
+  StepResult,
+  MacroExecutionContext,
+  MacroResult,
+} from "./macro/execution.js";

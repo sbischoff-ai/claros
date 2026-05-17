@@ -2,8 +2,9 @@
   "$schema": "https://turbo.build/schema.json",
   "concurrency": "1",
   "tasks": {
-    "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
-    "test":  { "dependsOn": ["^build"] },
-    "lint":  {}
+    "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".svelte-kit/**"] },
+    "test": { "dependsOn": ["^build"] },
+    "lint": {},
+    "check": { "dependsOn": ["^build"] }
   }
 }

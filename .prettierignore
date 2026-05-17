@@ -1,0 +1,7 @@
+node_modules
+pnpm-lock.yaml
+dist
+.svelte-kit
+coverage
+.turbo
+.DS_Store

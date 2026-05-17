@@ -189,12 +189,7 @@ steps:
 output:
   result: "steps.outcome.classified"
 `);
-      const result = await executeMacro(
-        macro,
-        { odds: "likely", cf: 5 },
-        tables,
-        fixedRNG(40)
-      );
+      const result = await executeMacro(macro, { odds: "likely", cf: 5 }, tables, fixedRNG(40));
       expect(result.output.result).toBe("yes");
     });
   });

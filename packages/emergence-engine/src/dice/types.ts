@@ -24,8 +24,7 @@ export interface RollResult {
 
 export type RNG = (min: number, max: number) => number;
 
-export const defaultRNG: RNG = (min, max) =>
-  Math.floor(Math.random() * (max - min + 1)) + min;
+export const defaultRNG: RNG = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 export const fixedRNG =
   (value: number): RNG =>

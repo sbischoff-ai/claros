@@ -25,28 +25,88 @@ apps → editor-core
 
 ### `@claros/story-format`
 
-Canonical file format, project conventions, and all state-related type definitions.
+Defines:
+
+- Project folder structure and conventions
+- Markdown + YAML frontmatter conventions
+- Wikilink syntax
+- Emergence block syntax (fenced and inline)
+- Table YAML format (random-table and matrix types)
 
 **Exports:** `parseTable`, table types, `parseStateFile`, `serializeStateFile`, `parseNoteFrontmatter`, `serializeNoteFrontmatter`, `getAtPath`, `setAtPath`, `StateAdapter`, `StateData`, `ProjectStateSnapshot`, `NoteFrontmatter`.
 
 ### `@claros/emergence-engine`
 
-Dice, tables, expressions, macro parser and executor, `InMemoryStateAdapter`, `ModuleRegistry`, hook dispatch.
+Implements:
+
+- Dice expression parser and evaluator (all standard notation + kh/kl/pool/exploding/d100)
+- Random table lookup (1D range, 2D matrix + classify)
+- Expression language (jexl-based, with `and`/`or`/`not` English aliases)
+- Macro YAML parser (`parseMacro`) and executor (`executeMacro`)
 
 Imports `StateAdapter` from `@claros/story-format`. **No dependency on `@claros/story-state`.**
 
-**Stable (Iter 01–04):** dice, table, expression, macro APIs.
-**Iter 06:** macro composition, `InMemoryStateAdapter`, `ModuleRegistry`, `MacroInvocationContext`, `HookDispatcher`.
+**Stable exports (Iter 01–04):**
+
+- `parseDice`, `rollDice`, `defaultRNG`, `fixedRNG`
+- `lookup`, `matrixLookup`, `LookupError`
+- `createEvaluator`, `ExpressionEvaluator`
+- `parseMacro`, `executeMacro`, `MacroParseError`, `NotImplementedError`
+- All associated TypeScript types
+
+**Planned (Iter 05–06):** macro composition, sub-macro invocation, state model, Mythic GME integration milestone
 
 ### `@claros/story-state`
 
-`FileStateAdapter` (Iter 07), project index / wikilinks / backlinks (Iter 09–11), git integration (Iter 12).
+Will implement:
+
+- Project folder scanner
+- Wikilink resolution and backlink tracking
+- Entity indexing (SQLite on desktop, IndexedDB in browser)
+- Filesystem adapters (local, eventually WebDAV)
+- isomorphic-git integration (auto-commit, checkpoints, history)
 
 Imports `StateAdapter` from `@claros/story-format`. **No dependency on `@claros/emergence-engine`.**
 
 ### `@claros/editor-core` / `apps/*`
 
-Editor UI and applications. Depends on both `story-state` and `emergence-engine`.
+Will implement:
+
+- TipTap/ProseMirror editor foundation
+- Inline emergence UX (pending/resolved block rendering)
+- Wikilink rendering extension
+- Command palette
+- Yjs CRDT document model
+
+**Current state:** Empty stub. Free to develop in parallel with emergence engine iterations.
+
+### `@claros/export`
+
+Will implement:
+
+- Pandoc pipeline for clean manuscript export
+- Output formats: DOCX, PDF, EPUB, markdown
+- Separation of prose from procedural metadata
+
+**Current state:** Stub. Deferred.
+
+---
+
+## Dependency Constraints
+
+Enforced:
+
+- `story-format` has no internal dependencies
+- `emergence-engine` has no internal dependencies
+- `story-state` depends on `story-format`
+- `editor-core` depends on `story-state` and `emergence-engine`
+- Apps depend on packages; packages do not depend on apps
+
+Violated by:
+
+- Any import of `editor-core` from `emergence-engine` or `story-format`
+- Any import of `story-state` from `emergence-engine`
+- Any business logic in `apps/desktop` (logic goes in packages or `apps/web`)
 
 ---
 
@@ -54,12 +114,11 @@ Editor UI and applications. Depends on both `story-state` and `emergence-engine`
 
 Authoritative state is file-based YAML in `state/` at the project root, tracked by git (ADR-015).
 
-```
-state/
-  story.yaml                   state.story.* — project-global
-  chapters/<id>.yaml           state.chapters["<id>"].* — per-chapter
-  scenes/<id>.yaml             state.scenes["<id>"].* — per-scene snapshot
-```
+| Scope     | Lifetime                               | Path prefix       |
+| --------- | -------------------------------------- | ----------------- |
+| `story`   | Entire project                         | `state.story.*`   |
+| `chapter` | Current chapter                        | `state.chapter.*` |
+| `scene`   | Current scene (resets on scene change) | `state.scene.*`   |
 
 Entity state (character sheets, NPC stats) lives in wiki note frontmatter under a `state:` key (ADR-017). SQLite/IndexedDB are for derived indexes only — never authoritative state.
 
@@ -109,19 +168,19 @@ adapter.getAll(sceneId?, chapterId?)  // → ProjectStateSnapshot
 
 ## Technology Stack
 
-| Concern | Technology |
-|---|---|
-| Language | TypeScript (strict) |
-| Monorepo | pnpm workspaces + Turborepo v2 |
-| Testing | Vitest |
-| Web app | SvelteKit |
-| Editor | TipTap (ProseMirror) + Yjs |
-| Desktop | Tauri (shell only) |
-| Authoritative state | YAML files in `state/` (git-tracked) |
-| Derived indexes | SQLite (desktop) / IndexedDB (browser) |
-| Versioning | isomorphic-git |
-| Expression evaluation | jexl v2 |
-| YAML parsing | js-yaml |
+| Concern               | Technology                                                  |
+| --------------------- | ----------------------------------------------------------- |
+| Language              | TypeScript (strict mode)                                    |
+| Monorepo              | pnpm workspaces + Turborepo v2                              |
+| Testing               | Vitest                                                      |
+| Web app               | SvelteKit                                                   |
+| Editor                | TipTap (ProseMirror) + Yjs                                  |
+| Desktop               | Tauri (shell only)                                          |
+| Persistence           | SQLite (desktop) / IndexedDB (browser) — derived state only |
+| Versioning            | isomorphic-git                                              |
+| Export                | Pandoc                                                      |
+| Expression evaluation | jexl v2                                                     |
+| YAML parsing          | js-yaml                                                     |
 
 ---
 
