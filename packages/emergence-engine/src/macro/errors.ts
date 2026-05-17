@@ -11,3 +11,10 @@ export class NotImplementedError extends Error {
     this.name = "NotImplementedError";
   }
 }
+
+export class MissingParamError extends Error {
+  constructor(paramName: string) {
+    super(`required param missing: ${paramName}`);
+    this.name = "MissingParamError";
+  }
+}

@@ -4,6 +4,8 @@ import { executeMacro } from "../src/macro/executor.js";
 import { parseTable } from "@claros/story-format";
 import type { RandomTable, MatrixTable } from "@claros/story-format";
 import { fixedRNG } from "../src/dice/types.js";
+import { createRegistry } from "../src/registry/types.js";
+import { createInMemoryStateAdapter } from "../src/state/adapter.js";
 
 describe("executeMacro", () => {
   describe("roll steps", () => {
@@ -18,9 +20,16 @@ steps:
 output:
   total: "steps.my-roll.total"
 `);
-      const result = await executeMacro(macro, {}, new Map(), fixedRNG(14));
+      const result = await executeMacro(
+        macro,
+        {},
+        createRegistry(),
+        createInMemoryStateAdapter(),
+        undefined,
+        fixedRNG(14)
+      );
       expect(result.output.total).toBe(14);
-      expect(result.steps["my-roll"].total).toBe(14);
+      expect((result.steps["my-roll"] as any).total).toBe(14);
     });
 
     it("roll result includes all RollResult fields", async () => {
@@ -35,7 +44,14 @@ output:
   is_double: "steps.r.is_double"
   double_digit: "steps.r.double_digit"
 `);
-      const result = await executeMacro(macro, {}, new Map(), fixedRNG(44));
+      const result = await executeMacro(
+        macro,
+        {},
+        createRegistry(),
+        createInMemoryStateAdapter(),
+        undefined,
+        fixedRNG(44)
+      );
       expect(result.output.is_double).toBe(true);
       expect(result.output.double_digit).toBe(4);
     });
@@ -57,7 +73,14 @@ steps:
 output:
   ran: "steps.skipped != null"
 `);
-      const result = await executeMacro(macro, { flag: false }, new Map(), fixedRNG(3));
+      const result = await executeMacro(
+        macro,
+        { flag: false },
+        createRegistry(),
+        createInMemoryStateAdapter(),
+        undefined,
+        fixedRNG(3)
+      );
       expect(result.steps["skipped"]).toBeUndefined();
     });
 
@@ -75,9 +98,16 @@ steps:
     roll: 1d6
 output: {}
 `);
-      const result = await executeMacro(macro, { flag: true }, new Map(), fixedRNG(3));
+      const result = await executeMacro(
+        macro,
+        { flag: true },
+        createRegistry(),
+        createInMemoryStateAdapter(),
+        undefined,
+        fixedRNG(3)
+      );
       expect(result.steps["ran"]).toBeDefined();
-      expect(result.steps["ran"].total).toBe(3);
+      expect((result.steps["ran"] as any).total).toBe(3);
     });
   });
 
@@ -94,7 +124,8 @@ rows:
     result: "High"
 `;
       const table = parseTable(tableYaml) as RandomTable;
-      const tables = new Map([["test.table", table]]);
+      const registry = createRegistry();
+      registry.registerTable(table);
 
       const macro = parseMacro(`
 id: test.lookup
@@ -110,7 +141,14 @@ steps:
 output:
   result: "steps.result.matched"
 `);
-      const result = await executeMacro(macro, {}, tables, fixedRNG(3));
+      const result = await executeMacro(
+        macro,
+        {},
+        registry,
+        createInMemoryStateAdapter(),
+        undefined,
+        fixedRNG(3)
+      );
       expect(result.output.result).toBe("High");
     });
 
@@ -126,7 +164,8 @@ rows:
     result: "High"
 `;
       const table = parseTable(tableYaml) as RandomTable;
-      const tables = new Map([["test.autoroll", table]]);
+      const registry = createRegistry();
+      registry.registerTable(table);
 
       const macro = parseMacro(`
 id: test.lookup-auto
@@ -139,8 +178,14 @@ steps:
 output:
   result: "steps.result.matched"
 `);
-      // fixedRNG(4) → table auto-rolls 1d4 → 4 → "High"
-      const result = await executeMacro(macro, {}, tables, fixedRNG(4));
+      const result = await executeMacro(
+        macro,
+        {},
+        registry,
+        createInMemoryStateAdapter(),
+        undefined,
+        fixedRNG(4)
+      );
       expect(result.output.result).toBe("High");
     });
   });
@@ -165,7 +210,8 @@ rows:
       5: [3, 65, 94]
 `;
       const table = parseTable(tableYaml) as MatrixTable;
-      const tables = new Map([["test.matrix", table]]);
+      const registry = createRegistry();
+      registry.registerTable(table);
 
       const macro = parseMacro(`
 id: test.matrix-lookup
@@ -189,7 +235,14 @@ steps:
 output:
   result: "steps.outcome.classified"
 `);
-      const result = await executeMacro(macro, { odds: "likely", cf: 5 }, tables, fixedRNG(40));
+      const result = await executeMacro(
+        macro,
+        { odds: "likely", cf: 5 },
+        registry,
+        createInMemoryStateAdapter(),
+        undefined,
+        fixedRNG(40)
+      );
       expect(result.output.result).toBe("yes");
     });
   });
@@ -210,7 +263,12 @@ steps: []
 output:
   sum: "params.x + params.y"
 `);
-      const result = await executeMacro(macro, { x: 3, y: 4 }, new Map());
+      const result = await executeMacro(
+        macro,
+        { x: 3, y: 4 },
+        createRegistry(),
+        createInMemoryStateAdapter()
+      );
       expect(result.output.sum).toBe(7);
     });
   });
