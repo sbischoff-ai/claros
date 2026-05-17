@@ -2,11 +2,14 @@
   "name": "@claros/cli",
   "version": "0.1.0",
   "type": "module",
-  "bin": { "claros": "./dist/index.js" },
+  "bin": {
+    "claros": "./dist/index.js"
+  },
   "scripts": {
     "build": "tsc --build",
     "test": "vitest run",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "check": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
     "typescript": "*",

@@ -9,6 +9,7 @@ This document is the primary reference for developing the editor apps (`apps/web
 The editor's job is rendering and interaction — not data ownership.
 
 **The editor does:**
+
 - Display and edit prose (manuscript files)
 - Render wikilinks, frontmatter, and emergence blocks inline
 - Trigger oracle/macro invocations when the user resolves an emergence block
@@ -16,6 +17,7 @@ The editor's job is rendering and interaction — not data ownership.
 - Provide keyboard-driven workflows for common operations
 
 **The editor does not:**
+
 - Own the canonical data model (markdown files are canonical)
 - Implement oracle logic, dice rolling, or macro resolution (that's `emergence-engine`)
 - Own the wikilink index or backlinks (that's `story-state`)
@@ -27,12 +29,12 @@ Think of the editor as a thin shell: it reads files, calls into packages for com
 
 ## Current State
 
-| Component | State | Notes |
-|---|---|---|
-| `apps/web` | SvelteKit scaffold | Routes exist, no editor yet |
-| `apps/desktop` | Placeholder | Tauri integration deferred |
-| `@claros/editor-core` | Empty stub | Ready to build |
-| `@claros/story-state` | Empty stub | Not available until Iter 09–10 |
+| Component             | State              | Notes                          |
+| --------------------- | ------------------ | ------------------------------ |
+| `apps/web`            | SvelteKit scaffold | Routes exist, no editor yet    |
+| `apps/desktop`        | Placeholder        | Tauri integration deferred     |
+| `@claros/editor-core` | Empty stub         | Ready to build                 |
+| `@claros/story-state` | Empty stub         | Not available until Iter 09–10 |
 
 The emergence engine (`@claros/emergence-engine`) is fully implemented through Iter 04 and provides a stable API the editor can eventually call. Story-state is not yet implemented — use mocks or local state for wikilink/index features during early editor development.
 
@@ -41,6 +43,7 @@ The emergence engine (`@claros/emergence-engine`) is fully implemented through I
 ## Tech Stack
 
 ### Web app (`apps/web`)
+
 - **SvelteKit** — app framework and routing
 - **TipTap** (or ProseMirror directly) — rich text editor foundation
 - **Yjs** — CRDT document model for offline-first and future collaboration
@@ -48,10 +51,12 @@ The emergence engine (`@claros/emergence-engine`) is fully implemented through I
 TipTap is the preferred editor framework because it wraps ProseMirror in a composable extension API. If a feature requires ProseMirror primitives directly, reach through TipTap's APIs — do not duplicate the document model.
 
 ### Desktop app (`apps/desktop`)
+
 - **Tauri** — thin native shell only; all application logic lives in the web app
 - The desktop app should contain no business logic; it only provides native window management and filesystem access (via Tauri commands)
 
 ### Package dependencies (planned)
+
 When the following packages are implemented, the editor will consume them:
 
 ```
@@ -74,19 +79,19 @@ These exports are implemented and stable. The editor can use them directly when 
 ### Macro execution (Iter 04)
 
 ```typescript
-import { parseMacro, executeMacro } from "@claros/emergence-engine"
-import type { MacroDefinition, MacroResult, ResolvedParams } from "@claros/emergence-engine"
+import { parseMacro, executeMacro } from "@claros/emergence-engine";
+import type { MacroDefinition, MacroResult, ResolvedParams } from "@claros/emergence-engine";
 
 // Parse a macro from YAML (typically loaded from a .yaml file in the project's modules/)
-const macro: MacroDefinition = parseMacro(yamlString)
+const macro: MacroDefinition = parseMacro(yamlString);
 
 // Execute it
 const result: MacroResult = await executeMacro(
   macro,
-  params,          // Record<string, unknown> — resolved from user input or state
-  tables,          // Map<string, AnyTable> — tables the macro references
-  rng              // optional — injectable RNG; omit for random behavior
-)
+  params, // Record<string, unknown> — resolved from user input or state
+  tables, // Map<string, AnyTable> — tables the macro references
+  rng // optional — injectable RNG; omit for random behavior
+);
 
 // result.output — the macro's declared output values
 // result.steps  — all step results (for debugging/display)
@@ -95,11 +100,11 @@ const result: MacroResult = await executeMacro(
 ### Dice rolling (Iter 01)
 
 ```typescript
-import { parseDice, rollDice, defaultRNG } from "@claros/emergence-engine"
-import type { RollResult } from "@claros/emergence-engine"
+import { parseDice, rollDice, defaultRNG } from "@claros/emergence-engine";
+import type { RollResult } from "@claros/emergence-engine";
 
-const expr = parseDice("2d20kh1+3")
-const result: RollResult = rollDice(expr, defaultRNG)
+const expr = parseDice("2d20kh1+3");
+const result: RollResult = rollDice(expr, defaultRNG);
 // result.total, result.rolls, result.kept, result.modifier
 // For 1d100: also result.is_double, result.double_digit
 ```
@@ -107,12 +112,12 @@ const result: RollResult = rollDice(expr, defaultRNG)
 ### Table lookup (Iter 02)
 
 ```typescript
-import { lookup, matrixLookup } from "@claros/emergence-engine"
-import { parseTable } from "@claros/story-format"
-import type { RandomTable, MatrixTable } from "@claros/story-format"
+import { lookup, matrixLookup } from "@claros/emergence-engine";
+import { parseTable } from "@claros/story-format";
+import type { RandomTable, MatrixTable } from "@claros/story-format";
 
-const table = parseTable(yamlString) as RandomTable
-const result = lookup(table, rollValue, rng)
+const table = parseTable(yamlString) as RandomTable;
+const result = lookup(table, rollValue, rng);
 // result.matched — the row's result string
 // result.row     — the full row object
 ```
@@ -120,7 +125,12 @@ const result = lookup(table, rollValue, rng)
 ### Error types
 
 ```typescript
-import { MacroParseError, NotImplementedError, LookupError, ParseError } from "@claros/emergence-engine"
+import {
+  MacroParseError,
+  NotImplementedError,
+  LookupError,
+  ParseError,
+} from "@claros/emergence-engine";
 ```
 
 ---
@@ -187,7 +197,7 @@ The editor should render these as navigable links. Resolution (what file a wikil
 
 Fenced emergence blocks represent pending or resolved oracle interactions:
 
-```markdown
+````markdown
 ```emergence
 type: oracle
 intent: "Does the priest recognize the blade?"
@@ -195,7 +205,9 @@ mode: yes_no
 odds: likely
 status: pending
 ```
-```
+````
+
+````
 
 Once resolved, the block gains a `result` section:
 
@@ -211,8 +223,9 @@ result:
   exceptional: false
   rolls:
     fate: 43
-```
-```
+````
+
+````
 
 **The editor is responsible for rendering these blocks** — distinguishing `pending` vs `resolved`, and providing the UI to trigger resolution. The engine computes the result; the editor writes it back into the file.
 
@@ -222,7 +235,7 @@ Compact inline syntax (for keyboard-first flows):
 
 ```markdown
 {{oracle: "Does he recognize the blade?", odds=likely}}
-```
+````
 
 These may resolve to inline results or expand into full fenced blocks. The exact UX is still being designed (see Open Questions below).
 
@@ -256,10 +269,10 @@ Claros is intended to feel like a modern terminal editor adapted for prose: fast
 
 These packages are spec-gated. Do not modify them without a delegated spec task:
 
-| Package | Why |
-|---|---|
-| `@claros/story-format` | Governs the canonical file format; changes require spec review |
-| `@claros/emergence-engine` | Macro/table/dice engine; governed by iteration specs |
+| Package                    | Why                                                            |
+| -------------------------- | -------------------------------------------------------------- |
+| `@claros/story-format`     | Governs the canonical file format; changes require spec review |
+| `@claros/emergence-engine` | Macro/table/dice engine; governed by iteration specs           |
 
 If you need a capability from these packages that doesn't exist yet, flag it as a requirement rather than adding it directly.
 
@@ -301,6 +314,7 @@ pnpm --filter @claros/editor-core add yjs y-prosemirror
 ```
 
 TipTap extensions are the right unit for:
+
 - Wikilink rendering
 - Emergence block rendering (pending and resolved states)
 - Frontmatter handling (hide or render as structured header)
@@ -314,13 +328,13 @@ Each feature should be its own TipTap `Node` or `Mark` extension in `packages/ed
 
 These are known open questions. Do not make decisions that implicitly resolve them without discussion:
 
-| Question | Status |
-|---|---|
-| Emergence block materialization UX — when/how does a resolved block become prose? | Open |
-| Vim-like modal editing — modal vs non-modal as default, command set | Not yet designed |
-| Yjs sync backend — Hocuspocus (self-hosted), WebRTC p2p, or hosted | Deferred |
-| Inline invocation syntax (`{{...}}`) vs fenced block as primary authoring mode | Open |
-| Command palette design and shortcut conventions | Not yet designed |
+| Question                                                                          | Status           |
+| --------------------------------------------------------------------------------- | ---------------- |
+| Emergence block materialization UX — when/how does a resolved block become prose? | Open             |
+| Vim-like modal editing — modal vs non-modal as default, command set               | Not yet designed |
+| Yjs sync backend — Hocuspocus (self-hosted), WebRTC p2p, or hosted                | Deferred         |
+| Inline invocation syntax (`{{...}}`) vs fenced block as primary authoring mode    | Open             |
+| Command palette design and shortcut conventions                                   | Not yet designed |
 
 ---
 
@@ -339,6 +353,7 @@ Safe to implement independently, parallel to the iteration plan:
 - ✅ Tauri shell setup and file system command bridge
 
 Wait for these before wiring up:
+
 - ⏳ Live macro invocation through `executeMacro` — available now from emergence-engine; just needs the project's module files to be loaded
 - ⏳ Wikilink resolution — needs story-state (Iter 09)
 - ⏳ Git checkpoints — needs story-state (Iter 10)

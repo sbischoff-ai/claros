@@ -38,10 +38,7 @@ describe("ExpressionEvaluator", () => {
         params: { chaos: 5 },
       };
       expect(
-        ev.evaluateBool(
-          "steps.roll.is_double and steps.roll.double_digit <= params.chaos",
-          ctx
-        )
+        ev.evaluateBool("steps.roll.is_double and steps.roll.double_digit <= params.chaos", ctx)
       ).toBe(true);
     });
   });
@@ -69,12 +66,9 @@ describe("ExpressionEvaluator", () => {
 
     it("works with context values", () => {
       const ctx = { steps: { roll: { total: 44 } } };
-      expect(
-        ev.evaluateBool(
-          "steps.roll.total in [11, 22, 33, 44, 55, 66, 77, 88, 99]",
-          ctx
-        )
-      ).toBe(true);
+      expect(ev.evaluateBool("steps.roll.total in [11, 22, 33, 44, 55, 66, 77, 88, 99]", ctx)).toBe(
+        true
+      );
     });
   });
 
@@ -87,9 +81,7 @@ describe("ExpressionEvaluator", () => {
     });
     it("works with context values", () => {
       const ctx = { steps: { roll: { total: 100 } } };
-      expect(
-        ev.evaluate("steps.roll.total == 100 ? 10 : steps.roll.total / 11", ctx)
-      ).toBe(10);
+      expect(ev.evaluate("steps.roll.total == 100 ? 10 : steps.roll.total / 11", ctx)).toBe(10);
     });
   });
 
@@ -115,23 +107,23 @@ describe("cell-format classify integration (replaces Iter 02 stub)", () => {
       fields: ["ey", "sy", "en"],
       classify: {
         "exceptional-yes": "value <= ey",
-        "yes":             "value <= sy",
-        "exceptional-no":  "value >= en",
-        "_default":        "no",
+        yes: "value <= sy",
+        "exceptional-no": "value >= en",
+        _default: "no",
       },
     },
     rows: [{ key: "likely", columns: { 5: [3, 65, 94] } }],
   };
 
   const cases: [number, string][] = [
-    [1,  "exceptional-yes"],  // <= ey(3)
-    [3,  "exceptional-yes"],  // == ey(3), boundary
-    [4,  "yes"],              // > ey, <= sy(65)
-    [65, "yes"],              // == sy(65), boundary
-    [66, "no"],               // > sy, < en(94)
+    [1, "exceptional-yes"], // <= ey(3)
+    [3, "exceptional-yes"], // == ey(3), boundary
+    [4, "yes"], // > ey, <= sy(65)
+    [65, "yes"], // == sy(65), boundary
+    [66, "no"], // > sy, < en(94)
     [93, "no"],
-    [94, "exceptional-no"],   // == en(94), boundary
-    [99, "exceptional-no"],   // > en
+    [94, "exceptional-no"], // == en(94), boundary
+    [99, "exceptional-no"], // > en
   ];
 
   it.each(cases)("classifies roll %i as %s", (roll, expected) => {

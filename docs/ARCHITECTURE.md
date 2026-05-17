@@ -29,6 +29,7 @@ The file format is the durable public standard. All other systems are implementa
 ### `@claros/story-format`
 
 Defines:
+
 - Project folder structure and conventions
 - Markdown + YAML frontmatter conventions
 - Wikilink syntax
@@ -42,6 +43,7 @@ Has no dependencies on any other Claros package. This is the canonical layer.
 ### `@claros/emergence-engine`
 
 Implements:
+
 - Dice expression parser and evaluator (all standard notation + kh/kl/pool/exploding/d100)
 - Random table lookup (1D range, 2D matrix + classify)
 - Expression language (jexl-based, with `and`/`or`/`not` English aliases)
@@ -50,6 +52,7 @@ Implements:
 Completely standalone — no dependency on any other Claros package. Accepts an injectable RNG for deterministic testing.
 
 **Stable exports (Iter 01–04):**
+
 - `parseDice`, `rollDice`, `defaultRNG`, `fixedRNG`
 - `lookup`, `matrixLookup`, `LookupError`
 - `createEvaluator`, `ExpressionEvaluator`
@@ -61,6 +64,7 @@ Completely standalone — no dependency on any other Claros package. Accepts an 
 ### `@claros/story-state`
 
 Will implement:
+
 - Project folder scanner
 - Wikilink resolution and backlink tracking
 - Entity indexing (SQLite on desktop, IndexedDB in browser)
@@ -72,6 +76,7 @@ Will implement:
 ### `@claros/editor-core`
 
 Will implement:
+
 - TipTap/ProseMirror editor foundation
 - Inline emergence UX (pending/resolved block rendering)
 - Wikilink rendering extension
@@ -83,6 +88,7 @@ Will implement:
 ### `@claros/export`
 
 Will implement:
+
 - Pandoc pipeline for clean manuscript export
 - Output formats: DOCX, PDF, EPUB, markdown
 - Separation of prose from procedural metadata
@@ -94,6 +100,7 @@ Will implement:
 ## Dependency Constraints
 
 Enforced:
+
 - `story-format` has no internal dependencies
 - `emergence-engine` has no internal dependencies
 - `story-state` depends on `story-format`
@@ -101,6 +108,7 @@ Enforced:
 - Apps depend on packages; packages do not depend on apps
 
 Violated by:
+
 - Any import of `editor-core` from `emergence-engine` or `story-format`
 - Any import of `story-state` from `emergence-engine`
 - Any business logic in `apps/desktop` (logic goes in packages or `apps/web`)
@@ -111,11 +119,11 @@ Violated by:
 
 The state model has three lifetime scopes:
 
-| Scope | Lifetime | Path prefix |
-|---|---|---|
-| `story` | Entire project | `state.story.*` |
-| `chapter` | Current chapter | `state.chapter.*` |
-| `scene` | Current scene (resets on scene change) | `state.scene.*` |
+| Scope     | Lifetime                               | Path prefix       |
+| --------- | -------------------------------------- | ----------------- |
+| `story`   | Entire project                         | `state.story.*`   |
+| `chapter` | Current chapter                        | `state.chapter.*` |
+| `scene`   | Current scene (resets on scene change) | `state.scene.*`   |
 
 RPG system state uses a system prefix: `state.story.mythic.*`, `state.story.ironsworn.*`, etc.
 
@@ -148,19 +156,19 @@ Full macro DSL reference: see `spec-macro-dsl.md` (Nextcloud: `Projects/claros/s
 
 ## Technology Stack
 
-| Concern | Technology |
-|---|---|
-| Language | TypeScript (strict mode) |
-| Monorepo | pnpm workspaces + Turborepo v2 |
-| Testing | Vitest |
-| Web app | SvelteKit |
-| Editor | TipTap (ProseMirror) + Yjs |
-| Desktop | Tauri (shell only) |
-| Persistence | SQLite (desktop) / IndexedDB (browser) — derived state only |
-| Versioning | isomorphic-git |
-| Export | Pandoc |
-| Expression evaluation | jexl v2 |
-| YAML parsing | js-yaml |
+| Concern               | Technology                                                  |
+| --------------------- | ----------------------------------------------------------- |
+| Language              | TypeScript (strict mode)                                    |
+| Monorepo              | pnpm workspaces + Turborepo v2                              |
+| Testing               | Vitest                                                      |
+| Web app               | SvelteKit                                                   |
+| Editor                | TipTap (ProseMirror) + Yjs                                  |
+| Desktop               | Tauri (shell only)                                          |
+| Persistence           | SQLite (desktop) / IndexedDB (browser) — derived state only |
+| Versioning            | isomorphic-git                                              |
+| Export                | Pandoc                                                      |
+| Expression evaluation | jexl v2                                                     |
+| YAML parsing          | js-yaml                                                     |
 
 ---
 
