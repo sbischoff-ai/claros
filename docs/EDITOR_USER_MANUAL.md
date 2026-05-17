@@ -28,8 +28,18 @@ The editor stores text as Markdown, but it is styled to feel like a prose writin
 - Proportional prose font by default
 - Centered manuscript-style writing column
 - Quiet Markdown syntax markers when the cursor is away from a line
+- Book-like heading presentation for chapter and scene headings
+- Inline italic and bold presentation for emphasized Markdown text
 
 Markdown remains directly editable. When the cursor is on a line, the underlying Markdown syntax is visible enough to edit predictably.
+
+Headings use conventional prose presentation:
+
+- `#` headings are centered chapter-style headings
+- `##` headings are centered scene-style headings
+- Lower heading levels are quieter section headings
+
+Emphasis and strong emphasis are rendered inline as italic and bold text while preserving the underlying Markdown.
 
 ## Draft Persistence
 
@@ -73,7 +83,12 @@ Claros does not yet define custom Vim mappings or Claros-specific Vim commands.
 The command palette currently contains:
 
 - Enable or disable Vim mode
+- Theme commands for Default, Gruvbox, Solarized, Everforest, and Catppuccin light/dark variants
 - Return to Draft
+
+The command palette filters as you type. Theme changes are saved in the browser and restored when you reload the editor.
+
+Use `ArrowUp` and `ArrowDown` to move through command results, then press `Enter` to run the selected command.
 
 The command palette is intentionally minimal in this first iteration. Future versions will add editor, navigation, project, wikilink, and emergence commands.
 
@@ -104,7 +119,6 @@ The current editor does not yet include:
 - Dice or oracle execution
 - Inline slash commands
 - Export
-- User-loadable themes
 
 ## Design Direction
 

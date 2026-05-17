@@ -44,6 +44,7 @@ const editor = createMarkdownEditor({
 });
 
 editor.setVimMode(true);
+editor.setTheme("gruvbox-dark");
 editor.setTheme({ proseFontSize: "21px" });
 ```
 
@@ -57,6 +58,7 @@ Each Claros-specific feature should be its own CodeMirror extension or view plug
 src/
   editor.ts                 Editor factory
   markdown-markers.ts       Quiet Markdown syntax decorations
+  markdown-presentation.ts  Parser-backed prose styling for Markdown
   theme.ts                  Semantic theme tokens
   extensions/
     wikilink.ts             [[Target]] link rendering
