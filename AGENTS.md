@@ -32,6 +32,10 @@
 
 This repo may receive independent commits from a local Codex session. If you find changes in spec-sensitive packages that don't correspond to a delegated task, flag them in your response rather than silently building on them.
 
+## NixOS Runtime Requirements
+
+This repository provides a `shell.nix` with the runtime and development tools needed for local work. On NixOS systems, if a required command such as `node`, `pnpm`, `git`, or `pandoc` is missing from the ambient environment, run the command through the project shell with `nix-shell --run '<command>'`.
+
 ## Dependency Direction
 
 ```
