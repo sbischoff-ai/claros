@@ -45,8 +45,8 @@ pnpm --filter @claros/editor-core add yjs y-prosemirror
 Configure the editor instance in `src/editor.ts`:
 
 ```typescript
-import { Editor } from "@tiptap/core"
-import StarterKit from "@tiptap/starter-kit"
+import { Editor } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
 // import custom extensions
 
 export function createEditor(element: HTMLElement) {
@@ -57,7 +57,7 @@ export function createEditor(element: HTMLElement) {
       // WikilinkExtension,
       // EmergenceBlockExtension,
     ],
-  })
+  });
 }
 ```
 
@@ -85,12 +85,13 @@ src/
 
 This package depends on:
 
-| Package | Status | Notes |
-|---|---|---|
-| `@claros/emergence-engine` | ✅ Stable | Use for macro invocation |
-| `@claros/story-state` | ⬜ Stub | Do not import yet — use mocks |
+| Package                    | Status    | Notes                         |
+| -------------------------- | --------- | ----------------------------- |
+| `@claros/emergence-engine` | ✅ Stable | Use for macro invocation      |
+| `@claros/story-state`      | ⬜ Stub   | Do not import yet — use mocks |
 
 When `story-state` (Iter 09) is implemented, wire up:
+
 - Wikilink resolution (what file does `[[Target]]` point to?)
 - Backlink index
 - Entity autocomplete
@@ -102,14 +103,14 @@ When `story-state` (Iter 09) is implemented, wire up:
 The emergence-engine API for macro execution is stable. When wiring up block resolution:
 
 ```typescript
-import { parseMacro, executeMacro } from "@claros/emergence-engine"
-import type { MacroResult } from "@claros/emergence-engine"
+import { parseMacro, executeMacro } from "@claros/emergence-engine";
+import type { MacroResult } from "@claros/emergence-engine";
 
 // Load macro from the project's modules/ directory
-const macro = parseMacro(macroYaml)
+const macro = parseMacro(macroYaml);
 
 // Execute on user trigger
-const result: MacroResult = await executeMacro(macro, userParams, tables)
+const result: MacroResult = await executeMacro(macro, userParams, tables);
 
 // Write result back into the block's YAML
 // result.output contains the macro's declared output values

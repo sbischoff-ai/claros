@@ -14,10 +14,10 @@ describe("lookup — random table", () => {
     type: "random-table",
     dice: "2d6",
     rows: [
-      { range: [2, 2],   result: "Hostile" },
-      { range: [3, 5],   result: "Unfriendly" },
-      { range: [6, 8],   result: "Uncertain" },
-      { range: [9, 11],  result: "Friendly" },
+      { range: [2, 2], result: "Hostile" },
+      { range: [3, 5], result: "Unfriendly" },
+      { range: [6, 8], result: "Uncertain" },
+      { range: [9, 11], result: "Friendly" },
       { range: [12, 12], result: "Enthusiastic" },
     ],
   };
@@ -42,8 +42,8 @@ describe("lookup — random table", () => {
   });
 
   it("throws when value is out of all ranges", () => {
-    expect(() => lookup(table, 1)).toThrow();   // below minimum
-    expect(() => lookup(table, 13)).toThrow();  // above maximum
+    expect(() => lookup(table, 1)).toThrow(); // below minimum
+    expect(() => lookup(table, 13)).toThrow(); // above maximum
   });
 
   it("throws a typed LookupError for out-of-range values", () => {
@@ -66,13 +66,13 @@ describe("matrixLookup", () => {
       fields: ["ey", "sy", "en"],
       classify: {
         "exceptional-yes": "value <= ey",
-        "yes":             "value <= sy",
-        "exceptional-no":  "value >= en",
-        "_default":        "no",
+        yes: "value <= sy",
+        "exceptional-no": "value >= en",
+        _default: "no",
       },
     },
     rows: [
-      { key: "likely",   columns: { 5: [3, 65, 94] } },
+      { key: "likely", columns: { 5: [3, 65, 94] } },
       { key: "unlikely", columns: { 5: [1, 35, 88] } },
     ],
   };

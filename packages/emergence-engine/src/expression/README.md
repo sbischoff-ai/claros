@@ -22,7 +22,7 @@ YAML macro conditions are author-facing and should read naturally, so we registe
 three additional operators with the same precedence (10) as the built-in ones:
 
 | Keyword | Equivalent |
-|---------|-----------|
+| ------- | ---------- |
 | `and`   | `&&`       |
 | `or`    | `\|\|`     |
 | `not`   | `!`        |
@@ -49,12 +49,12 @@ built-in behaviour and requires no additional configuration.
 
 ### Supported operator reference
 
-| Category   | Syntax                                          |
-|------------|-------------------------------------------------|
-| Arithmetic | `+`, `-`, `*`, `/`, `%`                         |
-| Comparison | `==`, `!=`, `<`, `<=`, `>`, `>=`                |
-| Boolean    | `and`, `or`, `not` (or `&&`, `\|\|`, `!`)       |
-| Member     | `a.b.c` dot-path                                |
-| Membership | `value in [11, 22, 33]`                         |
-| Ternary    | `condition ? a : b`                             |
-| String     | `+` concatenation, `in` substring check         |
+| Category   | Syntax                                    |
+| ---------- | ----------------------------------------- |
+| Arithmetic | `+`, `-`, `*`, `/`, `%`                   |
+| Comparison | `==`, `!=`, `<`, `<=`, `>`, `>=`          |
+| Boolean    | `and`, `or`, `not` (or `&&`, `\|\|`, `!`) |
+| Member     | `a.b.c` dot-path                          |
+| Membership | `value in [11, 22, 33]`                   |
+| Ternary    | `condition ? a : b`                       |
+| String     | `+` concatenation, `in` substring check   |

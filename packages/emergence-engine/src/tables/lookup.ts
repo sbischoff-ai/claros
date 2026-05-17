@@ -11,22 +11,13 @@ export class LookupError extends Error {
   }
 }
 
-export function lookup(
-  table: RandomTable,
-  value?: number,
-  rng?: RNG
-): LookupResult {
-  const roll =
-    value !== undefined ? value : rollDice(table.dice, rng).total;
+export function lookup(table: RandomTable, value?: number, rng?: RNG): LookupResult {
+  const roll = value !== undefined ? value : rollDice(table.dice, rng).total;
 
-  const row = table.rows.find(
-    (r) => roll >= r.range[0] && roll <= r.range[1]
-  );
+  const row = table.rows.find((r) => roll >= r.range[0] && roll <= r.range[1]);
 
   if (row === undefined) {
-    throw new LookupError(
-      `value ${roll} is out of range for table "${table.id}"`
-    );
+    throw new LookupError(`value ${roll} is out of range for table "${table.id}"`);
   }
 
   return { matched: row.result, row };
@@ -40,17 +31,14 @@ export function matrixLookup(
 ): CellResult {
   const matrixRow = table.rows.find((r) => r.key === row);
   if (matrixRow === undefined) {
-    throw new LookupError(
-      `row key "${row}" not found in matrix table "${table.id}"`
-    );
+    throw new LookupError(`row key "${row}" not found in matrix table "${table.id}"`);
   }
 
   // Accept both exact key type and numeric-string equivalents
   let cell = matrixRow.columns[column];
   if (cell === undefined) {
     // Try numeric coercion: column "5" should match stored key 5 and vice versa
-    const numericColumn =
-      typeof column === "string" ? Number(column) : String(column);
+    const numericColumn = typeof column === "string" ? Number(column) : String(column);
     cell = matrixRow.columns[numericColumn as string | number];
   }
 
@@ -76,9 +64,7 @@ export function matrixLookup(
 
   if (classify !== undefined) {
     if (cellFormat === undefined) {
-      throw new LookupError(
-        `classify requested but table "${table.id}" has no cell-format`
-      );
+      throw new LookupError(`classify requested but table "${table.id}" has no cell-format`);
     }
 
     let classified: string | undefined;

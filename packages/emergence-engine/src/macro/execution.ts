@@ -2,9 +2,11 @@ export interface ResolvedParams {
   [key: string]: unknown;
 }
 
-export interface StepResult {
-  [key: string]: unknown;
-}
+// StepResult is intentionally opaque — concrete step results (RollResult,
+// LookupResult, CellResult) are structurally incompatible with a named index
+// signature under strict mode. Callers access step results via the jexl
+// expression evaluator which handles dynamic property access at runtime.
+export type StepResult = unknown;
 
 export interface MacroExecutionContext {
   params: ResolvedParams;

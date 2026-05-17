@@ -47,16 +47,16 @@ claros/
 
 ## Package Status
 
-| Package | Status | Extend freely? |
-|---|---|---|
-| `@claros/story-format` | ✅ Table parser implemented | **No — spec-gated** |
-| `@claros/emergence-engine` | ✅ Iter 01–04 complete | **No — spec-gated** |
-| `@claros/story-state` | ⬜ Stub | Not yet (Iter 09–10) |
-| `@claros/editor-core` | ⬜ Stub | **Yes — open** |
-| `@claros/export` | ⬜ Stub | Not yet |
-| `apps/web` | ⬜ SvelteKit scaffold | **Yes — open** |
-| `apps/desktop` | ⬜ Placeholder | **Yes — open (deferred)** |
-| `apps/cli` | ⬜ Stub | Not yet (Iter 11) |
+| Package                    | Status                      | Extend freely?            |
+| -------------------------- | --------------------------- | ------------------------- |
+| `@claros/story-format`     | ✅ Table parser implemented | **No — spec-gated**       |
+| `@claros/emergence-engine` | ✅ Iter 01–04 complete      | **No — spec-gated**       |
+| `@claros/story-state`      | ⬜ Stub                     | Not yet (Iter 09–10)      |
+| `@claros/editor-core`      | ⬜ Stub                     | **Yes — open**            |
+| `@claros/export`           | ⬜ Stub                     | Not yet                   |
+| `apps/web`                 | ⬜ SvelteKit scaffold       | **Yes — open**            |
+| `apps/desktop`             | ⬜ Placeholder              | **Yes — open (deferred)** |
+| `apps/cli`                 | ⬜ Stub                     | Not yet (Iter 11)         |
 
 Spec-gated packages have detailed test suites and governing specs. Do not modify them without an explicit spec task. See [AGENTS.md](AGENTS.md).
 
@@ -92,22 +92,22 @@ pnpm --filter @claros/web dev
 
 ## Implementation Progress
 
-| Iter | Scope | Status |
-|---|---|---|
-| 00 | Monorepo scaffold | ✅ |
-| 01 | Dice expression engine | ✅ 44 tests |
-| 02 | Table format parser + lookup | ✅ |
-| 03 | Expression language (jexl) | ✅ |
-| 04 | Macro parser + executor | ✅ 114 tests |
-| 05 | Macro composition + state model | ⬜ |
-| 06 | Mythic GME integration milestone | ⬜ |
-| 07 | Story format: project structure + frontmatter | ⬜ |
-| 08 | Emergence blocks in markdown | ⬜ |
-| 09 | story-state: project indexing | ⬜ |
-| 10 | Git integration | ⬜ |
-| 11 | CLI foundation | ⬜ |
-| 12 | Web editor foundation | ⬜ |
-| 13 | Emergence UX in editor | ⬜ |
+| Iter | Scope                                         | Status       |
+| ---- | --------------------------------------------- | ------------ |
+| 00   | Monorepo scaffold                             | ✅           |
+| 01   | Dice expression engine                        | ✅ 44 tests  |
+| 02   | Table format parser + lookup                  | ✅           |
+| 03   | Expression language (jexl)                    | ✅           |
+| 04   | Macro parser + executor                       | ✅ 114 tests |
+| 05   | Macro composition + state model               | ⬜           |
+| 06   | Mythic GME integration milestone              | ⬜           |
+| 07   | Story format: project structure + frontmatter | ⬜           |
+| 08   | Emergence blocks in markdown                  | ⬜           |
+| 09   | story-state: project indexing                 | ⬜           |
+| 10   | Git integration                               | ⬜           |
+| 11   | CLI foundation                                | ⬜           |
+| 12   | Web editor foundation                         | ⬜           |
+| 13   | Emergence UX in editor                        | ⬜           |
 
 ---
 
