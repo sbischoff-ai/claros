@@ -247,6 +247,135 @@ output:
     });
   });
 
+  describe("lookup steps — inline generic weighted-array source (ADR-022 Delta B)", () => {
+    it("selects from a state expression that resolves to a weighted array", async () => {
+      const state = createInMemoryStateAdapter({
+        story: {
+          example: {
+            lists: {
+              targets: [
+                {
+                  name: "North Gate",
+                  weight: 2,
+                  active: true,
+                  kind: "location",
+                },
+                { name: "Rusted Beacon", active: true, kind: "landmark" },
+              ],
+            },
+          },
+        },
+      });
+
+      const macro = parseMacro(`
+id: test.weighted-target
+name: "Pick Target"
+params: {}
+steps:
+  - id: pick
+    lookup:
+      table: state.story.example.lists.targets
+output:
+  target_name: "steps.pick.entry.name"
+  target_index: "steps.pick.index"
+`);
+
+      // fixedRNG(1): rng(1, totalWeight) clamps to max(1, min(totalWeight, 1)) = 1.
+      // totalWeight = 3 (weight 2 + default 1). roll=1 <= cum 2 → first entry.
+      const result = await executeMacro(macro, {}, createRegistry(), state, undefined, fixedRNG(1));
+      expect(result.output.target_name).toBe("North Gate");
+      expect(result.output.target_index).toBe(0);
+    });
+
+    it("respects active: false by excluding inactive entries", async () => {
+      const state = createInMemoryStateAdapter({
+        story: {
+          example: {
+            lists: {
+              targets: [
+                { name: "Dormant Marker", active: false },
+                { name: "Open Passage", active: true },
+              ],
+            },
+          },
+        },
+      });
+
+      const macro = parseMacro(`
+id: test.active-filter
+name: "Active Filter"
+params: {}
+steps:
+  - id: pick
+    lookup:
+      table: state.story.example.lists.targets
+output:
+  target_name: "steps.pick.entry.name"
+`);
+
+      // Only one active entry; any roll selects it.
+      const result = await executeMacro(macro, {}, createRegistry(), state, undefined, fixedRNG(1));
+      expect(result.output.target_name).toBe("Open Passage");
+    });
+
+    it("throws when the expression does not resolve to an array", async () => {
+      const state = createInMemoryStateAdapter({ story: { example: { priority: 5 } } });
+
+      const macro = parseMacro(`
+id: test.bad-source
+name: "Bad Source"
+params: {}
+steps:
+  - id: pick
+    lookup:
+      table: state.story.example.priority
+output: {}
+`);
+
+      await expect(
+        executeMacro(macro, {}, createRegistry(), state, undefined, fixedRNG(1))
+      ).rejects.toThrow();
+    });
+
+    it("falls back to static table when table ID matches a registered table", async () => {
+      // Ensure that adding an expression-like path does not break the static path.
+      const tableYaml = `
+id: test.fallback
+type: random-table
+dice: 1d2
+rows:
+  - range: [1, 1]
+    result: One
+  - range: [2, 2]
+    result: Two
+`;
+      const registry = createRegistry();
+      registry.registerTable(parseTable(tableYaml));
+
+      const macro = parseMacro(`
+id: test.static-fallback
+name: "Static"
+params: {}
+steps:
+  - id: r
+    lookup:
+      table: test.fallback
+output:
+  result: "steps.r.matched"
+`);
+
+      const result = await executeMacro(
+        macro,
+        {},
+        registry,
+        createInMemoryStateAdapter(),
+        undefined,
+        fixedRNG(2)
+      );
+      expect(result.output.result).toBe("Two");
+    });
+  });
+
   describe("params in output expressions", () => {
     it("exposes params to output expressions", async () => {
       const macro = parseMacro(`

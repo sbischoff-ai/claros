@@ -1,5 +1,5 @@
 /** Freeform state data — arbitrary nested key-value structure.
- *  Root keys are typically module namespaces (e.g. "mythic", "ironsworn"). */
+ *  Root keys are typically module namespaces (e.g. "example", "ironsworn"). */
 export type StateData = Record<string, unknown>;
 
 /** A parsed state YAML file. */
