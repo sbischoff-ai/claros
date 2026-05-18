@@ -17,6 +17,7 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "@types/node": "^25.8.0",
     "typescript": "*",
     "vitest": "*"
   },
