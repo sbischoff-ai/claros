@@ -99,10 +99,7 @@ async function findEntityNoteInDirectory(
 
 function replaceEntityState(content: string, state: StateData): string {
   const newline = detectNewline(content);
-  const serializedState = indentYaml(
-    serializeStateFile({ data: state }).trimEnd(),
-    newline
-  );
+  const serializedState = indentYaml(serializeStateFile({ data: state }).trimEnd(), newline);
   const stateSection = `state:${newline}${serializedState}`;
   const frontmatter = splitFrontmatter(content);
 
@@ -117,9 +114,7 @@ function replaceEntityState(content: string, state: StateData): string {
   return `---${newline}${normalizedFrontmatter}---${frontmatter.after}`;
 }
 
-function splitFrontmatter(
-  content: string
-): { frontmatter: string; after: string } | undefined {
+function splitFrontmatter(content: string): { frontmatter: string; after: string } | undefined {
   const delimiterMatch = content.match(/^---(\r?\n)/);
   if (delimiterMatch === null) {
     return undefined;

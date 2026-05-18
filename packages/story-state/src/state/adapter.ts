@@ -1,16 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import {
-  getAtPath,
-  parseStateFile,
-  serializeStateFile,
-  setAtPath,
-} from "@claros/story-format";
-import type {
-  ProjectStateSnapshot,
-  StateAdapter,
-  StateData,
-} from "@claros/story-format";
+import { getAtPath, parseStateFile, serializeStateFile, setAtPath } from "@claros/story-format";
+import type { ProjectStateSnapshot, StateAdapter, StateData } from "@claros/story-format";
 
 export interface FileStateAdapterOptions {
   /** Absolute path to the project root folder. */
