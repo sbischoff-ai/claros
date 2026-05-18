@@ -11,4 +11,4 @@ steps: []
 
 output:
   triggered: "true"
-  focus: "\"(random event - stub)\""
+  focus: '"(random event - stub)"'

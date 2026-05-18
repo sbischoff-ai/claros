@@ -24,7 +24,7 @@ effects:
     when: "params.pcs_in_control and state.scenes[scene_id].mythic.chaos_factor > 1"
   - set: state.scenes[scene_id].mythic.chaos_factor
     value: "state.scenes[scene_id].mythic.chaos_factor + 1"
-    when: "not params.pcs_in_control and state.scenes[scene_id].mythic.chaos_factor < 9"
+    when: "(not params.pcs_in_control) and state.scenes[scene_id].mythic.chaos_factor < 9"
 output: {}
 `);
     const registry = createRegistry();

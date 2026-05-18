@@ -244,18 +244,14 @@ export async function executeMacro(
             : Number(evaluator.evaluate(normalizeStepAccess(body.lookup.roll), ctx));
         steps[step.id] = lookup(registeredTable, rollValue, rng);
       } else {
-        // Expression path: evaluate tableSource against context;
-        // expect a weighted array.
+        // Expression path: evaluate tableSource against context; expect a weighted array.
         const weightedArray = evaluator.evaluate(normalizeStepAccess(tableSource), ctx);
         if (!Array.isArray(weightedArray)) {
           throw new Error(
             `lookup source "${tableSource}" is not a registered table and did not evaluate to an array`
           );
         }
-        steps[step.id] = lookupWeightedArray(
-          weightedArray as WeightedArrayEntry[],
-          rng
-        );
+        steps[step.id] = lookupWeightedArray(weightedArray as WeightedArrayEntry[], rng);
       }
     } else if (hasMatrixLookupStep(body)) {
       const table = registry.getTable(body["matrix-lookup"].table) as MatrixTable | undefined;
