@@ -48,6 +48,10 @@ export interface EffectDefinition {
   when?: string;
 }
 
+export interface MacroOutputDefinition {
+  [key: string]: string | MacroOutputDefinition;
+}
+
 export interface MacroDefinition {
   id: string;
   name: string;
@@ -56,5 +60,5 @@ export interface MacroDefinition {
   params: Record<string, ParamDefinition>;
   steps: MacroStep[];
   effects: EffectDefinition[];
-  output: Record<string, string>;
+  output: MacroOutputDefinition;
 }

@@ -42,5 +42,6 @@ export type {
 export { createInMemoryStateAdapter } from "./state/adapter.js";
 export { createRegistry } from "./registry/types.js";
 export type { ModuleRegistry } from "./registry/types.js";
+export { loadModuleFromDirectory } from "./registry/loader.js";
 export { createHookDispatcher } from "./hooks/types.js";
 export type { HookDispatcher, HookName } from "./hooks/types.js";

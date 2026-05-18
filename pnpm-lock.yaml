@@ -116,7 +116,7 @@ importers:
         specifier: '*'
         version: 2.1.9(@types/node@25.8.0)
 
-  packages/emergence-engine:
+packages/emergence-engine:
     dependencies:
       '@claros/story-format':
         specifier: workspace:*
@@ -128,6 +128,9 @@ importers:
         specifier: ^4.1.1
         version: 4.1.1
     devDependencies:
+      '@claros/story-state':
+        specifier: workspace:*
+        version: link:../story-state
       '@types/jexl':
         specifier: ^2.3.4
         version: 2.3.4

@@ -1,0 +1,14 @@
+id: mythic.random-event-check
+name: "Mythic Random Event Check"
+description: "Stub - full implementation deferred"
+
+params:
+  chaos:
+    type: int
+    source: user
+
+steps: []
+
+output:
+  triggered: "true"
+  focus: "\"(random event - stub)\""

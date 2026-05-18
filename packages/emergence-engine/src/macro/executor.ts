@@ -8,6 +8,7 @@ import { defaultRNG } from "../dice/types.js";
 import { MissingParamError } from "./errors.js";
 import type {
   MacroDefinition,
+  MacroOutputDefinition,
   ParamDefinition,
   RollStep,
   LookupStep,
@@ -160,6 +161,25 @@ async function resolveParam(
   return undefined;
 }
 
+function evaluateOutputDefinition(
+  output: MacroOutputDefinition,
+  evaluator: ReturnType<typeof createEvaluator>,
+  context: Record<string, unknown>
+): Record<string, unknown> {
+  const evaluated: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(output)) {
+    if (typeof value === "string") {
+      evaluated[key] = evaluator.evaluate(normalizeStepAccess(value), context);
+      continue;
+    }
+
+    evaluated[key] = evaluateOutputDefinition(value, evaluator, context);
+  }
+
+  return evaluated;
+}
+
 // ── Main executor ─────────────────────────────────────────────────────────────
 
 export async function executeMacro(
@@ -224,14 +244,18 @@ export async function executeMacro(
             : Number(evaluator.evaluate(normalizeStepAccess(body.lookup.roll), ctx));
         steps[step.id] = lookup(registeredTable, rollValue, rng);
       } else {
-        // Expression path: evaluate tableSource against context; expect a weighted array.
+        // Expression path: evaluate tableSource against context;
+        // expect a weighted array.
         const weightedArray = evaluator.evaluate(normalizeStepAccess(tableSource), ctx);
         if (!Array.isArray(weightedArray)) {
           throw new Error(
             `lookup source "${tableSource}" is not a registered table and did not evaluate to an array`
           );
         }
-        steps[step.id] = lookupWeightedArray(weightedArray as WeightedArrayEntry[], rng);
+        steps[step.id] = lookupWeightedArray(
+          weightedArray as WeightedArrayEntry[],
+          rng
+        );
       }
     } else if (hasMatrixLookupStep(body)) {
       const table = registry.getTable(body["matrix-lookup"].table) as MatrixTable | undefined;
@@ -296,11 +320,8 @@ export async function executeMacro(
   }
 
   // ── Output evaluation ───────────────────────────────────────────────────────
-  const output: Record<string, unknown> = {};
   const finalCtx = makeContext();
-  for (const [key, expr] of Object.entries(macro.output)) {
-    output[key] = evaluator.evaluate(normalizeStepAccess(expr), finalCtx);
-  }
+  const output = evaluateOutputDefinition(macro.output, evaluator, finalCtx);
 
   return { output, steps };
 }

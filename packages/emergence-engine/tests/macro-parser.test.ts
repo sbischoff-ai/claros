@@ -41,6 +41,25 @@ output: {}
     expect(macro.hooks).toEqual(["on_scene_start"]);
   });
 
+  it("parses nested output objects", () => {
+    const yaml = `
+id: test.nested-output
+name: "Nested Output"
+params: {}
+steps:
+  - id: roll
+    roll: 1d6
+output:
+  result: "steps.roll.total"
+  rolls:
+    fate: "steps.roll.total"
+`;
+
+    const macro = parseMacro(yaml);
+    expect(macro.output.result).toBe("steps.roll.total");
+    expect(macro.output.rolls).toEqual({ fate: "steps.roll.total" });
+  });
+
   it("parses a when condition on a step", () => {
     const yaml = `
 id: test.conditional
