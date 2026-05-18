@@ -6,6 +6,7 @@ import type {
   StepBody,
   ParamDefinition,
   EffectDefinition,
+  MacroOutputDefinition,
 } from "./types.js";
 
 function asRecord(value: unknown, path: string): Record<string, unknown> {
@@ -177,19 +178,26 @@ function parseEffects(raw: unknown): EffectDefinition[] {
   });
 }
 
-function parseOutput(raw: unknown): Record<string, string> {
+function parseOutput(raw: unknown): MacroOutputDefinition {
   if (raw === undefined) {
     return {};
   }
 
   const outputObj = asRecord(raw, "output");
-  const output: Record<string, string> = {};
+  const output: MacroOutputDefinition = {};
 
   for (const [key, value] of Object.entries(outputObj)) {
-    if (typeof value !== "string") {
-      throw new MacroParseError(`output.${key} must be a string expression`);
+    if (typeof value === "string") {
+      output[key] = value;
+      continue;
     }
-    output[key] = value;
+
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      output[key] = parseOutput(value);
+      continue;
+    }
+
+    throw new MacroParseError(`output.${key} must be a string expression or nested object`);
   }
 
   return output;

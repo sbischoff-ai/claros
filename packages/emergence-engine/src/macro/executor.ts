@@ -8,6 +8,7 @@ import { defaultRNG } from "../dice/types.js";
 import { MissingParamError } from "./errors.js";
 import type {
   MacroDefinition,
+  MacroOutputDefinition,
   ParamDefinition,
   RollStep,
   LookupStep,
@@ -160,6 +161,25 @@ async function resolveParam(
   return undefined;
 }
 
+function evaluateOutputDefinition(
+  output: MacroOutputDefinition,
+  evaluator: ReturnType<typeof createEvaluator>,
+  context: Record<string, unknown>
+): Record<string, unknown> {
+  const evaluated: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(output)) {
+    if (typeof value === "string") {
+      evaluated[key] = evaluator.evaluate(normalizeStepAccess(value), context);
+      continue;
+    }
+
+    evaluated[key] = evaluateOutputDefinition(value, evaluator, context);
+  }
+
+  return evaluated;
+}
+
 // ── Main executor ─────────────────────────────────────────────────────────────
 
 export async function executeMacro(
@@ -296,11 +316,8 @@ export async function executeMacro(
   }
 
   // ── Output evaluation ───────────────────────────────────────────────────────
-  const output: Record<string, unknown> = {};
   const finalCtx = makeContext();
-  for (const [key, expr] of Object.entries(macro.output)) {
-    output[key] = evaluator.evaluate(normalizeStepAccess(expr), finalCtx);
-  }
+  const output = evaluateOutputDefinition(macro.output, evaluator, finalCtx);
 
   return { output, steps };
 }

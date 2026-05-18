@@ -1,0 +1,9 @@
+id: mythic-gme-2e
+name: "Mythic Game Master Emulator 2e"
+version: "1.0.0"
+macros:
+  - macros/fate-question.yaml
+  - macros/scene-setup.yaml
+  - macros/random-event-check.yaml
+tables:
+  - tables/fate-chart.yaml

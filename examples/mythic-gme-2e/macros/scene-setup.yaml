@@ -1,0 +1,23 @@
+id: mythic.scene-setup
+name: "Mythic Scene Setup"
+description: "Update Chaos Factor at the start of a new scene"
+hooks: [on_scene_start]
+
+params:
+  pcs_in_control:
+    type: bool
+    source: user
+    prompt: "Were the PCs in control of the previous scene?"
+    default: true
+
+steps: []
+
+effects:
+  - set: state.scenes[scene_id].mythic.chaos_factor
+    value: "state.scenes[scene_id].mythic.chaos_factor - 1"
+    when: "params.pcs_in_control and state.scenes[scene_id].mythic.chaos_factor > 1"
+  - set: state.scenes[scene_id].mythic.chaos_factor
+    value: "state.scenes[scene_id].mythic.chaos_factor + 1"
+    when: "(not params.pcs_in_control) and state.scenes[scene_id].mythic.chaos_factor < 9"
+
+output: {}

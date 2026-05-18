@@ -128,12 +128,18 @@ importers:
         specifier: ^4.1.1
         version: 4.1.1
     devDependencies:
+      '@claros/story-state':
+        specifier: workspace:*
+        version: link:../story-state
       '@types/jexl':
         specifier: ^2.3.4
         version: 2.3.4
       '@types/js-yaml':
         specifier: ^4.0.9
         version: 4.0.9
+      '@types/node':
+        specifier: '*'
+        version: 25.8.0
       typescript:
         specifier: '*'
         version: 5.9.3

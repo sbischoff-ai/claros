@@ -400,5 +400,31 @@ output:
       );
       expect(result.output.sum).toBe(7);
     });
+
+    it("evaluates nested output objects", async () => {
+      const macro = parseMacro(`
+id: test.nested-output
+name: "Nested Output"
+params: {}
+steps:
+  - id: roll
+    roll: 1d6
+output:
+  total: "steps.roll.total"
+  rolls:
+    fate: "steps.roll.total"
+`);
+      const result = await executeMacro(
+        macro,
+        {},
+        createRegistry(),
+        createInMemoryStateAdapter(),
+        undefined,
+        fixedRNG(6)
+      );
+
+      expect(result.output.total).toBe(6);
+      expect(result.output.rolls).toEqual({ fate: 6 });
+    });
   });
 });

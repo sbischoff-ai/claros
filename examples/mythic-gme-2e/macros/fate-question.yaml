@@ -1,0 +1,56 @@
+id: mythic.fate-question
+name: "Mythic Fate Question"
+description: "Ask a Yes/No question using the Mythic GME 2e Fate Chart"
+
+params:
+  intent:
+    type: string
+    required: true
+    source: user
+    prompt: "What is your Yes/No question?"
+
+  odds:
+    type: enum
+    values:
+      - impossible
+      - no-way
+      - very-unlikely
+      - unlikely
+      - fifty-fifty
+      - likely
+      - very-likely
+      - nearly-certain
+      - certain
+    required: true
+    source: user
+    prompt: "What are the odds of Yes?"
+
+  chaos:
+    type: int
+    range: [1, 9]
+    source: "state.scenes[scene_id].mythic.chaos_factor"
+    fallback: user
+    prompt: "Current Chaos Factor (1-9)"
+
+steps:
+  - id: fate-roll
+    roll: 1d100
+
+  - id: outcome
+    matrix-lookup:
+      table: mythic.fate-chart
+      row: "params.odds"
+      column: "params.chaos"
+      classify: "steps.fate-roll.total"
+
+  - id: random-event
+    when: "steps.fate-roll.is_double and steps.fate-roll.double_digit <= params.chaos"
+    invoke: mythic.random-event-check
+    with:
+      chaos: "params.chaos"
+
+output:
+  result: "steps.outcome.classified"
+  random_event_triggered: "steps.random-event != null"
+  rolls:
+    fate: "steps.fate-roll.total"
