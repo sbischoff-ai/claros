@@ -13,7 +13,12 @@ export interface SceneAdvanceOptions {
  *  If the source file does not exist, the new file is written with empty state ({}).
  *  The source file is never modified. Parent directories are created if needed. */
 export async function advanceScene(options: SceneAdvanceOptions): Promise<void> {
-  const sourcePath = path.join(options.projectRoot, "state", "scenes", `${options.fromSceneId}.yaml`);
+  const sourcePath = path.join(
+    options.projectRoot,
+    "state",
+    "scenes",
+    `${options.fromSceneId}.yaml`
+  );
   const targetPath = path.join(options.projectRoot, "state", "scenes", `${options.toSceneId}.yaml`);
 
   let sourceData: StateData = {};

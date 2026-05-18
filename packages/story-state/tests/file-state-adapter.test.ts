@@ -94,7 +94,11 @@ describe("scene scope", () => {
   it("writes to the named scene file", () => {
     const root = makeProject();
 
-    new FileStateAdapter({ projectRoot: root }).setScene("abandoned-temple", "mythic.chaos_factor", 4);
+    new FileStateAdapter({ projectRoot: root }).setScene(
+      "abandoned-temple",
+      "mythic.chaos_factor",
+      4
+    );
 
     const written = parseStateFile(
       fs.readFileSync(path.join(root, "state", "scenes", "abandoned-temple.yaml"), "utf-8")
