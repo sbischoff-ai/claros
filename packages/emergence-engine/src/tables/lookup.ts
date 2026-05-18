@@ -1,7 +1,7 @@
 import type { RandomTable, MatrixTable } from "@claros/story-format";
 import { rollDice } from "../dice/evaluator.js";
 import type { RNG } from "../dice/types.js";
-import type { LookupResult, CellResult } from "./types.js";
+import type { LookupResult, CellResult, WeightedArrayResult, WeightedArrayEntry } from "./types.js";
 import { createEvaluator } from "../expression/evaluator.js";
 
 export class LookupError extends Error {
@@ -86,4 +86,52 @@ export function matrixLookup(
   }
 
   return cellResult;
+}
+
+/**
+ * Select a random entry from a generic weighted array.
+ *
+ * - Only entries where `active !== false` are considered.
+ * - Missing `weight` defaults to `1`.
+ * - Selection is proportional to effective weights using the provided RNG
+ *   (or `Math.random` when omitted).
+ * - Throws `LookupError` when the array is empty or all entries are inactive.
+ *
+ * This function does NOT use range-based logic; that remains exclusive to
+ * static `random-table` files.
+ */
+export function lookupWeightedArray<T extends WeightedArrayEntry>(
+  entries: T[],
+  rng?: RNG
+): WeightedArrayResult<T> {
+  // Build index of active entries with their original positions
+  type Candidate = { entry: T; index: number; weight: number };
+  const candidates: Candidate[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (e.active === false) continue;
+    candidates.push({ entry: e, index: i, weight: e.weight !== undefined ? e.weight : 1 });
+  }
+
+  if (candidates.length === 0) {
+    throw new LookupError("lookupWeightedArray: no active entries in weighted array");
+  }
+
+  const totalWeight = candidates.reduce((sum, c) => sum + c.weight, 0);
+
+  // Roll an integer in [1, totalWeight] using the provided RNG, or fall back to Math.random.
+  const roll =
+    rng !== undefined ? rng(1, totalWeight) : Math.floor(Math.random() * totalWeight) + 1;
+
+  let cumulative = 0;
+  for (const candidate of candidates) {
+    cumulative += candidate.weight;
+    if (roll <= cumulative) {
+      return { entry: candidate.entry, index: candidate.index };
+    }
+  }
+
+  // Should be unreachable; return the last candidate as a safety fallback.
+  const last = candidates[candidates.length - 1];
+  return { entry: last.entry, index: last.index };
 }

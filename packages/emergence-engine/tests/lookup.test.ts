@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { RNG } from "../src/dice/types";
-import { lookup, matrixLookup, LookupError } from "../src/tables/lookup";
+import { lookup, matrixLookup, lookupWeightedArray, LookupError } from "../src/tables/lookup";
 import type { RandomTable, MatrixTable } from "@claros/story-format";
 
 function seqRNG(values: number[]): RNG {
@@ -138,5 +138,109 @@ describe("matrixLookup", () => {
   it("works on the unlikely row", () => {
     const result = matrixLookup(table, "unlikely", 5);
     expect(result.cell).toEqual({ ey: 1, sy: 35, en: 88 });
+  });
+});
+
+describe("lookupWeightedArray — inline generic weighted arrays (ADR-022 Delta B)", () => {
+  /**
+   * Helper RNG that always returns a fixed integer, ignoring min/max.
+   * Used to drive deterministic weighted selection:
+   * rng(1, totalWeight) → fixedValue, then roll ≤ cumulative selects the entry.
+   */
+  function fixedIntRNG(value: number): RNG {
+    return () => value;
+  }
+
+  it("selects the only active entry when there is one", () => {
+    const entries = [{ name: "North Gate" }];
+    // totalWeight = 1; rng(1,1) = 1; cumulative = 1; 1 ≤ 1 → first entry.
+    const result = lookupWeightedArray(entries, fixedIntRNG(1));
+    expect(result.entry.name).toBe("North Gate");
+    expect(result.index).toBe(0);
+  });
+
+  it("treats missing weight as 1 (default weight)", () => {
+    // Two entries, no weight — each effectively weight 1; totalWeight = 2.
+    // roll = 1; cumulative after first entry = 1; 1 ≤ 1 → first entry.
+    const entries = [{ name: "Alpha" }, { name: "Beta" }];
+    const result = lookupWeightedArray(entries, fixedIntRNG(1));
+    expect(result.entry.name).toBe("Alpha");
+    expect(result.index).toBe(0);
+  });
+
+  it("selects second entry when roll falls in second weight bucket (default weight)", () => {
+    // roll = 2; cumulative after first = 1; 2 > 1; cumulative after second = 2; 2 ≤ 2 → second.
+    const entries = [{ name: "Alpha" }, { name: "Beta" }];
+    const result = lookupWeightedArray(entries, fixedIntRNG(2));
+    expect(result.entry.name).toBe("Beta");
+    expect(result.index).toBe(1);
+  });
+
+  it("respects explicit weights proportionally", () => {
+    // weights: [1, 3] → totalWeight = 4.
+    const entries = [
+      { name: "Rare", weight: 1 },
+      { name: "Common", weight: 3 },
+    ];
+    // roll = 1; cum after weight-1 entry = 1; 1 ≤ 1 → first ("Rare").
+    expect(lookupWeightedArray(entries, fixedIntRNG(1)).entry.name).toBe("Rare");
+    // roll = 2; cum after weight-1 = 1; 2 > 1; cum after weight-3 = 4; 2 ≤ 4 → second.
+    expect(lookupWeightedArray(entries, fixedIntRNG(2)).entry.name).toBe("Common");
+    // roll = 4; cum after weight-1 = 1; 4 > 1; cum after weight-3 = 4; 4 ≤ 4 → second.
+    expect(lookupWeightedArray(entries, fixedIntRNG(4)).entry.name).toBe("Common");
+  });
+
+  it("excludes entries with active: false", () => {
+    const entries = [
+      { name: "Inactive", active: false },
+      { name: "Active", active: true },
+    ];
+    // Only one active entry (weight 1, totalWeight = 1); roll = 1 ≤ 1 → active entry.
+    const result = lookupWeightedArray(entries, fixedIntRNG(1));
+    expect(result.entry.name).toBe("Active");
+    expect(result.index).toBe(1); // original index preserved
+  });
+
+  it("excludes entries with active: false from weight calculation", () => {
+    // Inactive entry has high weight but must not affect selection.
+    const entries = [
+      { name: "Inactive", weight: 99, active: false },
+      { name: "A", weight: 1 },
+      { name: "B", weight: 1 },
+    ];
+    // totalWeight = 2 (only active entries). roll = 1 ≤ cum 1 → first active (A, index 1).
+    const result = lookupWeightedArray(entries, fixedIntRNG(1));
+    expect(result.entry.name).toBe("A");
+    expect(result.index).toBe(1);
+  });
+
+  it("treats absent active as true (included by default)", () => {
+    const entries = [{ name: "NoActiveField" }]; // no active field — should be included
+    const result = lookupWeightedArray(entries, fixedIntRNG(1));
+    expect(result.entry.name).toBe("NoActiveField");
+  });
+
+  it("throws LookupError for empty array", () => {
+    expect(() => lookupWeightedArray([])).toThrowError(LookupError);
+  });
+
+  it("throws LookupError when all entries are inactive", () => {
+    const entries = [
+      { name: "Inactive A", active: false },
+      { name: "Inactive B", active: false },
+    ];
+    expect(() => lookupWeightedArray(entries, fixedIntRNG(1))).toThrowError(LookupError);
+  });
+
+  it("returns correct original index when entries before selected are inactive", () => {
+    const entries = [
+      { name: "Skip", active: false },
+      { name: "Also Skip", active: false },
+      { name: "Selected" },
+    ];
+    // Only entry: totalWeight = 1; roll = 1 ≤ 1 → Selected (index 2).
+    const result = lookupWeightedArray(entries, fixedIntRNG(1));
+    expect(result.entry.name).toBe("Selected");
+    expect(result.index).toBe(2);
   });
 });

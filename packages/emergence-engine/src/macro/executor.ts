@@ -1,6 +1,6 @@
 import { parseDice } from "../dice/parser.js";
 import { rollDice } from "../dice/evaluator.js";
-import { lookup, matrixLookup } from "../tables/lookup.js";
+import { lookup, matrixLookup, lookupWeightedArray } from "../tables/lookup.js";
 import { createEvaluator } from "../expression/evaluator.js";
 import type { RandomTable, MatrixTable, StateAdapter } from "@claros/story-format";
 import type { RNG } from "../dice/types.js";
@@ -18,6 +18,7 @@ import type {
 import type { ResolvedParams, StepResult, MacroResult } from "./execution.js";
 import type { MacroInvocationContext } from "./context.js";
 import type { ModuleRegistry } from "../registry/types.js";
+import type { WeightedArrayEntry } from "../tables/types.js";
 
 // ── Type guards ──────────────────────────────────────────────────────────────
 
@@ -213,13 +214,25 @@ export async function executeMacro(
       const parsed = parseDice(body.roll);
       steps[step.id] = rollDice(parsed, rng);
     } else if (hasLookupStep(body)) {
-      const table = registry.getTable(body.lookup.table) as RandomTable | undefined;
-      if (table === undefined) throw new Error(`table not found: ${body.lookup.table}`);
-      const rollValue =
-        body.lookup.roll === undefined
-          ? undefined
-          : Number(evaluator.evaluate(normalizeStepAccess(body.lookup.roll), ctx));
-      steps[step.id] = lookup(table, rollValue, rng);
+      const tableSource = body.lookup.table;
+      const registeredTable = registry.getTable(tableSource) as RandomTable | undefined;
+      if (registeredTable !== undefined) {
+        // Static registered table path: look up by range-based dice roll.
+        const rollValue =
+          body.lookup.roll === undefined
+            ? undefined
+            : Number(evaluator.evaluate(normalizeStepAccess(body.lookup.roll), ctx));
+        steps[step.id] = lookup(registeredTable, rollValue, rng);
+      } else {
+        // Expression path: evaluate tableSource against context; expect a weighted array.
+        const weightedArray = evaluator.evaluate(normalizeStepAccess(tableSource), ctx);
+        if (!Array.isArray(weightedArray)) {
+          throw new Error(
+            `lookup source "${tableSource}" is not a registered table and did not evaluate to an array`
+          );
+        }
+        steps[step.id] = lookupWeightedArray(weightedArray as WeightedArrayEntry[], rng);
+      }
     } else if (hasMatrixLookupStep(body)) {
       const table = registry.getTable(body["matrix-lookup"].table) as MatrixTable | undefined;
       if (table === undefined) throw new Error(`table not found: ${body["matrix-lookup"].table}`);
