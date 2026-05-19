@@ -1,119 +1,134 @@
 # Claros
 
-Markdown-first fiction writing and solo roleplay environment with inline oracle systems, procedural storytelling tools, and collaborative prose editing.
+Claros is a markdown-first fiction writing and solo roleplay environment built around canonical files, procedural emergence tools, and an editor-facing workspace API.
 
-**Status:** Active development — emergence engine complete through Iter 04 (macro executor). Editor not yet started.
+## Current Product Shape
 
----
+Claros is designed as a **local-first semantic Markdown writing app**:
 
-## What Claros Is
+- markdown and YAML files are canonical
+- chapters, scenes, notes, and state live in a legible project tree
+- procedural systems are defined by YAML macros and tables, not hardcoded game logic
+- the editor consumes package APIs instead of owning the data model
+- emergence results appear in manuscripts as writer-facing `[!claros]` blocks linked to a YAML run ledger
 
-Claros is a local-first writing environment for authors who use procedural tools — dice, oracles, random tables, RPG mechanics — as creative aids during writing or solo roleplay.
+## Current Package Boundaries
 
-**Design principles:**
+### `@claros/story-format`
 
-- Prose-first: the manuscript is always the canonical artifact
-- Keyboard-first: designed for fast keyboard-driven workflows
-- Offline-first: works entirely from local files
-- Modular: oracle systems and RPG rulesets are text files, not engine code
-- No AI writing features
+Canonical project/file format support:
 
-The markdown files are canonical. All derived state (indexes, search, databases) is disposable and rebuildable from scratch.
+- project scanning and validation
+- markdown/frontmatter parsing
+- wikilink extraction
+- `[!claros]` block extraction
+- state file parsing/serialization
+- random table parsing
 
----
+### `@claros/emergence-engine`
 
-## Repository Structure
+Procedural resolution engine:
 
+- dice parsing and rolling
+- expression evaluation
+- random-table and matrix lookup
+- macro parsing and execution
+- module registry loading
+- hook registration
+
+### `@claros/story-state`
+
+Editor/CLI-facing semantic workspace layer:
+
+- `openProject(root)` and `ClarosProject`
+- document read/write
+- story/chapter/scene state access
+- note frontmatter path access
+- in-memory project indexing
+- wikilink resolution, backlinks, and search
+- `[!claros]` block listing
+- document-context macro execution
+- macro run ledger access
+- checkpoint API shape
+
+## Repo-Local Docs
+
+The repo now includes the core reference set needed for MVP editor development.
+
+Start here:
+
+- [docs/README.md](docs/README.md)
+- [docs/EDITOR_INTERFACE_CONTRACT.md](docs/EDITOR_INTERFACE_CONTRACT.md)
+- [docs/WORKSPACE_API.md](docs/WORKSPACE_API.md)
+- [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
+- [docs/MANUSCRIPT_FORMAT.md](docs/MANUSCRIPT_FORMAT.md)
+- [docs/STATE_FORMAT.md](docs/STATE_FORMAT.md)
+- [docs/RANDOM_TABLES.md](docs/RANDOM_TABLES.md)
+- [docs/MACRO_DSL.md](docs/MACRO_DSL.md)
+- [docs/DECISIONS.md](docs/DECISIONS.md)
+
+## Example Project Shape
+
+```text
+project/
+  claros.yaml
+  manuscript/
+    01-prologue/
+      chapter.yaml
+      01-opening.md
+      02-arrival.md
+  notes/
+    characters/kareth.md
+  state/
+    story.yaml
+    scenes/01-prologue/01-opening.yaml
+    runs/emergence.yaml
+  modules/
+    mythic-gme-2e/
 ```
-claros/
-  packages/
-    story-format/        Canonical file format, project folder conventions, table YAML parser
-    emergence-engine/    Dice evaluator, random table resolver, macro parser + executor
-    story-state/         Wikilink index, backlinks, search, git integration  [stub]
-    editor-core/         CodeMirror prose Markdown editor package            [early]
-    export/              Pandoc export pipeline                               [stub]
 
-  apps/
-    web/                 SvelteKit web app                                    [scaffold]
-    desktop/             Tauri desktop shell                                  [deferred]
-    cli/                 Command-line tools                                   [stub]
+## Current Status
 
-  docs/
-    EDITOR.md            Editor development guide
-    ARCHITECTURE.md      Full system architecture
-```
+Implemented on current `main`:
 
----
+- dice engine
+- random-table and matrix parsing/lookup
+- expression evaluation
+- macro parsing/execution/composition
+- canonical project scanning and markdown parsing
+- `[!claros]` emergence block parsing and run marker handling
+- YAML run ledger for macro provenance
+- in-memory project indexing
+- file workspace API for editor/CLI integration
 
-## Package Status
+Explicitly deferred:
 
-| Package                    | Status                      | Extend freely?            |
-| -------------------------- | --------------------------- | ------------------------- |
-| `@claros/story-format`     | ✅ Table parser implemented | **No — spec-gated**       |
-| `@claros/emergence-engine` | ✅ Iter 01–04 complete      | **No — spec-gated**       |
-| `@claros/story-state`      | ⬜ Stub                     | Not yet (Iter 09–10)      |
-| `@claros/editor-core`      | ⬜ Stub                     | **Yes — open**            |
-| `@claros/export`           | ⬜ Stub                     | Not yet                   |
-| `apps/web`                 | ⬜ SvelteKit scaffold       | **Yes — open**            |
-| `apps/desktop`             | ⬜ Placeholder              | **Yes — open (deferred)** |
-| `apps/cli`                 | ⬜ Stub                     | Not yet (Iter 11)         |
-
-Spec-gated packages have detailed test suites and governing specs. Do not modify them without an explicit spec task. See [AGENTS.md](AGENTS.md).
-
----
+- full editor implementation details
+- Git-backed checkpoint/timeline internals
+- persistent index backends
+- collaboration/CRDT sync
+- deterministic replay/module lockfiles
 
 ## Quick Start
 
-Requires: Node.js 20+, pnpm 9+
+Requires Node.js 20+ and pnpm 9+.
 
 ```bash
-pnpm install          # install all workspace dependencies
-pnpm turbo run build  # build all packages
-pnpm turbo run test   # run all test suites
+pnpm install
+pnpm build
+pnpm test
 ```
 
-Run the web dev server:
+Run the web app scaffold:
 
 ```bash
 pnpm --filter @claros/web dev
 ```
 
----
+## Development Notes
 
-## Conventions
+- TypeScript strict mode is expected throughout.
+- Canonical files matter more than caches.
+- If you are integrating the editor, prefer `@claros/story-state` over direct low-level package internals.
 
-- **TypeScript strict mode** throughout — no `any` without a justifying comment
-- **Vitest** for all tests; test files live in `tests/` adjacent to `src/` in each package
-- **Injectable RNG** for all dice/randomness — never call `Math.random()` directly in testable code
-- **No logic in stubs** — packages stay as `export {}` until a spec task is delegated
-- **Markdown files are canonical** — SQLite/IndexedDB are derived state only
-
----
-
-## Implementation Progress
-
-| Iter | Scope                                         | Status       |
-| ---- | --------------------------------------------- | ------------ |
-| 00   | Monorepo scaffold                             | ✅           |
-| 01   | Dice expression engine                        | ✅ 44 tests  |
-| 02   | Table format parser + lookup                  | ✅           |
-| 03   | Expression language (jexl)                    | ✅           |
-| 04   | Macro parser + executor                       | ✅ 114 tests |
-| 05   | Macro composition + state model               | ⬜           |
-| 06   | Mythic GME integration milestone              | ⬜           |
-| 07   | Story format: project structure + frontmatter | ⬜           |
-| 08   | Emergence blocks in markdown                  | ⬜           |
-| 09   | story-state: project indexing                 | ⬜           |
-| 10   | Git integration                               | ⬜           |
-| 11   | CLI foundation                                | ⬜           |
-| 12   | Web editor foundation                         | ⬜           |
-| 13   | Emergence UX in editor                        | ⬜           |
-
----
-
-## Architecture
-
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full system architecture.
-See [`docs/EDITOR.md`](docs/EDITOR.md) for the editor development guide.
-See [`docs/EDITOR_USER_MANUAL.md`](docs/EDITOR_USER_MANUAL.md) for the current editor user manual.
-See [`AGENTS.md`](AGENTS.md) for AI agent and spec-sensitive contributor guidance.
+See [AGENTS.md](AGENTS.md) for contributor/agent guidance.

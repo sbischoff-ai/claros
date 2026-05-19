@@ -1,38 +1,34 @@
 # Claros MVP Editor Interface Contract
 
-**Status:** Accepted planning contract  
-**Created:** 2026-05-18  
-**Audience:** Silas / local editor implementation tasks; future agent implementation specs  
-**Governing ADRs:** ADR-023, ADR-024, ADR-025, ADR-026, ADR-027
+Status: implemented boundary for current MVP workspace integration.
 
----
+This contract documents the stable editor-facing API provided by
+`@claros/story-state` today.
 
-## Purpose
+## Boundary
 
-This document defines the stable package/API boundary the editor can develop against. The web editor is not the agent-owned MVP implementation target, but it should be able to consume these interfaces as they land.
+Editor surfaces should consume:
 
-The editor should not depend on raw internals of the emergence engine, filesystem adapters, or index implementation.
+- `openProject(root)`
+- Returned `ClarosProject` instance methods
+- Shared types re-exported from `@claros/story-state`
 
----
+Editor surfaces should not depend on:
 
-## Product Model
+- raw filesystem internals
+- in-memory index internals
+- direct imports from `@claros/emergence-engine`
 
-- Claros is local-first.
-- Files are canonical.
-- The editor presents chapters/scenes/notes, not raw paths by default.
-- Autosave writes files; checkpoints create Git commits.
-- Emergence results are writer-facing `[!claros]` Markdown blockquotes linked to a YAML run ledger.
-
----
-
-## Shared Base Types
-
-These types are defined in `@claros/story-format` and re-exported from `@claros/story-state`.
+## Core Types
 
 ```ts
-export interface SourceRange {
-  start: { line: number; column: number; offset: number };
-  end: { line: number; column: number; offset: number };
+export type DocumentRef = SceneRef | NoteRef | { path: string };
+
+export interface MarkdownDocument {
+  path: string;
+  raw: string;
+  frontmatter?: Record<string, unknown>;
+  body: string;
 }
 
 export type DocumentInsertionPoint =
@@ -40,26 +36,9 @@ export type DocumentInsertionPoint =
   | { kind: "end-of-document" }
   | { kind: "after-block"; blockOffset: number }
   | { kind: "replace-range"; start: number; end: number };
-
-export interface MacroRunFilter {
-  document?: string;
-  macroId?: string;
-  sceneId?: string;
-  chapterId?: string;
-  since?: string;
-  limit?: number;
-}
-
-/**
- * Re-exported from @claros/emergence-engine via @claros/story-state.
- * Editor consumers import from @claros/story-state only.
- */
-export type UserPromptFn = (prompt: MacroParamPrompt) => Promise<unknown>;
 ```
 
----
-
-## Core API Surface
+## `openProject` and `ClarosProject`
 
 ```ts
 export async function openProject(
@@ -85,11 +64,6 @@ export interface ClarosProject {
   getChapterState(chapterId: string, path: string): Promise<unknown>;
   setChapterState(chapterId: string, path: string, value: unknown): Promise<void>;
 
-  /**
-   * Read/write arbitrary module namespace paths in note frontmatter.
-   * Path examples: "osr.hp.current", "mythic.status", "title"
-   * All are async (Promise). Writes preserve body and unknown frontmatter keys.
-   */
   getNoteFrontmatterPath(note: NoteRef | string, path: string): Promise<unknown>;
   setNoteFrontmatterPath(note: NoteRef | string, path: string, value: unknown): Promise<void>;
 
@@ -99,7 +73,7 @@ export interface ClarosProject {
 
   listClarosBlocks(ref?: DocumentRef): ClarosBlockRef[];
   executeMacroInDocument(
-    options: ExecuteMacroInDocumentOptions
+    options: ProjectExecuteMacroInDocumentOptions
   ): Promise<ExecuteMacroInDocumentResult>;
   listMacroRuns(filter?: MacroRunFilter): Promise<MacroRunLedgerEntry[]>;
   getMacroRun(id: string): Promise<MacroRunLedgerEntry | undefined>;
@@ -111,123 +85,62 @@ export interface ClarosProject {
 }
 ```
 
-Exact names may be refined in implementation, but capabilities should remain stable.
+## Document Guarantees
 
----
+- `readDocument` returns canonical markdown file content.
+- `writeDocument` performs atomic file writes.
+- Workspace writes refresh in-memory index data.
+- Frontmatter-only note mutations preserve markdown body bytes exactly.
 
-## Document Model
+## Emergence and Run Ledger Contract
 
-```ts
-export type DocumentRef = SceneRef | NoteRef | { path: string };
+`executeMacroInDocument`:
 
-export interface MarkdownDocument {
-  path: string;
-  raw: string;
-  frontmatter?: Record<string, unknown>;
-  body: string;
-}
-```
+- executes macro in document context
+- appends ledger entry to `state/runs/emergence.yaml`
+- stores markdown display block in run ledger entry
+- optionally inserts `[!claros]` block in document when `insertAt` is provided
 
-Editor assumptions:
-
-- `readDocument` returns canonical file content.
-- `writeDocument` autosaves to canonical files using atomic write semantics.
-- If the editor edits prose/body, it can write raw document content.
-- If APIs mutate frontmatter, they preserve the body exactly.
-
----
-
-## Emergence APIs
+Result surface:
 
 ```ts
-export interface ExecuteMacroInDocumentOptions {
-  document: DocumentRef;
-  macroId: string;
-  params?: Record<string, unknown>;
-  insertAt?: DocumentInsertionPoint;
-  userPrompt?: UserPromptFn;
-}
-
 export interface ExecuteMacroInDocumentResult {
   run: MacroRunLedgerEntry;
   document?: MarkdownDocument;
   block?: ClarosBlockRef;
-}
-
-export interface ClarosBlockRef {
-  kind: "claros-block";
-  fromPath: string;
-  title?: string;
-  runId?: string;
-  raw: string;
-  range: SourceRange;
+  macroResult: MacroResult;
 }
 ```
 
-Editor behavior:
-
-- Use command palette/slash action to invoke a macro.
-- Prompt for required params.
-- Call `executeMacroInDocument`.
-- Insert or display the returned `[!claros]` block.
-- Use `listMacroRuns` for macro/emergence log views.
-
-The editor must treat the manuscript block as user-editable. The ledger remains provenance only.
-
----
-
-## Checkpoint APIs
+Run filtering surface:
 
 ```ts
-export interface CheckpointStatus {
-  dirty: boolean;
-  changedPaths: string[];
-  currentTimeline: string;
-  head?: string;
-}
-
-export interface CheckpointOptions {
-  trigger?:
-    | "manual"
-    | "scene-transition"
-    | "chapter-transition"
-    | "session-end"
-    | "pre-restore"
-    | "pre-structural-change";
-}
-
-export interface RestoreCheckpointOptions {
-  mode?: "new-timeline"; // default for MVP
-  name?: string;
+export interface MacroRunFilter {
+  document?: string;
+  macroId?: string;
+  sceneId?: string;
+  chapterId?: string;
+  since?: string;
+  limit?: number;
 }
 ```
 
-Editor behavior:
+## Checkpoint Contract Status
 
-- Show uncheckpointed work, not unsaved work.
-- Do not create checkpoints for every autosave.
-- Offer manual checkpoint actions.
-- Trigger checkpoints at scene/chapter/session transitions where appropriate.
-- Restore creates a new timeline/branch by default.
+Shape is available now for editor integration, but internals are deferred.
 
----
+Current behavior:
 
-## Required Editor-Safe Guarantees
+- `getCheckpointStatus()` returns placeholder status (`dirty: false`, empty
+  changed paths, `currentTimeline: "working"`)
+- `listCheckpoints()` returns `[]`
+- `checkpoint()` throws `CheckpointNotImplementedError`
+- `restoreCheckpoint()` throws `CheckpointNotImplementedError`
 
-- The editor can build its sidebar from `listChapters`, `listScenes`, and `listNotes`.
-- The editor can read/write documents without knowing filesystem details.
-- The editor can resolve wikilinks/backlinks without owning an index implementation.
-- The editor can execute emergence macros without manually constructing `MacroInvocationContext`.
-- The editor can render `[!claros]` blocks and macro log views from API data.
-- The editor can checkpoint/restore without exposing raw Git by default.
-- The editor does not need to import `@claros/emergence-engine` directly; all needed types are re-exported from `@claros/story-state`.
+Treat checkpoint internals as deferred until Iter 14 implementation lands.
 
----
+## Out of Scope for This Contract
 
-## Out of Scope for MVP Contract
-
-- collaborative Yjs sync
-- deterministic replay across module upgrades
-- complete module dependency lockfiles
-- raw Git branch UI
-- rich WYSIWYG document model ownership by editor-core
+- collaborative sync (Yjs)
+- full Git UX/branch management in editor
+- deterministic replay/lockfile guarantees for module upgrades
