@@ -104,6 +104,10 @@ describe("executeMacroInDocument", () => {
       macro: "test.document-context",
       document: "manuscript/01-prologue/01-opening.md",
     });
+    expect(parsed.runs?.[0]?.display).toMatchObject({
+      format: "markdown",
+      block: expect.stringContaining(`[claros-run: ${result.run.id}]`),
+    });
   });
 
   it("run IDs are zero-padded monotonic sequence numbers", async () => {
@@ -156,16 +160,37 @@ output:
     expect(block).toContain("[claros-run: 00042]");
   });
 
-  it("inserted block remains plain Markdown blockquote", async () => {
+  it("does not mutate the document unless insertAt is provided", async () => {
+    const root = makeProject();
+    const documentPath = path.join(root, "manuscript", "01-prologue", "01-opening.md");
+    const before = fs.readFileSync(documentPath, "utf-8");
+
+    const result = await executeMacroInDocument({
+      projectRoot: root,
+      registry: createTestRegistry(),
+      macroId: "test.document-context",
+      documentPath: "manuscript/01-prologue/01-opening.md",
+      params: { question: "No insertion by default?" },
+    });
+
+    expect(fs.readFileSync(documentPath, "utf-8")).toBe(before);
+    expect(result.document).toBeUndefined();
+    expect(result.block).toBeUndefined();
+  });
+
+  it("inserted block remains plain Markdown blockquote when insertAt is explicit", async () => {
     const root = makeProject();
 
-    await executeMacroInDocument({
+    const result = await executeMacroInDocument({
       projectRoot: root,
       registry: createTestRegistry(),
       macroId: "test.document-context",
       documentPath: "manuscript/01-prologue/01-opening.md",
       params: { question: "Does it insert?" },
+      insertAt: { kind: "end-of-document" },
     });
+    expect(result.document).toBeDefined();
+    expect(result.block).toBeDefined();
 
     const content = fs.readFileSync(
       path.join(root, "manuscript", "01-prologue", "01-opening.md"),
@@ -190,6 +215,7 @@ output:
       macroId: "test.document-context",
       documentPath: "manuscript/01-prologue/01-opening.md",
       params: { question: "Can I edit this?" },
+      insertAt: { kind: "end-of-document" },
     });
 
     const documentPath = path.join(root, "manuscript", "01-prologue", "01-opening.md");
@@ -231,7 +257,6 @@ output:
 
     expect(result.run.effects?.[0]).toMatchObject({
       target: 'state.scenes["01-prologue/01-opening"].mythic.chaos_factor',
-      old: undefined,
       new: 6,
     });
   });
@@ -288,6 +313,42 @@ output:
     });
 
     expect(entry.id).toBe("00010");
+  });
+
+  it("preserves top-level YAML sequence ledgers when appending (ADR-027 compatibility)", () => {
+    const root = makeProject();
+    const adapter = new FileStateAdapter({ projectRoot: root });
+    const ledgerPath = path.join(root, "state", "runs", "emergence.yaml");
+
+    fs.mkdirSync(path.join(root, "state", "runs"), { recursive: true });
+    fs.writeFileSync(
+      ledgerPath,
+      [
+        '- id: "00009"',
+        '  created_at: "2026-01-01T00:00:00.000Z"',
+        '  macro: "test.old"',
+        '  document: "notes/old.md"',
+        "  params: {}",
+        "  rolls: []",
+        "  output: {}",
+      ].join("\n")
+    );
+
+    const entry = appendMacroRunLedgerEntry(adapter, {
+      macro: "test.new",
+      document: "notes/new.md",
+      params: {},
+      rolls: [],
+      output: {},
+    });
+
+    expect(entry.id).toBe("00010");
+    const written = fs.readFileSync(ledgerPath, "utf-8");
+    expect(written.trimStart().startsWith("- id:")).toBe(true);
+    expect(written).not.toContain("runs:");
+    expect(written).toContain("00010");
+    expect(written).toContain("macro: test.new");
+    expect(written).toContain("document: notes/new.md");
   });
 
   it("exporter helper can strip [!claros] and [claros-run: ...] markers", async () => {

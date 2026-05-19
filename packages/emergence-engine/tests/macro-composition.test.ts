@@ -193,6 +193,44 @@ output: {}
       executeMacro(outer, {}, createRegistry(), createInMemoryStateAdapter())
     ).rejects.toThrow();
   });
+
+  it("merges invoked macro effects into parent macro effects", async () => {
+    const inner = parseMacro(`
+id: inner.effect
+name: "Inner Effect"
+params: {}
+steps: []
+effects:
+  - set: state.story.flags.inner_ran
+    value: "true"
+output:
+  ok: "true"
+`);
+    const outer = parseMacro(`
+id: outer.collect-effects
+name: "Collect Effects"
+params: {}
+steps:
+  - id: sub
+    invoke: inner.effect
+output:
+  ok: "steps.sub.ok"
+`);
+    const registry = createRegistry();
+    registry.registerMacro(inner);
+
+    const state = createInMemoryStateAdapter();
+    const result = await executeMacro(outer, {}, registry, state);
+
+    expect(state.getStory("flags.inner_ran")).toBe(true);
+    expect(result.effects).toEqual([
+      {
+        target: "state.story.flags.inner_ran",
+        old: undefined,
+        new: true,
+      },
+    ]);
+  });
 });
 
 describe("state param source resolution", () => {

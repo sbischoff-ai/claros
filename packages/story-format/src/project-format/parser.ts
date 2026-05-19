@@ -20,7 +20,7 @@ import type {
 const CHAPTER_DIR_RE = /^(\d+)-([a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const SCENE_FILE_RE = /^(\d+)-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/;
 const WIKILINK_RE = /\[\[([^\]|\n]+?)(?:\|([^\]\n]+?))?\]\]/g;
-const CLAROS_RUN_RE = /\[claros-run:\s*([A-Za-z0-9_-]+)\]/i;
+const CLAROS_RUN_MARKER_ONLY_RE = /^\s*\[claros-run:\s*([A-Za-z0-9_-]+)\]\s*$/i;
 const CLAROS_CALLOUT_RE = /^\s*\[!claros\](.*)$/i;
 
 export class ProjectFormatError extends Error {
@@ -169,7 +169,15 @@ export function extractClarosBlocks(path: string, raw: string): ClarosBlockRef[]
 }
 
 export function extractClarosRunId(raw: string): string | undefined {
-  return CLAROS_RUN_RE.exec(raw)?.[1];
+  const normalizedLines = raw.split(/\r?\n/).map((line) => parseQuotedLine(line) ?? line);
+  for (let index = normalizedLines.length - 1; index >= 0; index -= 1) {
+    const line = normalizedLines[index];
+    if (line.trim().length === 0) {
+      continue;
+    }
+    return CLAROS_RUN_MARKER_ONLY_RE.exec(line)?.[1];
+  }
+  return undefined;
 }
 
 export function stripClarosMarkers(raw: string): string {
@@ -181,7 +189,7 @@ export function stripClarosMarkers(raw: string): string {
       return [line];
     }
 
-    const markerOnlyMatch = /^\s*\[claros-run:\s*[A-Za-z0-9_-]+\]\s*$/i.exec(quoted);
+    const markerOnlyMatch = CLAROS_RUN_MARKER_ONLY_RE.exec(quoted);
     if (markerOnlyMatch !== null) {
       return [];
     }

@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { dump, load } from "js-yaml";
 import { parseStateFile, serializeStateFile } from "@claros/story-format";
 import { FileStateAdapter } from "../state/adapter.js";
 import type {
@@ -11,6 +12,8 @@ import type {
 } from "./types.js";
 
 const LEDGER_RELATIVE_PATH = path.join("state", "runs", "emergence.yaml");
+
+type LedgerFormat = "wrapped-runs" | "top-level-sequence";
 
 interface RawLedgerFile {
   runs?: unknown;
@@ -60,7 +63,8 @@ export function appendMacroRunLedgerEntry(
   entry: MacroRunLedgerEntryInput,
   createdAt = new Date().toISOString()
 ): MacroRunLedgerEntry {
-  const existing = readMacroRunLedger(adapter);
+  const ledger = readLedgerWithFormat(adapter);
+  const existing = ledger.entries;
   const nextEntry: MacroRunLedgerEntry = {
     id: formatRunId(maxRunNumber(existing) + 1),
     createdAt,
@@ -75,8 +79,30 @@ export function appendMacroRunLedgerEntry(
     effects: entry.effects,
   };
 
-  writeLedger(adapter, [...existing, nextEntry]);
+  writeLedger(adapter, [...existing, nextEntry], ledger.format);
   return nextEntry;
+}
+
+export function setMacroRunDisplay(
+  adapter: FileStateAdapter,
+  id: string,
+  display: MacroRunDisplay
+): MacroRunLedgerEntry | undefined {
+  const ledger = readLedgerWithFormat(adapter);
+  const index = ledger.entries.findIndex((entry) => entry.id === id);
+  if (index < 0) {
+    return undefined;
+  }
+
+  const updated: MacroRunLedgerEntry = {
+    ...ledger.entries[index],
+    display,
+  };
+  const next = [...ledger.entries];
+  next[index] = updated;
+
+  writeLedger(adapter, next, ledger.format);
+  return updated;
 }
 
 export function readMacroRunLedger(
@@ -120,42 +146,71 @@ function ledgerPath(adapter: FileStateAdapter): string {
 }
 
 function readLedger(adapter: FileStateAdapter): MacroRunLedgerEntry[] {
+  return readLedgerWithFormat(adapter).entries;
+}
+
+function readLedgerWithFormat(adapter: FileStateAdapter): {
+  entries: MacroRunLedgerEntry[];
+  format: LedgerFormat;
+} {
   const raw = adapter.readTextFile(ledgerPath(adapter));
   if (raw === undefined) {
-    return [];
+    return { entries: [], format: "wrapped-runs" };
+  }
+
+  const loaded = load(raw);
+  if (Array.isArray(loaded)) {
+    return {
+      entries: loaded.flatMap((entry) => {
+        const normalized = normalizeEntry(entry);
+        return normalized === undefined ? [] : [normalized];
+      }),
+      format: "top-level-sequence",
+    };
   }
 
   const parsed = parseStateFile(raw).data as RawLedgerFile;
   if (!Array.isArray(parsed.runs)) {
-    return [];
+    return { entries: [], format: "wrapped-runs" };
   }
 
-  return parsed.runs.flatMap((entry) => {
-    const normalized = normalizeEntry(entry);
-    return normalized === undefined ? [] : [normalized];
-  });
+  return {
+    entries: parsed.runs.flatMap((entry) => {
+      const normalized = normalizeEntry(entry);
+      return normalized === undefined ? [] : [normalized];
+    }),
+    format: "wrapped-runs",
+  };
 }
 
-function writeLedger(adapter: FileStateAdapter, entries: MacroRunLedgerEntry[]): void {
+function writeLedger(
+  adapter: FileStateAdapter,
+  entries: MacroRunLedgerEntry[],
+  format: LedgerFormat
+): void {
+  const serializedEntries = entries.map((entry) => ({
+    id: entry.id,
+    created_at: entry.createdAt,
+    macro: entry.macro,
+    ...(entry.document === undefined ? {} : { document: entry.document }),
+    ...(entry.sceneId === undefined ? {} : { scene_id: entry.sceneId }),
+    ...(entry.chapterId === undefined ? {} : { chapter_id: entry.chapterId }),
+    params: entry.params,
+    rolls: entry.rolls,
+    output: entry.output,
+    ...(entry.display === undefined ? {} : { display: entry.display }),
+    ...(entry.effects === undefined ? {} : { effects: entry.effects }),
+  }));
+
   adapter.writeFileAtomic(
     ledgerPath(adapter),
-    serializeStateFile({
-      data: {
-        runs: entries.map((entry) => ({
-          id: entry.id,
-          created_at: entry.createdAt,
-          macro: entry.macro,
-          ...(entry.document === undefined ? {} : { document: entry.document }),
-          ...(entry.sceneId === undefined ? {} : { scene_id: entry.sceneId }),
-          ...(entry.chapterId === undefined ? {} : { chapter_id: entry.chapterId }),
-          params: entry.params,
-          rolls: entry.rolls,
-          output: entry.output,
-          ...(entry.display === undefined ? {} : { display: entry.display }),
-          ...(entry.effects === undefined ? {} : { effects: entry.effects }),
-        })),
-      },
-    })
+    format === "top-level-sequence"
+      ? dump(serializedEntries, { lineWidth: -1 })
+      : serializeStateFile({
+          data: {
+            runs: serializedEntries,
+          },
+        })
   );
 }
 

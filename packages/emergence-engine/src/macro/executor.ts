@@ -330,6 +330,7 @@ export async function executeMacro(
         rng,
         userPrompt
       );
+      effects.push(...subResult.effects);
       // Store the sub-macro's output as this step's result.
       steps[step.id] = subResult.output;
     } else {

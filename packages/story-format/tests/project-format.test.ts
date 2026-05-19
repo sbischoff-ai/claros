@@ -146,12 +146,35 @@ describe("extractClarosBlocks", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0].title).toBe("Freeform");
   });
+
+  it("does not extract a run ID from inline/body marker text", () => {
+    const raw = [
+      "> [!claros] Oracle Check",
+      "> result: text includes [claros-run: inline_123] in body",
+    ].join("\n");
+
+    const blocks = extractClarosBlocks("notes/session.md", raw);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].runId).toBeUndefined();
+  });
 });
 
 describe("Claros marker helpers", () => {
   it("extracts [claros-run: <id>] from plain markdown blocks", () => {
     const raw = ["> [!claros] Oracle Check", "> outcome: yes", "> [claros-run: 00001]"].join("\n");
     expect(extractClarosRunId(raw)).toBe("00001");
+  });
+
+  it("does not extract run markers from inline marker text", () => {
+    const raw = ["> [!claros] Oracle Check", "> outcome: [claros-run: 00001] appears inline"].join(
+      "\n"
+    );
+    expect(extractClarosRunId(raw)).toBeUndefined();
+  });
+
+  it("does not extract run markers unless marker-only line is trailing", () => {
+    const raw = ["> [!claros] Oracle Check", "> [claros-run: 00001]", "> fallout: none"].join("\n");
+    expect(extractClarosRunId(raw)).toBeUndefined();
   });
 
   it("strips [!claros] and [claros-run: ...] markers for export", () => {

@@ -184,7 +184,13 @@ importers:
       '@claros/story-format':
         specifier: workspace:*
         version: link:../story-format
+      js-yaml:
+        specifier: ^4.1.1
+        version: 4.1.1
     devDependencies:
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
       '@types/node':
         specifier: ^25.8.0
         version: 25.8.0

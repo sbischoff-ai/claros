@@ -12,7 +12,7 @@ import {
   parseMarkdownDocument,
   type ClarosBlockRef,
 } from "@claros/story-format";
-import { appendMacroRun } from "./ledger.js";
+import { appendMacroRun, setMacroRunDisplay } from "./ledger.js";
 import { FileStateAdapter } from "../state/adapter.js";
 import type {
   DocumentInsertionPoint,
@@ -44,7 +44,6 @@ export async function executeMacroInDocument(
     adaptUserPrompt(options.userPrompt)
   );
 
-  const placeholderBlock = renderMacroDisplayBlock(macro, macroResult, "00000");
   const run = await appendMacroRun(
     options.projectRoot,
     {
@@ -55,27 +54,37 @@ export async function executeMacroInDocument(
       params: macroResult.params,
       rolls: extractMacroRolls(macro, macroResult),
       output: macroResult.output,
-      display: { format: "markdown", block: placeholderBlock },
       effects: macroResult.effects,
     },
     (options.now ?? new Date()).toISOString()
   );
 
   const finalBlock = renderMacroDisplayBlock(macro, macroResult, run.id);
-  const inserted = writeDisplayBlock(
-    options.projectRoot,
-    normalizedDocumentPath,
-    finalBlock,
-    options.insertAt ?? { kind: "end-of-document" }
-  );
+  const persisted = setMacroRunDisplay(adapter, run.id, {
+    format: "markdown",
+    block: finalBlock,
+  });
+  const inserted =
+    options.insertAt === undefined
+      ? undefined
+      : writeDisplayBlock(
+          options.projectRoot,
+          normalizedDocumentPath,
+          finalBlock,
+          options.insertAt
+        );
 
   return {
-    run: {
+    run: persisted ?? {
       ...run,
       display: { format: "markdown", block: finalBlock },
     },
-    document: parseMarkdownDocument(normalizedDocumentPath, inserted.content),
-    block: inserted.block,
+    ...(inserted === undefined
+      ? {}
+      : {
+          document: parseMarkdownDocument(normalizedDocumentPath, inserted.content),
+          block: inserted.block,
+        }),
     macroResult,
   };
 }
