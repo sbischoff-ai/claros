@@ -7,6 +7,7 @@ import {
   type NoteFrontmatter,
   type NoteRef,
   type ProjectFormatSnapshot,
+  type ProjectManifest,
   type SceneFrontmatter,
   type SceneRef,
   type WikilinkRef,
@@ -57,6 +58,7 @@ export interface ProjectIndex {
   updateDocument(path: string, raw: string): Promise<void>;
   removeDocument(path: string): Promise<void>;
   updateRuns(runs: MacroRunLedgerEntry[]): Promise<void>;
+  getManifestSummary(): ProjectManifest;
   listChapters(): ChapterRef[];
   listScenes(): SceneRef[];
   listNotes(): NoteRef[];
@@ -93,6 +95,7 @@ class InMemoryProjectIndexImpl implements ProjectIndex {
   private tagToNotes = new Map<string, NoteRef[]>();
   private backlinksByPath = new Map<string, WikilinkRef[]>();
   private searchRecords: SearchRecord[] = [];
+  private manifestSummary: ProjectManifest = {};
 
   async build(snapshot: ProjectFormatSnapshot, runs?: MacroRunLedgerEntry[]): Promise<void> {
     this.chaptersById = new Map(snapshot.chapters.map((chapter) => [chapter.id, chapter]));
@@ -101,6 +104,7 @@ class InMemoryProjectIndexImpl implements ProjectIndex {
     this.wikilinksByPath = groupByPath(snapshot.wikilinks);
     this.clarosBlocksByPath = groupByPath(snapshot.clarosBlocks);
     this.runs = runs === undefined ? [] : [...runs];
+    this.manifestSummary = cloneManifestSummary(snapshot.manifest);
     this.rebuildDerivedIndexes();
   }
 
@@ -147,6 +151,11 @@ class InMemoryProjectIndexImpl implements ProjectIndex {
 
   async updateRuns(runs: MacroRunLedgerEntry[]): Promise<void> {
     this.runs = [...runs];
+    this.rebuildDerivedIndexes();
+  }
+
+  getManifestSummary(): ProjectManifest {
+    return cloneManifestSummary(this.manifestSummary);
   }
 
   listChapters(): ChapterRef[] {
@@ -599,6 +608,10 @@ function documentSearchTokens(
     ...clarosBlocks.flatMap((block) => [block.title, block.runId]),
     ...matchingRuns.flatMap((entry) => [entry.id, entry.macro, entry.chapterId, entry.sceneId]),
   ].filter((value): value is string => typeof value === "string" && value.length > 0);
+}
+
+function cloneManifestSummary(manifest: ProjectManifest): ProjectManifest {
+  return structuredClone(manifest);
 }
 
 function normalizeStringList(value: unknown): string[] {

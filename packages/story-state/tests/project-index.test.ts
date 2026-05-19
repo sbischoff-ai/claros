@@ -143,7 +143,11 @@ function fixture(): Fixture {
   return {
     snapshot: {
       root: "/tmp/project",
-      manifest: { title: "Test" },
+      manifest: {
+        title: "Test",
+        subtitle: "A test chronicle",
+        modules: ["mythic-gme-2e"],
+      },
       chapters: [chapterTwo, chapterOne],
       scenes,
       notes,
@@ -205,6 +209,7 @@ describe("InMemoryProjectIndex", () => {
 
     index.build(snapshot);
 
+    expect(index.getManifestSummary()).toEqual(snapshot.manifest);
     expect(index.listChapters().map((chapter) => chapter.id)).toEqual([
       "01-prologue",
       "02-journey",
@@ -350,6 +355,9 @@ describe("InMemoryProjectIndex", () => {
 
     index.updateRuns(runs);
     expect(index.listMacroRuns({ limit: 1 }).map((run) => run.id)).toEqual(["00002"]);
+    expect(index.search("oracle.check").map((result) => result.path)).toContain(
+      "manuscript/01-prologue/01-opening.md"
+    );
   });
 
   it("matches semantic results between build(snapshot) and rebuild from canonical files", () => {
@@ -378,6 +386,17 @@ describe("InMemoryProjectIndex", () => {
       direct.getBacklinks(ref("notes/places/ancient-ruin.md"))
     );
     expect(rebuilt.resolveWikilink("old temple")).toEqual(direct.resolveWikilink("old temple"));
+  });
+
+  it("returns a defensive manifest summary copy", () => {
+    const { snapshot } = fixture();
+    const index = createInMemoryProjectIndex();
+    index.build(snapshot);
+
+    const manifest = index.getManifestSummary();
+    manifest.title = "Mutated";
+
+    expect(index.getManifestSummary()).toEqual(snapshot.manifest);
   });
 
   it("search returns documents without affecting identity or link correctness", () => {
