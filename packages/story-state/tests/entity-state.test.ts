@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { EntityNotFoundError, getEntityState, setEntityState } from "../src/entity/state.js";
+import {
+  NoteNotFoundError,
+  getNoteFrontmatter,
+  getNoteFrontmatterPath,
+  setNoteFrontmatter,
+  setNoteFrontmatterPath,
+} from "../src/entity/state.js";
 
 const dirs: string[] = [];
 
@@ -19,137 +25,117 @@ afterEach(() => {
   }
 });
 
-describe("getEntityState", () => {
-  it("reads the state block from a kebab-case slug note", async () => {
+describe("getNoteFrontmatter", () => {
+  it("reads frontmatter by note slug", async () => {
     const root = makeProject();
 
     fs.writeFileSync(
       path.join(root, "notes", "characters", "kareth.md"),
-      "---\ntype: character\nstate:\n  hp: 12\n  max_hp: 15\n---\n\n# Kareth\n"
+      "---\ntitle: Kareth\nosr:\n  hp:\n    current: 12\n    max: 15\n---\n\n# Kareth\n"
     );
 
-    const state = await getEntityState("kareth", root);
+    const frontmatter = await getNoteFrontmatter("kareth", root);
 
-    expect(state).toEqual({ hp: 12, max_hp: 15 });
-  });
-
-  it("reads a hyphenated entity slug", async () => {
-    const root = makeProject();
-
-    fs.writeFileSync(
-      path.join(root, "notes", "characters", "the-priest.md"),
-      "---\ntype: character\nstate:\n  hp: 8\n---\n\n# The Priest\n"
-    );
-
-    expect(await getEntityState("the-priest", root)).toEqual({ hp: 8 });
-  });
-
-  it("finds the note recursively under notes", async () => {
-    const root = makeProject();
-
-    fs.mkdirSync(path.join(root, "notes", "characters", "villains"), { recursive: true });
-    fs.writeFileSync(
-      path.join(root, "notes", "characters", "villains", "the-priest.md"),
-      "---\nstate:\n  hp: 8\n---\n\n# The Priest\n"
-    );
-
-    expect(await getEntityState("the-priest", root)).toEqual({ hp: 8 });
-  });
-
-  it("matches note filenames case-insensitively", async () => {
-    const root = makeProject();
-
-    fs.writeFileSync(
-      path.join(root, "notes", "characters", "Kareth.md"),
-      "---\nstate:\n  hp: 12\n---\n\n# Kareth\n"
-    );
-
-    expect(await getEntityState("kareth", root)).toEqual({ hp: 12 });
-  });
-
-  it("returns undefined when the note has no state key", async () => {
-    const root = makeProject();
-
-    fs.writeFileSync(
-      path.join(root, "notes", "characters", "kareth.md"),
-      "---\ntype: character\n---\n\n# Kareth\n"
-    );
-
-    expect(await getEntityState("kareth", root)).toBeUndefined();
+    expect(frontmatter?.title).toBe("Kareth");
+    expect(frontmatter?.osr).toEqual({ hp: { current: 12, max: 15 } });
   });
 
   it("returns undefined when the note does not exist", async () => {
-    expect(await getEntityState("nonexistent", makeProject())).toBeUndefined();
+    expect(await getNoteFrontmatter("nonexistent", makeProject())).toBeUndefined();
   });
 });
 
-describe("setEntityState", () => {
-  it("writes state to frontmatter, preserving other frontmatter and prose", async () => {
+describe("setNoteFrontmatter", () => {
+  it("writes frontmatter and preserves markdown body exactly", async () => {
+    const root = makeProject();
+    const notePath = path.join(root, "notes", "characters", "kareth.md");
+    const body = "\n# Kareth\n\nBody text.\n- bullet\n";
+
+    fs.writeFileSync(notePath, `---\ntitle: Kareth\nosr:\n  hp:\n    current: 12\n---${body}`);
+
+    await setNoteFrontmatter("kareth", root, {
+      title: "Kareth",
+      tags: ["mercenary"],
+      osr: { hp: { current: 9, max: 15 } },
+      mythic: { status: "interrupted" },
+    });
+
+    const content = fs.readFileSync(notePath, "utf-8");
+    expect(content.endsWith(body)).toBe(true);
+    expect(content).toContain("mythic:");
+    expect(content).toContain("status: interrupted");
+  });
+
+  it("throws NoteNotFoundError when the note does not exist", async () => {
+    await expect(
+      setNoteFrontmatter("nonexistent", makeProject(), { title: "Missing" })
+    ).rejects.toThrow(NoteNotFoundError);
+  });
+});
+
+describe("getNoteFrontmatterPath", () => {
+  it("reads arbitrary dot paths without implicit state prefix", async () => {
+    const root = makeProject();
+
+    fs.writeFileSync(
+      path.join(root, "notes", "characters", "kareth.md"),
+      "---\ntitle: Kareth\nosr:\n  hp:\n    current: 12\n    max: 15\nmythic:\n  status: interrupted\n---\n\n# Kareth\n"
+    );
+
+    expect(await getNoteFrontmatterPath("kareth", root, "title")).toBe("Kareth");
+    expect(await getNoteFrontmatterPath("kareth", root, "osr.hp.current")).toBe(12);
+    expect(await getNoteFrontmatterPath("kareth", root, "mythic.status")).toBe("interrupted");
+    expect(await getNoteFrontmatterPath("kareth", root, "state.hp")).toBeUndefined();
+  });
+
+  it("treats a literal top-level state key as ordinary frontmatter", async () => {
+    const root = makeProject();
+
+    fs.writeFileSync(
+      path.join(root, "notes", "characters", "kareth.md"),
+      "---\nstate:\n  hp: 12\nosr:\n  hp:\n    current: 10\n---\n\n# Kareth\n"
+    );
+
+    expect(await getNoteFrontmatterPath("kareth", root, "state.hp")).toBe(12);
+    expect(await getNoteFrontmatterPath("kareth", root, "osr.hp.current")).toBe(10);
+  });
+});
+
+describe("setNoteFrontmatterPath", () => {
+  it("sets arbitrary dot paths and preserves unknown keys", async () => {
     const root = makeProject();
     const notePath = path.join(root, "notes", "characters", "kareth.md");
 
     fs.writeFileSync(
       notePath,
-      "---\ntype: character\naliases: [the northern mercenary]\n---\n\n# Kareth\n\nProse.\n"
+      "---\ntitle: Kareth\ncustom_flag: true\nosr:\n  hp:\n    current: 12\n---\n\n# Kareth\n"
     );
 
-    await setEntityState("kareth", root, { hp: 10, max_hp: 15 });
+    await setNoteFrontmatterPath("kareth", root, "osr.hp.max", 15);
+    await setNoteFrontmatterPath("kareth", root, "mythic.status", "interrupted");
+
+    expect(await getNoteFrontmatterPath("kareth", root, "osr.hp.current")).toBe(12);
+    expect(await getNoteFrontmatterPath("kareth", root, "osr.hp.max")).toBe(15);
+    expect(await getNoteFrontmatterPath("kareth", root, "mythic.status")).toBe("interrupted");
+    expect(await getNoteFrontmatterPath("kareth", root, "custom_flag")).toBe(true);
 
     const content = fs.readFileSync(notePath, "utf-8");
-
-    expect(content).toContain("type: character");
-    expect(content).toContain("aliases: [the northern mercenary]");
-    expect(content).toContain("state:\n  hp: 10\n  max_hp: 15\n");
-    expect(content).toContain("# Kareth\n\nProse.\n");
+    expect(content).toContain("custom_flag: true");
   });
 
-  it("replaces an existing state block completely", async () => {
+  it("supports setting top-level keys like title", async () => {
     const root = makeProject();
 
-    fs.writeFileSync(
-      path.join(root, "notes", "characters", "kareth.md"),
-      "---\nstate:\n  hp: 12\n  old_key: removed\ntype: character\n---\n\n# Kareth\n"
-    );
+    fs.writeFileSync(path.join(root, "notes", "characters", "kareth.md"), "# Kareth\n");
 
-    await setEntityState("kareth", root, { hp: 8, max_hp: 15 });
+    await setNoteFrontmatterPath("kareth", root, "title", "Kareth");
 
-    const state = await getEntityState("kareth", root);
-
-    expect(state).toEqual({ hp: 8, max_hp: 15 });
-    expect(state?.old_key).toBeUndefined();
+    expect(await getNoteFrontmatterPath("kareth", root, "title")).toBe("Kareth");
   });
 
-  it("round-trips setEntityState through getEntityState", async () => {
-    const root = makeProject();
-
-    fs.writeFileSync(
-      path.join(root, "notes", "characters", "kareth.md"),
-      "---\ntype: character\n---\n\n# Kareth\n"
-    );
-
-    const newState = { hp: 5, max_hp: 15, armor: 2 };
-    await setEntityState("kareth", root, newState);
-
-    expect(await getEntityState("kareth", root)).toEqual(newState);
-  });
-
-  it("preserves the body exactly when updating existing state", async () => {
-    const root = makeProject();
-    const notePath = path.join(root, "notes", "characters", "kareth.md");
-    const body = "\n# Kareth\n\nBody text.\n- bullet\n";
-
-    fs.writeFileSync(notePath, `---\nstate:\n  hp: 12\n---${body}`);
-
-    await setEntityState("kareth", root, { hp: 9 });
-
-    const content = fs.readFileSync(notePath, "utf-8");
-
-    expect(content.endsWith(body)).toBe(true);
-  });
-
-  it("throws EntityNotFoundError when the note does not exist", async () => {
-    await expect(setEntityState("nonexistent", makeProject(), { hp: 10 })).rejects.toThrow(
-      EntityNotFoundError
-    );
+  it("throws NoteNotFoundError when the note does not exist", async () => {
+    await expect(
+      setNoteFrontmatterPath("nonexistent", makeProject(), "osr.hp.current", 10)
+    ).rejects.toThrow(NoteNotFoundError);
   });
 });
