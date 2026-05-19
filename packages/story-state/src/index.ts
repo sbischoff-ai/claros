@@ -17,6 +17,16 @@ export {
   readMacroRunLedger,
 } from "./runs/ledger.js";
 export { executeMacroInDocument, renderMacroDisplayBlock } from "./runs/document.js";
+export { createInMemoryProjectIndex } from "./project/index.js";
+export type {
+  ProjectIndex,
+  InMemoryProjectIndex,
+  ProjectIndexDocumentRef,
+  ProjectIndexSearchOptions,
+  ProjectIndexSearchResult,
+  WikilinkResolveReason,
+  WikilinkResolution,
+} from "./project/index.js";
 export type {
   SourceRange,
   DocumentInsertionPoint,
