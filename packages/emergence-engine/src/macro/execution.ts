@@ -18,7 +18,15 @@ export interface MacroExecutionContext {
   chapter_id: string | undefined;
 }
 
+export interface AppliedMacroEffect {
+  target: string;
+  old?: unknown;
+  new?: unknown;
+}
+
 export interface MacroResult {
+  params: ResolvedParams;
   output: Record<string, unknown>;
   steps: Record<string, StepResult>;
+  effects: AppliedMacroEffect[];
 }

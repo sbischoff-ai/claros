@@ -17,11 +17,14 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.8.0",
     "typescript": "*",
     "vitest": "*"
   },
   "dependencies": {
-    "@claros/story-format": "workspace:*"
+    "@claros/emergence-engine": "workspace:*",
+    "@claros/story-format": "workspace:*",
+    "js-yaml": "^4.1.1"
   }
 }

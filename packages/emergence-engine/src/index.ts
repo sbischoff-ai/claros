@@ -35,6 +35,7 @@ export type {
 export type {
   ResolvedParams,
   StepResult,
+  AppliedMacroEffect,
   MacroExecutionContext,
   MacroResult,
 } from "./macro/execution.js";

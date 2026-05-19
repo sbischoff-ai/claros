@@ -37,4 +37,6 @@ export {
   parseMarkdownDocument,
   extractWikilinks,
   extractClarosBlocks,
+  extractClarosRunId,
+  stripClarosMarkers,
 } from "./project-format/parser.js";

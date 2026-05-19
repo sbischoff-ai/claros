@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as fs from "node:fs/promises";
+import * as fsSync from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,12 +13,84 @@ import {
   loadModuleFromDirectory,
 } from "../src/index.js";
 import type { UserPromptFn } from "../src/index.js";
-import { FileStateAdapter } from "@claros/story-state";
 import type { ModuleRegistry } from "../src/registry/types.js";
-import type { StateAdapter } from "@claros/story-format";
+import { getAtPath, parseStateFile, serializeStateFile, setAtPath } from "@claros/story-format";
+import type { StateAdapter, StateData } from "@claros/story-format";
 
 const MODULE_DIR = fileURLToPath(new URL("../../../examples/mythic-gme-2e/", import.meta.url));
 const TEST_SCENE_ID = "abandoned-temple";
+
+class TestFileStateAdapter implements StateAdapter {
+  constructor(private readonly projectRoot: string) {}
+
+  getStory(statePath: string): unknown {
+    return getAtPath(this.readStateFile(this.storyPath()), statePath);
+  }
+
+  setStory(statePath: string, value: unknown): void {
+    this.writeAtPath(this.storyPath(), statePath, value);
+  }
+
+  getScene(sceneId: string, statePath: string): unknown {
+    return getAtPath(this.readStateFile(this.scenePath(sceneId)), statePath);
+  }
+
+  setScene(sceneId: string, statePath: string, value: unknown): void {
+    this.writeAtPath(this.scenePath(sceneId), statePath, value);
+  }
+
+  getChapter(chapterId: string, statePath: string): unknown {
+    return getAtPath(this.readStateFile(this.chapterPath(chapterId)), statePath);
+  }
+
+  setChapter(chapterId: string, statePath: string, value: unknown): void {
+    this.writeAtPath(this.chapterPath(chapterId), statePath, value);
+  }
+
+  getAll(sceneId?: string, chapterId?: string) {
+    const scenes: Record<string, StateData> = {};
+    const chapters: Record<string, StateData> = {};
+
+    if (sceneId !== undefined) {
+      scenes[sceneId] = this.readStateFile(this.scenePath(sceneId));
+    }
+    if (chapterId !== undefined) {
+      chapters[chapterId] = this.readStateFile(this.chapterPath(chapterId));
+    }
+
+    return {
+      story: this.readStateFile(this.storyPath()),
+      scenes,
+      chapters,
+    };
+  }
+
+  private storyPath(): string {
+    return path.join(this.projectRoot, "state", "story.yaml");
+  }
+
+  private scenePath(sceneId: string): string {
+    return path.join(this.projectRoot, "state", "scenes", `${sceneId}.yaml`);
+  }
+
+  private chapterPath(chapterId: string): string {
+    return path.join(this.projectRoot, "state", "chapters", `${chapterId}.yaml`);
+  }
+
+  private readStateFile(filePath: string): StateData {
+    if (!fsSync.existsSync(filePath)) {
+      return {};
+    }
+    return parseStateFile(fsSync.readFileSync(filePath, "utf-8")).data;
+  }
+
+  private writeAtPath(filePath: string, statePath: string, value: unknown): void {
+    const current = this.readStateFile(filePath);
+    const next = setAtPath(current, statePath, value) as StateData;
+    fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
+    fsSync.writeFileSync(filePath, serializeStateFile({ data: next }));
+  }
+}
 
 describe("Mythic GME 2e integration", () => {
   let registry: ModuleRegistry;
@@ -243,7 +316,7 @@ describe("Mythic GME 2e integration", () => {
     });
   });
 
-  it("persists updated chaos factor through FileStateAdapter", async () => {
+  it("persists updated chaos factor through file-backed state adapter", async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "claros-mythic-test-"));
 
     const scenesDir = path.join(tmpDir, "state", "scenes");
@@ -253,7 +326,7 @@ describe("Mythic GME 2e integration", () => {
       "mythic:\n  chaos_factor: 5\n"
     );
 
-    const fileState = new FileStateAdapter({ projectRoot: tmpDir });
+    const fileState = new TestFileStateAdapter(tmpDir);
 
     await createHookDispatcher().dispatch(
       "on_scene_start",
@@ -264,7 +337,7 @@ describe("Mythic GME 2e integration", () => {
       async () => true
     );
 
-    const reloaded = new FileStateAdapter({ projectRoot: tmpDir });
+    const reloaded = new TestFileStateAdapter(tmpDir);
     expect(reloaded.getScene(TEST_SCENE_ID, "mythic.chaos_factor")).toBe(4);
   });
 
