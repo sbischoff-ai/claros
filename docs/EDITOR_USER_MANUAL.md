@@ -4,7 +4,7 @@ This is the living user manual for the Claros editor. It should describe the edi
 
 ## Current Editor Scope
 
-The current editor is an early web-based writing surface for a single Markdown draft.
+The current editor is an early web-based writing surface for a sample Claros project.
 
 It is meant to prove the core writing experience:
 
@@ -12,9 +12,10 @@ It is meant to prove the core writing experience:
 - Minimal visible UI
 - Optional Vim-style editing
 - A command palette shell
-- Browser-local draft persistence
+- Browser-local project persistence
+- Project header and collapsible sidebar navigation
 
-It does not yet provide full Claros project management, file browsing, wikilink resolution, emergence/oracle execution, export, or desktop integration.
+It does not yet provide real filesystem project opening, wikilink resolution, emergence/oracle execution, export, or desktop integration.
 
 ## Writing Surface
 
@@ -41,20 +42,22 @@ Headings use conventional prose presentation:
 
 Emphasis and strong emphasis are rendered inline as italic and bold text while preserving the underlying Markdown.
 
-## Draft Persistence
+## Project Persistence
 
-The editor currently works with one browser-local draft.
+The editor currently works with one browser-local sample project.
 
-Changes are saved automatically to the browser's `localStorage`. Reloading the page restores the same draft in the same browser profile.
+Changes are saved automatically to the browser's `localStorage`. Reloading the page restores the same sample project documents in the same browser profile.
 
-This is temporary. Later Claros versions will replace this with real project and file persistence.
+This is temporary. Later Claros versions will replace this with real project and file persistence through the workspace API.
 
 ## Top Bar
 
 The top bar contains:
 
-- `Claros` and `Draft`, identifying the current single-draft workspace
+- The project title and active document title
+- The active document kind and save state
 - `Focus`
+- `Save`
 - `Vim`
 - `Commands`
 
@@ -76,6 +79,25 @@ When Vim mode is enabled, the editor uses the Vim keybinding layer provided by `
 
 Claros does not yet define custom Vim mappings or Claros-specific Vim commands.
 
+## Sidebar
+
+The left sidebar is collapsed by default. A small vertical `Project` tab remains visible at the left edge of the screen.
+
+Open or close the sidebar with the tab or with `Ctrl+B` / `Cmd+B`.
+
+The sidebar contains two sections:
+
+- `Manuscript`, with chapters in sequence order and scenes nested under their chapters
+- `Notes`, with note folders and notes
+
+The `Notes` section starts collapsed for a cleaner writing view. Sections, chapters, and note folders can be expanded or collapsed.
+
+Chapters and scenes use their configured titles when available. Untitled chapters and scenes use sequence labels such as `Chapter 2` or `Scene 2`.
+
+On desktop, the sidebar reserves space beside the manuscript while open. On narrow screens, it overlays the editor.
+
+Opening a scene or note from the sidebar keeps keyboard focus in the sidebar so you can browse documents quickly. Use `Ctrl+Right` / `Cmd+Right` to return focus to the editor while leaving the sidebar open.
+
 ## Command Palette
 
 `Commands` opens the command palette shell.
@@ -83,10 +105,12 @@ Claros does not yet define custom Vim mappings or Claros-specific Vim commands.
 The command palette currently contains:
 
 - Enable or disable Vim mode
+- Toggle the sidebar
+- Save the current document
 - Theme commands for Default, Gruvbox, Solarized, Everforest, and Catppuccin light/dark variants
-- Return to Draft
+- Focus Editor
 
-The command palette filters as you type. Theme changes are saved in the browser and restored when you reload the editor.
+The command palette filters as you type. Running a command closes the palette. Theme changes are saved in the browser and restored when you reload the editor.
 
 Use `ArrowUp` and `ArrowDown` to move through command results, then press `Enter` to run the selected command.
 
@@ -96,11 +120,20 @@ The command palette is intentionally minimal in this first iteration. Future ver
 
 Current shortcuts:
 
-| Shortcut                       | Action                                           |
-| ------------------------------ | ------------------------------------------------ |
-| `Ctrl+K` / `Cmd+K`             | Open or close the command palette                |
-| `Ctrl+Shift+V` / `Cmd+Shift+V` | Toggle Vim mode                                  |
-| `Escape`                       | Close the command palette and refocus the editor |
+| Shortcut                       | Action                                  |
+| ------------------------------ | --------------------------------------- |
+| `Ctrl+K` / `Cmd+K`             | Open or close the command palette       |
+| `Ctrl+B` / `Cmd+B`             | Open or close the project sidebar       |
+| `Ctrl+Left` / `Cmd+Left`       | Move focus to the project sidebar       |
+| `Ctrl+Right` / `Cmd+Right`     | Move focus to the editor                |
+| `Ctrl+Shift+V` / `Cmd+Shift+V` | Toggle Vim mode                         |
+| `Escape`                       | Close the command palette or sidebar    |
+| `ArrowUp` / `ArrowDown`        | Move through visible sidebar items      |
+| `ArrowLeft`                    | Collapse the selected sidebar branch    |
+| `ArrowRight`                   | Expand the selected sidebar branch      |
+| `Enter`                        | Open the selected sidebar document      |
+| `M`                            | Jump to manuscript items in the sidebar |
+| `N`                            | Jump to note items in the sidebar       |
 
 Vim mode adds Vim-style keybindings while it is enabled.
 
@@ -108,8 +141,6 @@ Vim mode adds Vim-style keybindings while it is enabled.
 
 The current editor does not yet include:
 
-- Project folders
-- File tree or tabs
 - Open/save dialogs
 - Desktop filesystem access
 - Wikilink resolution

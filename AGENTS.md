@@ -1,5 +1,14 @@
 # Claros — Agent & Contributor Guide
 
+## Parallel Development Lanes
+
+This repo has two active development lanes:
+
+- **Autonomous core agents** work under the `sbischoff-ai` GitHub identity on delegated core package tasks.
+- **Local editor work** is paired with Silas on this NixOS laptop in `apps/web`, `apps/desktop`, and `@claros/editor-core`.
+
+Autonomous agent PRs must not modify `apps/web`, `apps/desktop`, or `@claros/editor-core`. Local editor work may modify those packages when Silas explicitly asks for editor changes.
+
 ## Package Domains
 
 | Package                    | Domain                                                                                                                                                                                                        | Spec-sensitive? |
@@ -7,12 +16,12 @@
 | `@claros/story-format`     | Canonical file format, project structure, frontmatter, wikilinks, emergence block syntax                                                                                                                      | **YES**         |
 | `@claros/emergence-engine` | Dice evaluator, table resolver, macro runner, expression language                                                                                                                                             | **YES**         |
 | `@claros/story-state`      | Project workspace API, FileStateAdapter, in-memory project index, wikilink resolution, backlinks, macro run ledger, Git checkpoint integration. Exposes the ClarosProject API consumed by the editor and CLI. | Yes             |
-| `@claros/editor-core`      | CodeMirror 6 editor surface. **Silas-owned parallel work — agent PRs must not modify this package.** See ADR-021.                                                                                             | No              |
-| `apps/web`                 | SvelteKit web app. **Silas-owned parallel work — agent PRs must not modify this package.**                                                                                                                    | No              |
-| `apps/desktop`             | Tauri desktop shell. **Silas-owned parallel work — agent PRs must not modify this package.**                                                                                                                  | No              |
+| `@claros/editor-core`      | CodeMirror 6 editor surface. **Silas-owned parallel work — autonomous agent PRs must not modify this package.**                                                                                               | No              |
+| `apps/web`                 | SvelteKit web app. **Silas-owned parallel work — autonomous agent PRs must not modify this package.**                                                                                                         | No              |
+| `apps/desktop`             | Tauri desktop shell. **Silas-owned parallel work — autonomous agent PRs must not modify this package.**                                                                                                       | No              |
 | `@claros/export`           | Pandoc pipeline, clean/annotated/actual-play export                                                                                                                                                           | No              |
 
-**Spec-sensitive packages:** Before modifying `story-format` or `emergence-engine`, check the governing specs in `docs/specs/`. These packages have detailed test suites; any change that causes test failures must be discussed, not silently fixed by relaxing tests.
+**Spec-sensitive packages:** `story-format` and `emergence-engine` define canonical behavior and have detailed test suites. Before changing them, check the relevant repo-local reference docs in `docs/`, especially `docs/DECISIONS.md`. Any change that causes test failures must be discussed, not silently fixed by relaxing tests.
 
 ## Conventions
 
@@ -40,7 +49,7 @@ This repository provides a `shell.nix` with the runtime and development tools ne
 
 ## Dependency Direction
 
-`apps/*` and `@claros/editor-core` consume `@claros/story-state`; they are Silas-owned parallel work and agent PRs must not extend or modify them.
+`apps/*` and `@claros/editor-core` consume `@claros/story-state`; they are Silas-owned parallel work and autonomous agent PRs must not extend or modify them.
 
 ```text
 apps/*
