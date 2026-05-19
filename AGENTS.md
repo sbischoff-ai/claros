@@ -2,13 +2,15 @@
 
 ## Package Domains
 
-| Package                    | Domain                                                                                   | Spec-sensitive? |
-| -------------------------- | ---------------------------------------------------------------------------------------- | --------------- |
-| `@claros/story-format`     | Canonical file format, project structure, frontmatter, wikilinks, emergence block syntax | **YES**         |
-| `@claros/emergence-engine` | Dice evaluator, table resolver, macro runner, expression language                        | **YES**         |
-| `@claros/story-state`      | Project indexing, wikilink resolution, backlinks, git integration, persistence adapters  | Yes             |
-| `@claros/editor-core`      | TipTap/ProseMirror editor, inline emergence UX, collaboration                            | No              |
-| `@claros/export`           | Pandoc pipeline, clean/annotated/actual-play export                                      | No              |
+| Package                    | Domain                                                                                                                                                                                                        | Spec-sensitive? |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `@claros/story-format`     | Canonical file format, project structure, frontmatter, wikilinks, emergence block syntax                                                                                                                      | **YES**         |
+| `@claros/emergence-engine` | Dice evaluator, table resolver, macro runner, expression language                                                                                                                                             | **YES**         |
+| `@claros/story-state`      | Project workspace API, FileStateAdapter, in-memory project index, wikilink resolution, backlinks, macro run ledger, Git checkpoint integration. Exposes the ClarosProject API consumed by the editor and CLI. | Yes             |
+| `@claros/editor-core`      | CodeMirror 6 editor surface. **Silas-owned parallel work — agent PRs must not modify this package.** See ADR-021.                                                                                             | No              |
+| `apps/web`                 | SvelteKit web app. **Silas-owned parallel work — agent PRs must not modify this package.**                                                                                                                    | No              |
+| `apps/desktop`             | Tauri desktop shell. **Silas-owned parallel work — agent PRs must not modify this package.**                                                                                                                  | No              |
+| `@claros/export`           | Pandoc pipeline, clean/annotated/actual-play export                                                                                                                                                           | No              |
 
 **Spec-sensitive packages:** Before modifying `story-format` or `emergence-engine`, check the governing specs in `docs/specs/`. These packages have detailed test suites; any change that causes test failures must be discussed, not silently fixed by relaxing tests.
 
@@ -38,14 +40,18 @@ This repository provides a `shell.nix` with the runtime and development tools ne
 
 ## Dependency Direction
 
-```
-story-format
-      ↑
-story-state
+`apps/*` and `@claros/editor-core` consume `@claros/story-state`; they are Silas-owned parallel work and agent PRs must not extend or modify them.
 
-emergence-engine  (no internal deps)
+```text
+apps/*
+  ↓
+@claros/story-state
+  ├── @claros/emergence-engine
+  └── @claros/story-format
 
-editor-core
- ├── story-state
- └── emergence-engine
+@claros/editor-core
+  ↓
+@claros/story-state
 ```
+
+`@claros/story-state` is the stable workspace API boundary for agent work. `apps/*` and `@claros/editor-core` are consumers only, not extension points for agent PRs.
