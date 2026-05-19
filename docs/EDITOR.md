@@ -8,7 +8,7 @@ The Claros editor (`apps/web`, `apps/desktop`, `@claros/editor-core`) is develop
 
 The stable API boundary for the editor is documented in:
 
-`packages/story-state` — `ClarosProject` API (see `/Projects/claros/specs/mvp-editor-interface-contract.md` on Nextcloud)
+`packages/story-state` — `ClarosProject` API. See [`docs/EDITOR_INTERFACE_CONTRACT.md`](EDITOR_INTERFACE_CONTRACT.md) for the local repo copy used by editor/Codex tasks.
 
 The editor consumes:
 
