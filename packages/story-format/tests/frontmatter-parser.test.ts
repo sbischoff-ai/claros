@@ -2,32 +2,39 @@ import { describe, it, expect } from "vitest";
 import { parseNoteFrontmatter, serializeNoteFrontmatter } from "../src/frontmatter/parser.js";
 
 describe("parseNoteFrontmatter", () => {
-  it("parses type and aliases", () => {
+  it("parses title/type/aliases", () => {
     const { frontmatter, body } = parseNoteFrontmatter(
-      "---\ntype: character\naliases: [the northern mercenary]\n---\n\n# Kareth\n"
+      "---\ntitle: Kareth\ntype: character\naliases: [the northern mercenary]\n---\n\n# Kareth\n"
     );
+    expect(frontmatter.title).toBe("Kareth");
     expect(frontmatter.type).toBe("character");
     expect(frontmatter.aliases).toEqual(["the northern mercenary"]);
     expect(body.trim()).toBe("# Kareth");
   });
 
-  it("parses the state: key as StateData", () => {
+  it("preserves arbitrary top-level module keys", () => {
     const { frontmatter } = parseNoteFrontmatter(
-      "---\ntype: character\nstate:\n  hp: 12\n  max_hp: 15\n---\n\n# Kareth\n"
+      "---\ntype: character\nosr:\n  hp:\n    current: 12\n    max: 15\nmythic:\n  status: interrupted\n---\n\n# Kareth\n"
     );
-    expect(frontmatter.state).toEqual({ hp: 12, max_hp: 15 });
+    expect(frontmatter.osr).toEqual({ hp: { current: 12, max: 15 } });
+    expect(frontmatter.mythic).toEqual({ status: "interrupted" });
   });
 
-  it("parses nested module-namespaced entity state", () => {
+  it("preserves unknown top-level keys", () => {
     const { frontmatter } = parseNoteFrontmatter(
-      "---\ntype: character\nstate:\n  hp: 12\n  abilities:\n    strength: 14\n---\n\n# Kareth\n"
+      "---\ntype: character\ncustom_flag: true\nironsworn:\n  momentum: 2\n---\n\n# Kareth\n"
     );
-    expect((frontmatter.state as any)?.abilities?.strength).toBe(14);
+    expect(frontmatter.custom_flag).toBe(true);
+    expect(frontmatter.ironsworn).toEqual({ momentum: 2 });
   });
 
-  it("returns undefined state when state: key is absent", () => {
-    const { frontmatter } = parseNoteFrontmatter("---\ntype: character\n---\n\n# Kareth\n");
-    expect(frontmatter.state).toBeUndefined();
+  it("treats a top-level state key as ordinary frontmatter", () => {
+    const { frontmatter } = parseNoteFrontmatter(
+      "---\ntitle: Kareth\nstate:\n  hp: 12\nosr:\n  hp:\n    current: 12\n---\n\n# Kareth\n"
+    );
+    expect(frontmatter.title).toBe("Kareth");
+    expect(frontmatter.state).toEqual({ hp: 12 });
+    expect(frontmatter.osr).toEqual({ hp: { current: 12 } });
   });
 
   it("returns empty frontmatter and full string as body when no frontmatter block exists", () => {
@@ -47,13 +54,15 @@ describe("parseNoteFrontmatter", () => {
     const frontmatter = {
       type: "character",
       aliases: ["the northern mercenary"],
-      state: { hp: 12, max_hp: 15, inventory: ["iron sword"] },
+      osr: { hp: { current: 12, max: 15 }, inventory: ["iron sword"] },
+      mythic: { status: "interrupted" },
     };
     const body = "\n# Kareth\n\nProse.\n";
     const serialized = serializeNoteFrontmatter(frontmatter, body);
     const { frontmatter: parsed, body: parsedBody } = parseNoteFrontmatter(serialized);
     expect(parsed.type).toBe("character");
-    expect(parsed.state).toEqual(frontmatter.state);
+    expect(parsed.osr).toEqual(frontmatter.osr);
+    expect(parsed.mythic).toEqual(frontmatter.mythic);
     expect(parsedBody).toBe(body);
   });
 
