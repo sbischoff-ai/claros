@@ -1,28 +1,62 @@
-# Editor
+# Editor Development Notes
 
-The Claros editor (`apps/web`, `apps/desktop`, `@claros/editor-core`) is developed by Silas in parallel against the workspace API contract.
+The Claros editor is developed against the workspace/package contract, not against raw parser or filesystem internals.
 
-**Agent PRs must not modify `apps/web`, `apps/desktop`, `@claros/editor-core`, or the export package.**
+## Primary Boundary
 
-## Editor Interface Contract
+If you are working on the editor, start here:
 
-The stable API boundary for the editor is documented in:
+- [EDITOR_INTERFACE_CONTRACT.md](EDITOR_INTERFACE_CONTRACT.md)
+- [WORKSPACE_API.md](WORKSPACE_API.md)
+- [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
+- [MANUSCRIPT_FORMAT.md](MANUSCRIPT_FORMAT.md)
+- [STATE_FORMAT.md](STATE_FORMAT.md)
+- [MACRO_DSL.md](MACRO_DSL.md)
 
-`packages/story-state` — `ClarosProject` API. See [`docs/EDITOR_INTERFACE_CONTRACT.md`](EDITOR_INTERFACE_CONTRACT.md) for the local repo copy used by editor/Codex tasks.
+The editor should normally import from `@claros/story-state`, not directly from low-level internals.
 
-The editor consumes:
+## What the Editor Can Assume Today
 
-- `openProject(root)` → `ClarosProject`
-- chapter/scene/note listing
-- document read/write
-- wikilink/backlink/search
-- state and frontmatter path APIs
-- macro execution in document context
-- macro run ledger APIs
-- checkpoint/timeline APIs
+Current package guarantees on `main`:
 
-The editor does not need to import `@claros/emergence-engine` directly. All types needed by the editor are re-exported from `@claros/story-state`.
+- `openProject(root)` returns `ClarosProject`
+- sidebar data comes from `listChapters()`, `listScenes()`, and `listNotes()`
+- markdown document reads/writes are available through the workspace API
+- wikilink resolution, backlinks, and search are index-backed and exposed through `ClarosProject`
+- note frontmatter paths are async and body-preserving
+- macro execution in document context is available through `executeMacroInDocument(...)`
+- `[!claros]` blocks and macro runs are queryable without touching raw ledger YAML
+- checkpoint API shape exists, but checkpoint/restore internals are still deferred
 
-## Editor Surface Decision
+## What the Editor Should _Not_ Assume Yet
 
-See `decisions/ADR-021-editor-surface.md`: CodeMirror 6 with live semantic WYSIWYG Markdown rendering.
+Not implemented as stable MVP editor infrastructure yet:
+
+- Git checkpoint/timeline internals
+- rich structural mutation APIs for bulk rename/move/link-rewrite flows
+- collaboration/CRDT sync
+- editor-owned canonical document model
+- persistent index backends
+
+## Editor Surface Direction
+
+Per ADR-021, the primary writing surface is CodeMirror 6 with live semantic WYSIWYG Markdown.
+
+That affects package work in these ways:
+
+- markdown remains canonical on disk
+- package APIs should stay editor-agnostic
+- visual/editor affordances belong in editor packages, not in the file format
+
+## Repo Boundaries
+
+Agent-owned package work focuses on the shared libraries and CLI/package contract.
+Silas owns the live editor implementation in:
+
+- `apps/web`
+- `apps/desktop`
+- `@claros/editor-core`
+
+## Source Planning Docs
+
+This repo note condenses ADR-021 plus the MVP editor contract and current package surface.
