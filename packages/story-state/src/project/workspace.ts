@@ -524,6 +524,7 @@ class ClarosProjectImpl implements ClarosProject {
       userPrompt: options.userPrompt,
       rng: options.rng,
       now: options.now,
+      fileReader: this.fileReader,
       fileWriter: this.fileWriter,
     });
 

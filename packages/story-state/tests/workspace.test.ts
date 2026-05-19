@@ -19,6 +19,15 @@ import {
 const MODULE_DIR = fileURLToPath(new URL("../../../examples/mythic-gme-2e/", import.meta.url));
 const tempDirs: string[] = [];
 
+class SpyProjectFileReader extends NodeProjectFileReader {
+  readonly reads: string[] = [];
+
+  override async readFile(filePath: string): Promise<string> {
+    this.reads.push(filePath);
+    return super.readFile(filePath);
+  }
+}
+
 class SpyProjectFileWriter extends NodeProjectFileWriter {
   readonly writes: string[] = [];
 
@@ -234,7 +243,12 @@ describe("openProject", () => {
 
   it("executes a macro in scene context, inserts a block, and appends a run ledger entry", async () => {
     const root = await createProjectRoot();
-    const project = await openProject(root);
+    const reader = new SpyProjectFileReader();
+    const writer = new SpyProjectFileWriter();
+    const project = await openProject(root, {
+      fileReader: reader,
+      fileWriter: writer,
+    });
 
     expect(await project.listMacroRuns()).toEqual([]);
 
@@ -258,6 +272,8 @@ describe("openProject", () => {
     expect(project.listClarosBlocks({ path: "manuscript/01-prologue/01-opening.md" })).toHaveLength(
       1
     );
+    expect(reader.reads).toContain(path.join(root, "manuscript/01-prologue/01-opening.md"));
+    expect(writer.writes).toContain(path.join(root, "manuscript/01-prologue/01-opening.md"));
   });
 
   it("exposes checkpoint status/history shape while leaving git checkpoint internals for later", async () => {
