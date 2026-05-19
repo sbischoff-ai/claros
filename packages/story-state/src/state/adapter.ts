@@ -22,6 +22,7 @@ export class StateAdapterError extends Error {
 
 export class FileStateAdapter implements StateAdapter {
   private readonly projectRoot: string;
+  private static atomicCounter = 0;
 
   private readonly cache = new Map<string, StateData>();
 
@@ -71,6 +72,41 @@ export class FileStateAdapter implements StateAdapter {
     };
   }
 
+  getProjectRoot(): string {
+    return this.projectRoot;
+  }
+
+  readTextFile(filePath: string): string | undefined {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return undefined;
+      }
+      return fs.readFileSync(filePath, "utf-8");
+    } catch (error) {
+      throw new StateAdapterError(`Failed to read file: ${filePath}`, { cause: error });
+    }
+  }
+
+  writeFileAtomic(filePath: string, content: string): void {
+    const tempSuffix = `${process.pid}-${Date.now()}-${FileStateAdapter.atomicCounter++}`;
+    const tempPath = `${filePath}.tmp-${tempSuffix}`;
+
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(tempPath, content, "utf-8");
+      fs.renameSync(tempPath, filePath);
+    } catch (error) {
+      try {
+        if (fs.existsSync(tempPath)) {
+          fs.unlinkSync(tempPath);
+        }
+      } catch {
+        // Best-effort cleanup only.
+      }
+      throw new StateAdapterError(`Failed to write file atomically: ${filePath}`, { cause: error });
+    }
+  }
+
   private storyFilePath(): string {
     return path.join(this.projectRoot, "state", "story.yaml");
   }
@@ -108,8 +144,7 @@ export class FileStateAdapter implements StateAdapter {
     this.cache.set(filePath, next);
 
     try {
-      fs.mkdirSync(path.dirname(filePath), { recursive: true });
-      fs.writeFileSync(filePath, serializeStateFile({ data: next }));
+      this.writeFileAtomic(filePath, serializeStateFile({ data: next }));
     } catch (error) {
       throw new StateAdapterError(`Failed to write state file: ${filePath}`, { cause: error });
     }

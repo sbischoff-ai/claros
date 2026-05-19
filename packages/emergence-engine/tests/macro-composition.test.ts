@@ -375,8 +375,17 @@ output: {}
     const state = createInMemoryStateAdapter({
       scenes: { "abandoned-temple": { mythic: { chaos_factor: 5 } } },
     });
-    await executeMacro(macro, {}, createRegistry(), state, { sceneId: "abandoned-temple" });
+    const result = await executeMacro(macro, {}, createRegistry(), state, {
+      sceneId: "abandoned-temple",
+    });
     expect(state.getScene("abandoned-temple", "mythic.chaos_factor")).toBe(6);
+    expect(result.effects).toEqual([
+      {
+        target: 'state.scenes["abandoned-temple"].mythic.chaos_factor',
+        old: 5,
+        new: 6,
+      },
+    ]);
   });
 
   it("writes to scene state using a literal scene ID", async () => {

@@ -4,6 +4,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   extractClarosBlocks,
+  extractClarosRunId,
+  stripClarosMarkers,
   extractWikilinks,
   parseMarkdownDocument,
   scanProjectFormat,
@@ -143,6 +145,26 @@ describe("extractClarosBlocks", () => {
     const blocks = extractClarosBlocks("notes/session.md", raw);
     expect(blocks).toHaveLength(1);
     expect(blocks[0].title).toBe("Freeform");
+  });
+});
+
+describe("Claros marker helpers", () => {
+  it("extracts [claros-run: <id>] from plain markdown blocks", () => {
+    const raw = ["> [!claros] Oracle Check", "> outcome: yes", "> [claros-run: 00001]"].join("\n");
+    expect(extractClarosRunId(raw)).toBe("00001");
+  });
+
+  it("strips [!claros] and [claros-run: ...] markers for export", () => {
+    const raw = [
+      "> [!claros] Oracle Check",
+      "> outcome: yes",
+      "> [claros-run: 00001]",
+      "> fallout: none",
+    ].join("\n");
+
+    expect(stripClarosMarkers(raw)).toBe(
+      ["> Oracle Check", "> outcome: yes", "> fallout: none"].join("\n")
+    );
   });
 });
 

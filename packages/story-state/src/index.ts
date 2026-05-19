@@ -9,3 +9,24 @@ export {
   getNoteFrontmatterPath,
   setNoteFrontmatterPath,
 } from "./entity/state.js";
+export {
+  appendMacroRun,
+  getMacroRun,
+  listMacroRuns,
+  appendMacroRunLedgerEntry,
+  readMacroRunLedger,
+} from "./runs/ledger.js";
+export { executeMacroInDocument, renderMacroDisplayBlock } from "./runs/document.js";
+export type {
+  SourceRange,
+  DocumentInsertionPoint,
+  MacroRunFilter,
+  MacroRunRoll,
+  MacroRunDisplay,
+  MacroRunEffect,
+  MacroRunLedgerEntry,
+  MacroRunLedgerEntryInput,
+  ExecuteMacroInDocumentOptions,
+  ExecuteMacroInDocumentResult,
+  UserPromptFn,
+} from "./runs/types.js";

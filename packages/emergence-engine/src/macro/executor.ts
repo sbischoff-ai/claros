@@ -56,12 +56,18 @@ function normalizeStepAccess(expression: string): string {
 function parseEffectTarget(
   target: string,
   invocationContext?: MacroInvocationContext
-): { action: (state: StateAdapter, value: unknown) => void } | null {
+): {
+  action: (state: StateAdapter, value: unknown) => void;
+  read: (state: StateAdapter) => unknown;
+} | null {
   // state.story.<path>
   const storyMatch = /^state\.story\.(.+)$/.exec(target);
   if (storyMatch) {
     const path = storyMatch[1];
-    return { action: (state, value) => state.setStory(path, value) };
+    return {
+      action: (state, value) => state.setStory(path, value),
+      read: (state) => state.getStory(path),
+    };
   }
 
   // state.scenes[scene_id].<path>
@@ -70,7 +76,10 @@ function parseEffectTarget(
     const sceneId = invocationContext?.sceneId;
     if (sceneId === undefined) return null;
     const path = sceneVarMatch[1];
-    return { action: (state, value) => state.setScene(sceneId, path, value) };
+    return {
+      action: (state, value) => state.setScene(sceneId, path, value),
+      read: (state) => state.getScene(sceneId, path),
+    };
   }
 
   // state.scenes["<literal-id>"].<path>
@@ -78,7 +87,10 @@ function parseEffectTarget(
   if (sceneLiteralMatch) {
     const sceneId = sceneLiteralMatch[1];
     const path = sceneLiteralMatch[2];
-    return { action: (state, value) => state.setScene(sceneId, path, value) };
+    return {
+      action: (state, value) => state.setScene(sceneId, path, value),
+      read: (state) => state.getScene(sceneId, path),
+    };
   }
 
   // state.chapters[chapter_id].<path>
@@ -87,7 +99,10 @@ function parseEffectTarget(
     const chapterId = invocationContext?.chapterId;
     if (chapterId === undefined) return null;
     const path = chapterVarMatch[1];
-    return { action: (state, value) => state.setChapter(chapterId, path, value) };
+    return {
+      action: (state, value) => state.setChapter(chapterId, path, value),
+      read: (state) => state.getChapter(chapterId, path),
+    };
   }
 
   // state.chapters["<literal-id>"].<path>
@@ -95,10 +110,34 @@ function parseEffectTarget(
   if (chapterLiteralMatch) {
     const chapterId = chapterLiteralMatch[1];
     const path = chapterLiteralMatch[2];
-    return { action: (state, value) => state.setChapter(chapterId, path, value) };
+    return {
+      action: (state, value) => state.setChapter(chapterId, path, value),
+      read: (state) => state.getChapter(chapterId, path),
+    };
   }
 
   return null;
+}
+
+function resolveEffectTargetString(
+  target: string,
+  invocationContext?: MacroInvocationContext
+): string | null {
+  if (target.includes("[scene_id]")) {
+    if (invocationContext?.sceneId === undefined) {
+      return null;
+    }
+    return target.replace("[scene_id]", `[\"${invocationContext.sceneId}\"]`);
+  }
+
+  if (target.includes("[chapter_id]")) {
+    if (invocationContext?.chapterId === undefined) {
+      return null;
+    }
+    return target.replace("[chapter_id]", `[\"${invocationContext.chapterId}\"]`);
+  }
+
+  return target;
 }
 
 /** Resolve a single param value. Returns the resolved value or throws MissingParamError. */
@@ -201,6 +240,7 @@ export async function executeMacro(
   // Base expression context — shared by param resolution, step conditions, and output.
   // Steps are added incrementally as they complete.
   const steps: Record<string, StepResult> = {};
+  const effects: MacroResult["effects"] = [];
   const makeContext = () => ({
     params,
     steps,
@@ -311,13 +351,19 @@ export async function executeMacro(
     if (parsed === null) {
       throw new Error(`effect: unrecognised or unresolvable target: ${effect.set}`);
     }
-    const value = evaluator.evaluate(normalizeStepAccess(effect.value), ctx);
-    parsed.action(state, value);
+    const resolvedTarget = resolveEffectTargetString(effect.set, invocationContext);
+    if (resolvedTarget === null) {
+      throw new Error(`effect: unrecognised or unresolvable target: ${effect.set}`);
+    }
+    const oldValue = parsed.read(state);
+    const newValue = evaluator.evaluate(normalizeStepAccess(effect.value), ctx);
+    parsed.action(state, newValue);
+    effects.push({ target: resolvedTarget, old: oldValue, new: newValue });
   }
 
   // ── Output evaluation ───────────────────────────────────────────────────────
   const finalCtx = makeContext();
   const output = evaluateOutputDefinition(macro.output, evaluator, finalCtx);
 
-  return { output, steps };
+  return { params: resolvedParams, output, steps, effects };
 }

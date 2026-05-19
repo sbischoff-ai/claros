@@ -20,7 +20,8 @@ import type {
 const CHAPTER_DIR_RE = /^(\d+)-([a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const SCENE_FILE_RE = /^(\d+)-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/;
 const WIKILINK_RE = /\[\[([^\]|\n]+?)(?:\|([^\]\n]+?))?\]\]/g;
-const CLAROS_RUN_RE = /\[claros-run:\s*([A-Za-z0-9_-]+)\]/;
+const CLAROS_RUN_RE = /\[claros-run:\s*([A-Za-z0-9_-]+)\]/i;
+const CLAROS_CALLOUT_RE = /^\s*\[!claros\](.*)$/i;
 
 export class ProjectFormatError extends Error {
   constructor(message: string) {
@@ -145,12 +146,12 @@ export function extractClarosBlocks(path: string, raw: string): ClarosBlockRef[]
     }
 
     const normalizedHeader = firstNonEmptyQuotedLine.trim();
-    if (!normalizedHeader.toLowerCase().startsWith("[!claros]")) {
+    if (!CLAROS_CALLOUT_RE.test(normalizedHeader)) {
       continue;
     }
 
     const title = normalizedHeader.slice("[!claros]".length).trim() || undefined;
-    const runId = CLAROS_RUN_RE.exec(quotedLines.join("\n"))?.[1];
+    const runId = extractClarosRunId(quotedLines.join("\n"));
     const startOffset = lines[blockStartIndex].startOffset;
     const endOffset = lines[index - 1].endOffsetWithNewline;
 
@@ -165,6 +166,37 @@ export function extractClarosBlocks(path: string, raw: string): ClarosBlockRef[]
   }
 
   return clarosBlocks;
+}
+
+export function extractClarosRunId(raw: string): string | undefined {
+  return CLAROS_RUN_RE.exec(raw)?.[1];
+}
+
+export function stripClarosMarkers(raw: string): string {
+  const lines = raw.split(/\r?\n/);
+
+  const stripped = lines.flatMap((line) => {
+    const quoted = parseQuotedLine(line);
+    if (quoted === null) {
+      return [line];
+    }
+
+    const markerOnlyMatch = /^\s*\[claros-run:\s*[A-Za-z0-9_-]+\]\s*$/i.exec(quoted);
+    if (markerOnlyMatch !== null) {
+      return [];
+    }
+
+    let nextQuoted = quoted;
+    const headerMatch = CLAROS_CALLOUT_RE.exec(nextQuoted);
+    if (headerMatch !== null) {
+      nextQuoted = (headerMatch[1] ?? "").trimStart();
+    }
+
+    nextQuoted = nextQuoted.replace(/\s*\[claros-run:\s*[A-Za-z0-9_-]+\]\s*/gi, " ").trimEnd();
+    return [`> ${nextQuoted}`.trimEnd()];
+  });
+
+  return stripped.join("\n");
 }
 
 async function scanChapters(
