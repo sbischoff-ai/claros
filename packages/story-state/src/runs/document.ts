@@ -11,8 +11,10 @@ import {
   extractClarosBlocks,
   parseMarkdownDocument,
   type ClarosBlockRef,
+  type ProjectFileWriter,
 } from "@claros/story-format";
 import { appendMacroRun, setMacroRunDisplay } from "./ledger.js";
+import { NodeProjectFileWriter, ensureParentDirectory } from "../project/files.js";
 import { FileStateAdapter } from "../state/adapter.js";
 import type {
   DocumentInsertionPoint,
@@ -67,11 +69,12 @@ export async function executeMacroInDocument(
   const inserted =
     options.insertAt === undefined
       ? undefined
-      : writeDisplayBlock(
+      : await writeDisplayBlock(
           options.projectRoot,
           normalizedDocumentPath,
           finalBlock,
-          options.insertAt
+          options.insertAt,
+          options.fileWriter
         );
 
   return {
@@ -125,16 +128,19 @@ export function renderMacroDisplayBlock(
   return lines.join("\n");
 }
 
-function writeDisplayBlock(
+async function writeDisplayBlock(
   projectRoot: string,
   documentPath: string,
   block: string,
-  insertionPoint: DocumentInsertionPoint
-): { content: string; block: ClarosBlockRef | undefined } {
+  insertionPoint: DocumentInsertionPoint,
+  fileWriter?: ProjectFileWriter
+): Promise<{ content: string; block: ClarosBlockRef | undefined }> {
   const absolutePath = path.join(projectRoot, documentPath);
   const existing = fs.existsSync(absolutePath) ? fs.readFileSync(absolutePath, "utf-8") : "";
   const nextContent = insertBlock(existing, block, insertionPoint);
-  new FileStateAdapter({ projectRoot }).writeFileAtomic(absolutePath, nextContent);
+  const writer = fileWriter ?? new NodeProjectFileWriter();
+  await ensureParentDirectory(absolutePath, writer);
+  await writer.writeFileAtomic(absolutePath, nextContent);
 
   const insertedBlock = extractClarosBlocks(documentPath, nextContent).find(
     (candidate) => candidate.runId === extractRunId(block)

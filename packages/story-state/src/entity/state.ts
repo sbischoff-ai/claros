@@ -1,13 +1,25 @@
-import * as fs from "node:fs/promises";
-import * as syncFs from "node:fs";
 import * as path from "node:path";
 import {
   getAtPath,
   parseNoteFrontmatter,
   serializeNoteFrontmatter,
   setAtPath,
+  type NoteFrontmatter,
+  type ProjectFileReader,
+  type ProjectFileWriter,
 } from "@claros/story-format";
-import type { NoteFrontmatter } from "@claros/story-format";
+import {
+  NodeProjectFileReader,
+  NodeProjectFileWriter,
+  ensureParentDirectory,
+  normalizeProjectRoot,
+  toAbsoluteProjectPath,
+} from "../project/files.js";
+
+export interface NoteFrontmatterIOOptions {
+  fileReader?: ProjectFileReader;
+  fileWriter?: ProjectFileWriter;
+}
 
 export class NoteNotFoundError extends Error {
   constructor(notePathOrResolvedRef: string) {
@@ -18,39 +30,46 @@ export class NoteNotFoundError extends Error {
 
 export async function getNoteFrontmatter(
   notePathOrResolvedRef: string,
-  projectRoot: string
+  projectRoot: string,
+  options?: NoteFrontmatterIOOptions
 ): Promise<NoteFrontmatter | undefined> {
-  const notePath = await resolveNotePath(notePathOrResolvedRef, projectRoot);
+  const reader = options?.fileReader ?? new NodeProjectFileReader();
+  const notePath = await resolveNotePath(notePathOrResolvedRef, projectRoot, reader);
   if (notePath === undefined) {
     return undefined;
   }
 
-  const content = await fs.readFile(notePath, "utf-8");
+  const content = await reader.readFile(notePath);
   return parseNoteFrontmatter(content).frontmatter;
 }
 
 export async function setNoteFrontmatter(
   notePathOrResolvedRef: string,
   projectRoot: string,
-  frontmatter: NoteFrontmatter
+  frontmatter: NoteFrontmatter,
+  options?: NoteFrontmatterIOOptions
 ): Promise<void> {
-  const notePath = await resolveNotePath(notePathOrResolvedRef, projectRoot);
+  const reader = options?.fileReader ?? new NodeProjectFileReader();
+  const writer = options?.fileWriter ?? new NodeProjectFileWriter();
+  const notePath = await resolveNotePath(notePathOrResolvedRef, projectRoot, reader);
   if (notePath === undefined) {
     throw new NoteNotFoundError(notePathOrResolvedRef);
   }
 
-  const content = await fs.readFile(notePath, "utf-8");
+  const content = await reader.readFile(notePath);
   const { body } = parseNoteFrontmatter(content);
   const nextContent = serializeNoteFrontmatter(frontmatter, body);
-  await fs.writeFile(notePath, nextContent, "utf-8");
+  await ensureParentDirectory(notePath, writer);
+  await writer.writeFileAtomic(notePath, nextContent);
 }
 
 export async function getNoteFrontmatterPath(
   notePathOrResolvedRef: string,
   projectRoot: string,
-  frontmatterPath: string
+  frontmatterPath: string,
+  options?: NoteFrontmatterIOOptions
 ): Promise<unknown> {
-  const frontmatter = await getNoteFrontmatter(notePathOrResolvedRef, projectRoot);
+  const frontmatter = await getNoteFrontmatter(notePathOrResolvedRef, projectRoot, options);
   if (frontmatter === undefined) {
     return undefined;
   }
@@ -62,14 +81,17 @@ export async function setNoteFrontmatterPath(
   notePathOrResolvedRef: string,
   projectRoot: string,
   frontmatterPath: string,
-  value: unknown
+  value: unknown,
+  options?: NoteFrontmatterIOOptions
 ): Promise<void> {
-  const notePath = await resolveNotePath(notePathOrResolvedRef, projectRoot);
+  const reader = options?.fileReader ?? new NodeProjectFileReader();
+  const writer = options?.fileWriter ?? new NodeProjectFileWriter();
+  const notePath = await resolveNotePath(notePathOrResolvedRef, projectRoot, reader);
   if (notePath === undefined) {
     throw new NoteNotFoundError(notePathOrResolvedRef);
   }
 
-  const content = await fs.readFile(notePath, "utf-8");
+  const content = await reader.readFile(notePath);
   const { frontmatter, body } = parseNoteFrontmatter(content);
   const nextFrontmatter = setAtPath(
     frontmatter as Record<string, unknown>,
@@ -77,41 +99,44 @@ export async function setNoteFrontmatterPath(
     value
   ) as NoteFrontmatter;
   const nextContent = serializeNoteFrontmatter(nextFrontmatter, body);
-  await fs.writeFile(notePath, nextContent, "utf-8");
+  await ensureParentDirectory(notePath, writer);
+  await writer.writeFileAtomic(notePath, nextContent);
 }
 
 async function resolveNotePath(
   notePathOrResolvedRef: string,
-  projectRoot: string
+  projectRoot: string,
+  reader: ProjectFileReader
 ): Promise<string | undefined> {
   const trimmedRef = notePathOrResolvedRef.trim();
   if (trimmedRef.length === 0) {
     return undefined;
   }
 
-  const absoluteFromProject = path.resolve(projectRoot, trimmedRef);
+  const normalizedRoot = normalizeProjectRoot(projectRoot);
+  const absoluteFromProject = toAbsoluteProjectPath(normalizedRoot, trimmedRef);
   const candidates = [
-    trimmedRef,
     absoluteFromProject,
-    maybeMarkdown(trimmedRef),
     maybeMarkdown(absoluteFromProject),
-    path.resolve(projectRoot, "notes", trimmedRef),
-    maybeMarkdown(path.resolve(projectRoot, "notes", trimmedRef)),
+    path.resolve(normalizedRoot, "notes", trimmedRef),
+    maybeMarkdown(path.resolve(normalizedRoot, "notes", trimmedRef)),
   ].filter((candidate): candidate is string => candidate !== undefined);
 
   for (const candidate of candidates) {
-    if (syncFs.existsSync(candidate) && syncFs.statSync(candidate).isFile()) {
+    const stat = await reader.stat(candidate);
+    if (stat.exists && !stat.isDirectory) {
       return candidate;
     }
   }
 
-  const notesRoot = path.join(projectRoot, "notes");
-  if (!syncFs.existsSync(notesRoot)) {
+  const notesRoot = path.join(normalizedRoot, "notes");
+  const notesRootStat = await reader.stat(notesRoot);
+  if (!notesRootStat.exists || !notesRootStat.isDirectory) {
     return undefined;
   }
 
   const targetName = path.basename(trimmedRef, path.extname(trimmedRef)).toLowerCase();
-  return findNoteByBasename(notesRoot, targetName);
+  return findNoteByBasename(notesRoot, targetName, reader);
 }
 
 function maybeMarkdown(candidate: string): string | undefined {
@@ -120,21 +145,18 @@ function maybeMarkdown(candidate: string): string | undefined {
 
 async function findNoteByBasename(
   dirPath: string,
-  basenameLower: string
+  basenameLower: string,
+  reader: ProjectFileReader
 ): Promise<string | undefined> {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  const entries = await reader.readDir(dirPath);
 
   for (const entry of entries) {
     const entryPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      const nested = await findNoteByBasename(entryPath, basenameLower);
+    if (entry.isDirectory) {
+      const nested = await findNoteByBasename(entryPath, basenameLower, reader);
       if (nested !== undefined) {
         return nested;
       }
-      continue;
-    }
-
-    if (!entry.isFile()) {
       continue;
     }
 
