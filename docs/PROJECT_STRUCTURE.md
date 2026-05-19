@@ -1,6 +1,7 @@
 # Project Structure
 
-This document describes the canonical Claros project layout currently implemented by `@claros/story-format` and consumed by `@claros/story-state`.
+This document describes the canonical Claros project layout currently
+implemented by `@claros/story-format` and consumed by `@claros/story-state`.
 
 ## Fixed MVP Layout
 
@@ -68,7 +69,8 @@ modules:
 
 ### Path Configuration Limitation
 
-The parser currently enforces the standard folder names. If `claros.yaml` contains `paths.*`, these values must still be the defaults:
+The parser currently enforces the standard folder names. If `claros.yaml`
+contains `paths.*`, these values must still be the defaults:
 
 - `manuscript`
 - `notes`
@@ -218,7 +220,8 @@ tables:
   - tables/event-focus.yaml
 ```
 
-`loadModuleFromDirectory()` then parses and registers those macro/table files.
+`loadModuleFromDirectory()` then parses and registers those macro/table
+files.
 
 ## What Is Canonical vs Derived
 

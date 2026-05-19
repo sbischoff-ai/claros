@@ -1,6 +1,8 @@
 # Macro DSL
 
-This document describes the current macro DSL implemented in `@claros/emergence-engine` and the way document-context execution is exposed through `@claros/story-state`.
+This document describes the current macro DSL implemented in
+`@claros/emergence-engine` and the way document-context execution is exposed
+through `@claros/story-state`.
 
 ## Overview
 
@@ -12,7 +14,8 @@ A macro is a YAML-defined procedure composed from:
 - explicit state effects
 - structured output
 
-Macros are registered through a module manifest and executed through the emergence engine or the higher-level story-state workspace API.
+Macros are registered through a module manifest and executed through the
+emergence engine or the higher-level story-state workspace API.
 
 ## Macro File Shape
 
@@ -170,7 +173,8 @@ Looks up a matrix cell using row and column expressions, then optionally classif
 
 Invokes another macro and stores the nested result under `steps.<id>`.
 
-Nested macro effects are propagated into the parent `MacroResult.effects` in current code.
+Nested macro effects are propagated into the parent `MacroResult.effects` in
+current code.
 
 ## Conditions
 

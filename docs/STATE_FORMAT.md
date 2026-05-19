@@ -1,6 +1,7 @@
 # State Format
 
-This document describes the canonical state surfaces currently used by Claros.
+This document describes the canonical state surfaces currently used by
+Claros.
 
 ## Canonical State Locations
 
@@ -211,7 +212,8 @@ Current guarantees from the file-backed state/workspace layer:
 
 - YAML state writes may be canonically rewritten
 - note frontmatter writes preserve the markdown body exactly
-- file-backed document writes use atomic write semantics through `ProjectFileWriter.writeFileAtomic`
+- file-backed document writes use atomic write semantics through
+  `ProjectFileWriter.writeFileAtomic`
 - run-ledger writes use atomic file replacement behavior
 
 ## Deferred

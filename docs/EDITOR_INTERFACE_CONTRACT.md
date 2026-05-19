@@ -2,7 +2,8 @@
 
 Status: implemented boundary for current MVP workspace integration.
 
-This contract documents the stable editor-facing API provided by `@claros/story-state` today.
+This contract documents the stable editor-facing API provided by
+`@claros/story-state` today.
 
 ## Boundary
 
@@ -130,7 +131,8 @@ Shape is available now for editor integration, but internals are deferred.
 
 Current behavior:
 
-- `getCheckpointStatus()` returns placeholder status (`dirty: false`, empty changed paths, `currentTimeline: "working"`)
+- `getCheckpointStatus()` returns placeholder status (`dirty: false`, empty
+  changed paths, `currentTimeline: "working"`)
 - `listCheckpoints()` returns `[]`
 - `checkpoint()` throws `CheckpointNotImplementedError`
 - `restoreCheckpoint()` throws `CheckpointNotImplementedError`

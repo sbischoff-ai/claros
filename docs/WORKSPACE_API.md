@@ -1,12 +1,15 @@
 # Workspace API
 
-This document describes the current editor/CLI-facing workspace boundary implemented by `@claros/story-state`.
+This document describes the current editor/CLI-facing workspace boundary
+implemented by `@claros/story-state`.
 
 ## Purpose
 
-The workspace API is the integration boundary above raw filesystem parsing, state adapter internals, and emergence-engine internals.
+The workspace API is the integration boundary above raw filesystem parsing,
+state adapter internals, and emergence-engine internals.
 
-Editor and CLI code should consume this layer rather than manually stitching together:
+Editor and CLI code should consume this layer rather than manually stitching
+together:
 
 - file enumeration
 - markdown parsing

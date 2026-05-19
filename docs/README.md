@@ -2,19 +2,30 @@
 
 This directory is the repo-local reference set for MVP Claros development.
 
-If you are building editor, CLI, or integration code against the current packages, you should be able to stay inside this repo and use these docs plus the package source.
+If you are building editor, CLI, or integration code against the current
+packages, you should be able to stay inside this repo and use these docs plus
+the package source.
 
 ## Recommended Reading Order
 
-1. [EDITOR_INTERFACE_CONTRACT.md](EDITOR_INTERFACE_CONTRACT.md) — stable editor-facing API boundary
-2. [WORKSPACE_API.md](WORKSPACE_API.md) — `openProject(...)`, `ClarosProject`, helpers, indexing, macro execution
-3. [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) — `claros.yaml`, fixed folders, module resolution
-4. [MANUSCRIPT_FORMAT.md](MANUSCRIPT_FORMAT.md) — chapter/scene/note markdown, wikilinks, `[!claros]` blocks
-5. [STATE_FORMAT.md](STATE_FORMAT.md) — YAML state files, note frontmatter state, run ledger
-6. [RANDOM_TABLES.md](RANDOM_TABLES.md) — random table and matrix table schemas
-7. [MACRO_DSL.md](MACRO_DSL.md) — macro YAML, params, steps, effects, output, hooks
-8. [DECISIONS.md](DECISIONS.md) — design-decision summary relevant to MVP editor work
-9. [ARCHITECTURE.md](ARCHITECTURE.md) — high-level package boundaries and dependency direction
+1. [EDITOR_INTERFACE_CONTRACT.md](EDITOR_INTERFACE_CONTRACT.md) — stable
+   editor-facing API boundary
+2. [WORKSPACE_API.md](WORKSPACE_API.md) — `openProject(...)`,
+   `ClarosProject`, helpers, indexing, macro execution
+3. [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) — `claros.yaml`, fixed
+   folders, module resolution
+4. [MANUSCRIPT_FORMAT.md](MANUSCRIPT_FORMAT.md) — chapter/scene/note
+   markdown, wikilinks, `[!claros]` blocks
+5. [STATE_FORMAT.md](STATE_FORMAT.md) — YAML state files, note frontmatter
+   state, run ledger
+6. [RANDOM_TABLES.md](RANDOM_TABLES.md) — random table and matrix table
+   schemas
+7. [MACRO_DSL.md](MACRO_DSL.md) — macro YAML, params, steps, effects,
+   output, hooks
+8. [DECISIONS.md](DECISIONS.md) — design-decision summary relevant to MVP
+   editor work
+9. [ARCHITECTURE.md](ARCHITECTURE.md) — high-level package boundaries and
+   dependency direction
 
 Supporting docs:
 

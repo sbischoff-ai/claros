@@ -1,6 +1,7 @@
 # Manuscript and Note Format
 
-This document describes the markdown-facing parts of Claros as currently implemented by `@claros/story-format` and consumed by `@claros/story-state`.
+This document describes the markdown-facing parts of Claros as currently
+implemented by `@claros/story-format` and consumed by `@claros/story-state`.
 
 ## Markdown Document Model
 
@@ -190,4 +191,5 @@ These are not current canonical manuscript formats:
 
 ## Source Planning Docs
 
-This repo-local reference was synthesized from ADR-023, ADR-024, ADR-027, the ADR-027 delta/amendment docs, and Iter 09–10 planning material.
+This repo-local reference was synthesized from ADR-023, ADR-024, ADR-027,
+the ADR-027 delta/amendment docs, and Iter 09–10 planning material.
