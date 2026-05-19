@@ -1,5 +1,10 @@
 import type { MacroResult, ModuleRegistry, RNG, UserPromptFn } from "@claros/emergence-engine";
-import type { ClarosBlockRef, MarkdownDocument } from "@claros/story-format";
+import type {
+  ClarosBlockRef,
+  MarkdownDocument,
+  ProjectFileReader,
+  ProjectFileWriter,
+} from "@claros/story-format";
 
 export type { SourceRange } from "@claros/story-format";
 export type { UserPromptFn } from "@claros/emergence-engine";
@@ -74,6 +79,8 @@ export interface ExecuteMacroInDocumentOptions {
   rng?: RNG;
   userPrompt?: UserPromptFn;
   now?: Date;
+  fileReader?: ProjectFileReader;
+  fileWriter?: ProjectFileWriter;
 }
 
 export interface ExecuteMacroInDocumentResult {

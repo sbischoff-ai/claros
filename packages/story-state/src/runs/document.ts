@@ -1,4 +1,3 @@
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { executeMacro } from "@claros/emergence-engine";
 import type {
@@ -11,8 +10,15 @@ import {
   extractClarosBlocks,
   parseMarkdownDocument,
   type ClarosBlockRef,
+  type ProjectFileReader,
+  type ProjectFileWriter,
 } from "@claros/story-format";
 import { appendMacroRun, setMacroRunDisplay } from "./ledger.js";
+import {
+  NodeProjectFileReader,
+  NodeProjectFileWriter,
+  ensureParentDirectory,
+} from "../project/files.js";
 import { FileStateAdapter } from "../state/adapter.js";
 import type {
   DocumentInsertionPoint,
@@ -67,11 +73,13 @@ export async function executeMacroInDocument(
   const inserted =
     options.insertAt === undefined
       ? undefined
-      : writeDisplayBlock(
+      : await writeDisplayBlock(
           options.projectRoot,
           normalizedDocumentPath,
           finalBlock,
-          options.insertAt
+          options.insertAt,
+          options.fileReader,
+          options.fileWriter
         );
 
   return {
@@ -125,22 +133,39 @@ export function renderMacroDisplayBlock(
   return lines.join("\n");
 }
 
-function writeDisplayBlock(
+async function writeDisplayBlock(
   projectRoot: string,
   documentPath: string,
   block: string,
-  insertionPoint: DocumentInsertionPoint
-): { content: string; block: ClarosBlockRef | undefined } {
+  insertionPoint: DocumentInsertionPoint,
+  fileReader?: ProjectFileReader,
+  fileWriter?: ProjectFileWriter
+): Promise<{ content: string; block: ClarosBlockRef | undefined }> {
   const absolutePath = path.join(projectRoot, documentPath);
-  const existing = fs.existsSync(absolutePath) ? fs.readFileSync(absolutePath, "utf-8") : "";
+  const reader = fileReader ?? new NodeProjectFileReader();
+  const existing = await readExistingDocument(absolutePath, reader);
   const nextContent = insertBlock(existing, block, insertionPoint);
-  new FileStateAdapter({ projectRoot }).writeFileAtomic(absolutePath, nextContent);
+  const writer = fileWriter ?? new NodeProjectFileWriter();
+  await ensureParentDirectory(absolutePath, writer);
+  await writer.writeFileAtomic(absolutePath, nextContent);
 
   const insertedBlock = extractClarosBlocks(documentPath, nextContent).find(
     (candidate) => candidate.runId === extractRunId(block)
   );
 
   return { content: nextContent, block: insertedBlock };
+}
+
+async function readExistingDocument(
+  absolutePath: string,
+  fileReader: ProjectFileReader
+): Promise<string> {
+  const stat = await fileReader.stat(absolutePath);
+  if (!stat.exists || stat.isDirectory) {
+    return "";
+  }
+
+  return fileReader.readFile(absolutePath);
 }
 
 function insertBlock(
