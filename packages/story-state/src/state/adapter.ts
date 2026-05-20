@@ -76,6 +76,10 @@ export class FileStateAdapter implements StateAdapter {
     return this.projectRoot;
   }
 
+  clearCache(): void {
+    this.cache.clear();
+  }
+
   readTextFile(filePath: string): string | undefined {
     try {
       if (!fs.existsSync(filePath)) {

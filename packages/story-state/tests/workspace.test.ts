@@ -30,10 +30,22 @@ class SpyProjectFileReader extends NodeProjectFileReader {
 
 class SpyProjectFileWriter extends NodeProjectFileWriter {
   readonly writes: string[] = [];
+  readonly renames: Array<{ fromPath: string; toPath: string }> = [];
 
   override async writeFileAtomic(filePath: string, content: string): Promise<void> {
     this.writes.push(filePath);
     await super.writeFileAtomic(filePath, content);
+  }
+
+  override async renameFile(fromPath: string, toPath: string): Promise<void> {
+    this.renames.push({ fromPath, toPath });
+    await super.renameFile(fromPath, toPath);
+  }
+}
+
+class FailingProjectFileWriter extends NodeProjectFileWriter {
+  override async writeFileAtomic(_filePath: string, _content: string): Promise<void> {
+    throw new Error("intentional write failure");
   }
 }
 
@@ -151,10 +163,10 @@ describe("openProject", () => {
     expect(opening.frontmatter).toEqual({ title: "Opening" });
 
     const nextOpening = opening.raw.replace("Opening body.", "Updated opening body.");
-    await project.writeDocument({ path: opening.path }, nextOpening);
+    const openingResult = await project.writeDocument({ path: opening.path }, nextOpening);
 
     const kareth = await project.readDocument({ path: "notes/characters/kareth.md" });
-    await project.writeDocument(
+    const noteResult = await project.writeDocument(
       { path: kareth.path },
       kareth.raw.replace("Body text.", "Updated note body.")
     );
@@ -165,6 +177,34 @@ describe("openProject", () => {
     expect(await fs.readFile(path.join(root, kareth.path), "utf8")).toContain("Updated note body.");
     expect(writer.writes).toContain(path.join(root, opening.path));
     expect(writer.writes).toContain(path.join(root, kareth.path));
+    expect(openingResult).toEqual({
+      kind: "document-write",
+      changedPaths: [opening.path],
+      indexUpdated: true,
+    });
+    expect(noteResult).toEqual({
+      kind: "document-write",
+      changedPaths: [kareth.path],
+      indexUpdated: true,
+    });
+    expect(await fs.readFile(path.join(root, opening.path), "utf8")).toContain("[[Ancient Ruin]]");
+  });
+
+  it("does not update the in-memory index when a document write fails", async () => {
+    const root = await createProjectRoot();
+    const project = await openProject(root, {
+      fileReader: new NodeProjectFileReader(),
+      fileWriter: new FailingProjectFileWriter(),
+    });
+
+    const opening = await project.readDocument({ path: "manuscript/01-prologue/01-opening.md" });
+    await expect(
+      project.writeDocument({ path: opening.path }, opening.raw.replace("Opening", "Changed"))
+    ).rejects.toThrow("intentional write failure");
+
+    expect(project.listScenes().find((scene) => scene.path === opening.path)?.title).toBe(
+      "Opening"
+    );
   });
 
   it("preserves markdown body bytes for frontmatter-only note mutations and wraps explicit-root helpers", async () => {
@@ -186,21 +226,44 @@ describe("openProject", () => {
       await project.getNoteFrontmatterPath("notes/characters/kareth.md", "mythic.status")
     ).toBe("active");
 
-    await project.setNoteFrontmatterPath("notes/characters/kareth.md", "osr.hp.current", 10);
+    const result = await project.setNoteFrontmatterPath(
+      "notes/characters/kareth.md",
+      "osr.hp.current",
+      10
+    );
+    await project.setNoteFrontmatterPath("notes/characters/kareth.md", "state.visible", true);
 
     const after = await fs.readFile(notePath, "utf8");
     expect(after.endsWith(originalBody)).toBe(true);
     expect(
       await project.getNoteFrontmatterPath("notes/characters/kareth.md", "osr.hp.current")
     ).toBe(10);
+    expect(
+      await project.getNoteFrontmatterPath("notes/characters/kareth.md", "state.visible")
+    ).toBe(true);
     expect(writer.writes).toContain(notePath);
+    expect(result).toEqual({
+      kind: "frontmatter-path",
+      changedPaths: ["notes/characters/kareth.md"],
+      indexUpdated: true,
+    });
   });
 
   it("reads and writes state paths, including digit-prefixed filenames", async () => {
     const root = await createProjectRoot();
     const project = await openProject(root);
 
-    await project.setSceneState("01-prologue/01-opening", "mythic.chaos_factor", 6);
+    const writer = new SpyProjectFileWriter();
+    const projectWithWriter = await openProject(root, {
+      fileReader: new NodeProjectFileReader(),
+      fileWriter: writer,
+    });
+
+    const result = await projectWithWriter.setSceneState(
+      "01-prologue/01-opening",
+      "mythic.chaos_factor",
+      6
+    );
     expect(await project.getSceneState("01-prologue/01-opening", "mythic.chaos_factor")).toBe(6);
 
     await setSceneState(root, "2-into-the-dark", "mythic.chaos_factor", 4);
@@ -218,6 +281,134 @@ describe("openProject", () => {
         await fs.readFile(path.join(root, "state/chapters/1-the-abandoned-temple.yaml"), "utf8")
       ).data
     ).toEqual({ route: { current: "north" } });
+    expect(writer.writes).toContain(path.join(root, "state/scenes/01-prologue/01-opening.yaml"));
+    expect(result).toEqual({
+      kind: "state-path",
+      changedPaths: ["state/scenes/01-prologue/01-opening.yaml"],
+      indexUpdated: false,
+    });
+  });
+
+  it("mutates project and chapter metadata while preserving unknown keys semantically", async () => {
+    const root = await createProjectRoot();
+    await writeProjectFile(
+      root,
+      "manuscript/01-prologue/chapter.yaml",
+      ["title: Prologue", "unknown:", "  keep: true"].join("\n")
+    );
+    const project = await openProject(root);
+
+    await project.setProjectMetadataPath("exports.clean", true);
+    await project.setChapterMetadataPath("01-prologue", "route.current", "north");
+
+    expect(
+      parseStateFile(await fs.readFile(path.join(root, "claros.yaml"), "utf8")).data
+    ).toMatchObject({
+      title: "Workspace Test",
+      exports: { clean: true },
+    });
+    expect(
+      parseStateFile(
+        await fs.readFile(path.join(root, "manuscript/01-prologue/chapter.yaml"), "utf8")
+      ).data
+    ).toEqual({
+      title: "Prologue",
+      unknown: { keep: true },
+      route: { current: "north" },
+    });
+  });
+
+  it("plans note renames without modifying files during dry-run", async () => {
+    const root = await createProjectRoot();
+    const project = await openProject(root);
+
+    const plan = await project.planRenameNote(
+      "notes/characters/kareth.md",
+      "notes/characters/kareth-renamed.md",
+      { rewriteLinks: true, dryRun: true }
+    );
+    const result = await project.renameNote(
+      "notes/characters/kareth.md",
+      "notes/characters/kareth-renamed.md",
+      { rewriteLinks: true, dryRun: true }
+    );
+
+    expect(plan).toMatchObject({
+      operation: "rename-note",
+      currentPath: "notes/characters/kareth.md",
+      targetPath: "notes/characters/kareth-renamed.md",
+      warnings: [],
+    });
+    expect(plan.affectedPaths).toContain("notes/characters/kareth.md");
+    expect(plan.affectedPaths).toContain("notes/characters/kareth-renamed.md");
+    expect(plan.linkRewrite?.rewrites.map((rewrite) => rewrite.path)).toEqual([
+      "manuscript/01-prologue/02-arrival.md",
+    ]);
+    expect(result).toEqual({ kind: "structural", changedPaths: [], indexUpdated: false });
+    await expect(fs.stat(path.join(root, "notes/characters/kareth.md"))).resolves.toBeDefined();
+    await expect(fs.stat(path.join(root, "notes/characters/kareth-renamed.md"))).rejects.toThrow();
+  });
+
+  it("renames notes, rewrites only unambiguous links, and refreshes the index", async () => {
+    const root = await createProjectRoot();
+    const writer = new SpyProjectFileWriter();
+    const project = await openProject(root, {
+      fileReader: new NodeProjectFileReader(),
+      fileWriter: writer,
+    });
+
+    const result = await project.renameNote(
+      "notes/characters/kareth.md",
+      "notes/characters/kareth-renamed.md",
+      { rewriteLinks: true }
+    );
+
+    await expect(fs.stat(path.join(root, "notes/characters/kareth.md"))).rejects.toThrow();
+    await expect(
+      fs.stat(path.join(root, "notes/characters/kareth-renamed.md"))
+    ).resolves.toBeDefined();
+    expect(
+      await fs.readFile(path.join(root, "manuscript/01-prologue/02-arrival.md"), "utf8")
+    ).toContain("[[notes/characters/kareth-renamed.md|kareth]]");
+    expect(project.listNotes().map((note) => note.path)).toContain(
+      "notes/characters/kareth-renamed.md"
+    );
+    expect(project.resolveWikilink("notes/characters/kareth-renamed.md")).toMatchObject({
+      status: "resolved",
+      path: "notes/characters/kareth-renamed.md",
+    });
+    expect(writer.renames).toEqual([
+      {
+        fromPath: path.join(root, "notes/characters/kareth.md"),
+        toPath: path.join(root, "notes/characters/kareth-renamed.md"),
+      },
+    ]);
+    expect(result.kind).toBe("structural");
+    expect(result.indexUpdated).toBe(true);
+    expect(result.changedPaths).toEqual([
+      "manuscript/01-prologue/02-arrival.md",
+      "notes/characters/kareth-renamed.md",
+      "notes/characters/kareth.md",
+    ]);
+  });
+
+  it("reports ambiguous duplicate title links instead of guessing during rename planning", async () => {
+    const root = await createProjectRoot();
+    await writeProjectFile(
+      root,
+      "notes/other/kareth-double.md",
+      ["---", "title: Kareth", "---", "", "Second Kareth."].join("\n")
+    );
+    const project = await openProject(root);
+
+    const plan = await project.planRenameNote(
+      "notes/characters/kareth.md",
+      "notes/characters/kareth-renamed.md",
+      { rewriteLinks: true }
+    );
+
+    expect(plan.linkRewrite?.rewrites).toEqual([]);
+    expect(plan.linkRewrite?.ambiguousLinks.map((link) => link.raw)).toContain("[[kareth]]");
   });
 
   it("resolves wikilinks/backlinks and lists Claros blocks through the in-memory index", async () => {

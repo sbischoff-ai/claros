@@ -19,6 +19,8 @@ export interface ProjectFileReader {
 export interface ProjectFileWriter {
   writeFileAtomic(path: string, content: string): Promise<void>;
   mkdir(path: string, recursive?: boolean): Promise<void>;
+  renameFile(fromPath: string, toPath: string): Promise<void>;
+  removeFile(path: string): Promise<void>;
 }
 
 export interface ProjectManifest {
