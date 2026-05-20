@@ -9,3 +9,4 @@ dist/
 *.tsbuildinfo
 *.timestamp-*.mjs
 core
+nextcloud_docs
