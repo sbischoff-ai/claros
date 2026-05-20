@@ -72,6 +72,7 @@ export type MutationKind =
 export interface MutationResult {
   kind: MutationKind;
   changedPaths: string[];
+  /** True only when the call updated an owned in-memory project index. */
   indexUpdated: boolean;
 }
 
@@ -96,7 +97,9 @@ export interface RenameSceneOptions {
 export interface StructuralMutationPlan {
   operation: "rename-scene" | "rename-note" | "move-note" | "reorder-scene" | "delete-document";
   affectedPaths: string[];
+  /** Source document path for rename-like operations; useful for checkpoint context. */
   currentPath?: string;
+  /** Target document path for rename-like operations; useful for checkpoint context. */
   targetPath?: string;
   linkRewrite?: LinkRewritePlan;
   warnings: MutationWarning[];
