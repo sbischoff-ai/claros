@@ -2,7 +2,7 @@
 
 SvelteKit web application for Claros.
 
-**Current state:** Early single-document Markdown editor host.
+**Current state:** Early project-aware Markdown editor host.
 
 ---
 
@@ -38,7 +38,7 @@ The web app is a thin consumer of `@claros/editor-core`. Business logic belongs 
 ## What to Build Here
 
 - SvelteKit routing and layout
-- Project open/save UI (file picker, recent projects)
+- Project workspace UI (header, navigation, eventual file picker/recent projects)
 - Editor page that hosts the `@claros/editor-core` Markdown editor
 - Command palette shell
 - Settings and preferences
@@ -63,13 +63,11 @@ The web app mounts the editor component; it does not implement the editor.
 
 ```
 @claros/web
-  └── @claros/editor-core   [stub — build here]
-        ├── @claros/story-state       [stub — Iter 09]
-        └── @claros/emergence-engine  [✅ stable]
+  └── @claros/editor-core
+        └── @claros/story-state       [workspace API boundary]
 ```
 
-You can import `@claros/emergence-engine` for wiring up oracle features now.
-Do not import `@claros/story-state` yet — it is an empty stub.
+Production editor behavior should target `@claros/story-state` rather than importing `@claros/emergence-engine` directly. The current web UI uses an app-local sample project adapter for browser-only workspace prototyping until it is wired to the real `ClarosProject` API.
 
 ---
 
