@@ -1,5 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
+  import CaretDown from "phosphor-svelte/lib/CaretDown";
+  import FolderOpen from "phosphor-svelte/lib/FolderOpen";
+  import Plus from "phosphor-svelte/lib/Plus";
+  import TerminalWindow from "phosphor-svelte/lib/TerminalWindow";
   import {
     CLAROS_THEMES,
     applyNamedTheme,
@@ -8,20 +12,31 @@
     type ClarosThemeId,
   } from "@claros/editor-core";
   import {
+    companionConnectionFromUrl,
+    createNewCompanionProjectSession,
+    createNewLocalProjectSession,
     firstDocumentPath,
-    loadProjectSession,
+    loadCompanionConnection,
+    openCompanionProjectSession,
+    openLocalProjectSession,
+    saveCompanionConnection,
+    type CompanionConnection,
     type ProjectSession,
     type WorkspaceChapter,
     type WorkspaceNote,
   } from "$lib/project-session";
+  import type { BrowserDirectoryPicker } from "$lib/browser-file-system";
   import { loadTheme, saveTheme } from "$lib/theme";
 
   type SaveState = "saved" | "dirty" | "saving" | "error";
+  type ProjectOpenState = "idle" | "opening" | "creating" | "connecting" | "open" | "error";
+  type StorageBackendId = "file-picker" | "local-companion";
   type SidebarItemKind = "section" | "chapter" | "folder" | "scene" | "note";
 
   interface PaletteCommand {
     label: string;
     active?: boolean;
+    disabled?: boolean;
     focusAfter?: "editor" | "sidebar" | "none";
     run(): void;
   }
@@ -34,6 +49,13 @@
     collapsible: boolean;
     collapsed: boolean;
     path?: string;
+  }
+
+  interface StorageBackendOption {
+    id: StorageBackendId;
+    label: string;
+    available: boolean;
+    unavailableReason?: string;
   }
 
   let appShell: HTMLElement;
@@ -54,13 +76,25 @@
   let sidebarOpen = false;
   let focusedSidebarItemId = "";
   let saveState: SaveState = "saved";
+  let projectOpenState: ProjectOpenState = "idle";
+  let projectError = "";
+  let canOpenLocalProject = false;
+  let selectedStorageBackendId: StorageBackendId = "file-picker";
+  let storageBackendMenuOpen = false;
+  let createProjectIntent = false;
+  let companionConnection: CompanionConnection | undefined;
   let collapsedItems = new Set<string>(["notes"]);
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   $: chapters = project?.listChapters() ?? [];
   $: notes = project?.listNotes() ?? [];
   $: sidebarItems = buildSidebarItems(chapters, notes, collapsedItems);
-  $: paletteCommands = buildPaletteCommands(activeTheme, vimMode);
+  $: storageBackendOptions = buildStorageBackendOptions(canOpenLocalProject);
+  $: selectedStorageBackend =
+    storageBackendOptions.find((backend) => backend.id === selectedStorageBackendId) ??
+    storageBackendOptions[0];
+  $: projectIsOpen = projectOpenState === "open";
+  $: paletteCommands = buildPaletteCommands(activeTheme, vimMode, projectIsOpen, canOpenLocalProject);
   $: filteredCommands = filterCommands(paletteCommands, commandQuery);
   $: selectedCommandIndex = clampCommandIndex(selectedCommandIndex, filteredCommands.length);
 
@@ -72,18 +106,16 @@
   onMount(() => {
     activeTheme = loadTheme(window.localStorage);
     applyNamedTheme(appShell, activeTheme);
-    project = loadProjectSession(window.localStorage);
-    activePath = firstDocumentPath(project);
-    loadDocument(activePath);
-
-    editor = createMarkdownEditor({
-      parent: editorHost,
-      doc: currentMarkdown,
-      vimMode,
-      theme: activeTheme,
-      onChange: handleEditorChange,
-    });
-    editor.focus();
+    canOpenLocalProject =
+      typeof (window as Window & BrowserDirectoryPicker).showDirectoryPicker === "function";
+    selectedStorageBackendId = canOpenLocalProject ? "file-picker" : "local-companion";
+    companionConnection =
+      companionConnectionFromUrl(new URL(window.location.href)) ??
+      loadCompanionConnection(window.localStorage);
+    if (companionConnection !== undefined) {
+      saveCompanionConnection(window.localStorage, companionConnection);
+      void connectCompanion(companionConnection);
+    }
 
     const handleKeydown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -94,19 +126,25 @@
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
         event.preventDefault();
-        toggleSidebar();
+        if (projectIsOpen) {
+          toggleSidebar();
+        }
         return;
       }
 
       if ((event.metaKey || event.ctrlKey) && event.key === "ArrowLeft") {
         event.preventDefault();
-        focusSidebar();
+        if (projectIsOpen) {
+          focusSidebar();
+        }
         return;
       }
 
       if ((event.metaKey || event.ctrlKey) && event.key === "ArrowRight") {
         event.preventDefault();
-        focusEditorPreservingSidebar();
+        if (projectIsOpen) {
+          focusEditorPreservingSidebar();
+        }
         return;
       }
 
@@ -116,17 +154,22 @@
         event.key.toLowerCase() === "v"
       ) {
         event.preventDefault();
-        toggleVimMode();
+        if (projectIsOpen) {
+          toggleVimMode();
+        }
         return;
       }
 
       if (event.key === "Escape") {
-        if (paletteOpen) {
-          paletteOpen = false;
-          editor?.focus();
+        if (storageBackendMenuOpen) {
+          storageBackendMenuOpen = false;
           return;
         }
-        if (sidebarOpen) {
+        if (paletteOpen) {
+          closePalette();
+          return;
+        }
+        if (projectIsOpen && sidebarOpen) {
           closeSidebar();
         }
       }
@@ -142,15 +185,220 @@
   onDestroy(() => {
     if (saveTimer !== undefined) {
       clearTimeout(saveTimer);
-      flushSave();
+      void flushSave();
     }
     editor?.destroy();
   });
 
+  async function openLocalProject(): Promise<void> {
+    if (!canOpenLocalProject) {
+      projectOpenState = "error";
+      projectError = "Local folder access is not supported in this browser.";
+      return;
+    }
+
+    const picker = window as Window & BrowserDirectoryPicker;
+    if (picker.showDirectoryPicker === undefined) {
+      projectOpenState = "error";
+      projectError = "Local folder access is not supported in this browser.";
+      return;
+    }
+
+    flushSaveWithoutWaiting();
+    const hadOpenProject = projectIsOpen;
+    if (!hadOpenProject) {
+      projectOpenState = "opening";
+    }
+    projectError = "";
+    try {
+      const handle = await picker.showDirectoryPicker({ mode: "readwrite" });
+      project = await openLocalProjectSession(handle);
+      activePath = firstDocumentPath(project);
+      await loadDocument(activePath);
+      projectOpenState = "open";
+      sidebarOpen = false;
+      await ensureEditor();
+      editor?.setMarkdown(currentMarkdown);
+      editor?.focus();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        projectOpenState = project ? "open" : "idle";
+        return;
+      }
+      projectOpenState = hadOpenProject ? "open" : "error";
+      projectError = error instanceof Error ? error.message : "Unable to open project";
+    }
+  }
+
+  async function createNewProject(): Promise<void> {
+    if (!canOpenLocalProject) {
+      projectOpenState = "error";
+      projectError = "Local folder access is not supported in this browser.";
+      return;
+    }
+
+    const picker = window as Window & BrowserDirectoryPicker;
+    if (picker.showDirectoryPicker === undefined) {
+      projectOpenState = "error";
+      projectError = "Local folder access is not supported in this browser.";
+      return;
+    }
+
+    flushSaveWithoutWaiting();
+    const hadOpenProject = projectIsOpen;
+    if (!hadOpenProject) {
+      projectOpenState = "creating";
+    }
+    projectError = "";
+    try {
+      const handle = await picker.showDirectoryPicker({ mode: "readwrite" });
+      project = await createNewLocalProjectSession(handle);
+      activePath = firstDocumentPath(project);
+      await loadDocument(activePath);
+      projectOpenState = "open";
+      sidebarOpen = false;
+      await ensureEditor();
+      editor?.setMarkdown(currentMarkdown);
+      editor?.focus();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        projectOpenState = project ? "open" : "idle";
+        return;
+      }
+      projectOpenState = hadOpenProject ? "open" : "error";
+      projectError = error instanceof Error ? error.message : "Unable to create project";
+    }
+  }
+
+  async function openProjectWithBackend(backendId: StorageBackendId): Promise<void> {
+    storageBackendMenuOpen = false;
+    if (backendId === "file-picker") {
+      await openLocalProject();
+      return;
+    }
+    await connectCompanionFromPrompt();
+  }
+
+  async function createProjectWithBackend(backendId: StorageBackendId): Promise<void> {
+    storageBackendMenuOpen = false;
+    if (backendId === "file-picker") {
+      await createNewProject();
+      return;
+    }
+    await createNewCompanionProject();
+  }
+
+  function selectStorageBackend(backend: StorageBackendOption): void {
+    if (!backend.available) {
+      return;
+    }
+    selectedStorageBackendId = backend.id;
+    storageBackendMenuOpen = false;
+  }
+
+  async function connectCompanionFromPrompt(): Promise<void> {
+    const url = window.prompt(
+      "Local companion URL",
+      companionConnection?.url ?? "http://127.0.0.1:3000"
+    );
+    if (url === null || url.trim().length === 0) {
+      return;
+    }
+    const token = window.prompt("Local companion token", companionConnection?.token ?? "");
+    if (token === null || token.trim().length === 0) {
+      return;
+    }
+    const connection = { url: url.trim(), token: token.trim() };
+    saveCompanionConnection(window.localStorage, connection);
+    await connectCompanion(connection);
+  }
+
+  async function connectCompanion(connection: CompanionConnection): Promise<void> {
+    flushSaveWithoutWaiting();
+    const hadOpenProject = projectIsOpen;
+    if (!hadOpenProject) {
+      projectOpenState = "connecting";
+    }
+    projectError = "";
+    try {
+      companionConnection = connection;
+      project = await openCompanionProjectSession(connection);
+      activePath = firstDocumentPath(project);
+      await loadDocument(activePath);
+      projectOpenState = "open";
+      sidebarOpen = false;
+      await ensureEditor();
+      editor?.setMarkdown(currentMarkdown);
+      editor?.focus();
+    } catch (error) {
+      projectOpenState = hadOpenProject ? "open" : "error";
+      projectError = error instanceof Error ? error.message : "Unable to connect local companion";
+    }
+  }
+
+  async function createNewCompanionProject(): Promise<void> {
+    let connection = companionConnection;
+    if (connection === undefined) {
+      const url = window.prompt("Local companion URL", "http://127.0.0.1:3000");
+      if (url === null || url.trim().length === 0) {
+        return;
+      }
+      const token = window.prompt("Local companion token", "");
+      if (token === null || token.trim().length === 0) {
+        return;
+      }
+      connection = { url: url.trim(), token: token.trim() };
+      saveCompanionConnection(window.localStorage, connection);
+    }
+
+    flushSaveWithoutWaiting();
+    const hadOpenProject = projectIsOpen;
+    if (!hadOpenProject) {
+      projectOpenState = "creating";
+    }
+    projectError = "";
+    try {
+      companionConnection = connection;
+      project = await createNewCompanionProjectSession(connection);
+      activePath = firstDocumentPath(project);
+      await loadDocument(activePath);
+      projectOpenState = "open";
+      sidebarOpen = false;
+      await ensureEditor();
+      editor?.setMarkdown(currentMarkdown);
+      editor?.focus();
+    } catch (error) {
+      projectOpenState = hadOpenProject ? "open" : "error";
+      projectError = error instanceof Error ? error.message : "Unable to create project";
+    }
+  }
+
   function handleEditorChange(markdown: string): void {
+    if (!projectIsOpen) {
+      return;
+    }
     currentMarkdown = markdown;
     saveState = "dirty";
     scheduleSave();
+  }
+
+  async function ensureEditor(): Promise<void> {
+    if (editor !== undefined) {
+      editor.setTheme(activeTheme);
+      editor.setVimMode(vimMode);
+      return;
+    }
+    await tick();
+    if (editorHost === undefined) {
+      return;
+    }
+    editor = createMarkdownEditor({
+      parent: editorHost,
+      doc: currentMarkdown,
+      vimMode,
+      theme: activeTheme,
+      onChange: handleEditorChange,
+    });
   }
 
   function scheduleSave(): void {
@@ -158,11 +406,11 @@
       clearTimeout(saveTimer);
     }
     saveTimer = setTimeout(() => {
-      flushSave();
+      void flushSave();
     }, 550);
   }
 
-  function flushSave(): void {
+  async function flushSave(): Promise<void> {
     if (!project || !activePath) {
       return;
     }
@@ -174,19 +422,23 @@
 
     saveState = "saving";
     try {
-      project.writeDocument({ path: activePath }, currentMarkdown);
+      await project.writeDocument({ path: activePath }, currentMarkdown);
       saveState = "saved";
     } catch {
       saveState = "error";
     }
   }
 
-  function loadDocument(path: string): void {
+  function flushSaveWithoutWaiting(): void {
+    void flushSave();
+  }
+
+  async function loadDocument(path: string): Promise<void> {
     if (!project) {
       return;
     }
 
-    const document = project.readDocument({ path });
+    const document = await project.readDocument({ path });
     activePath = document.path;
     activeTitle = document.title;
     activeKind = document.kind;
@@ -194,17 +446,20 @@
     saveState = "saved";
   }
 
-  function openDocument(path: string): void {
+  async function openDocument(path: string): Promise<void> {
     if (path === activePath) {
       return;
     }
 
-    flushSave();
-    loadDocument(path);
+    await flushSave();
+    await loadDocument(path);
     editor?.setMarkdown(currentMarkdown);
   }
 
   function toggleVimMode(): void {
+    if (!projectIsOpen) {
+      return;
+    }
     vimMode = !vimMode;
     editor?.setVimMode(vimMode);
     if (paletteOpen) {
@@ -218,17 +473,24 @@
     paletteOpen = false;
     commandQuery = "";
     selectedCommandIndex = 0;
-    editor?.focus();
+    if (projectIsOpen) {
+      editor?.focus();
+    }
   }
 
   function focusEditorPreservingSidebar(): void {
     paletteOpen = false;
     commandQuery = "";
     selectedCommandIndex = 0;
-    editor?.focus();
+    if (projectIsOpen) {
+      editor?.focus();
+    }
   }
 
   function focusSidebar(): void {
+    if (!projectIsOpen) {
+      return;
+    }
     paletteOpen = false;
     commandQuery = "";
     selectedCommandIndex = 0;
@@ -244,12 +506,24 @@
     if (paletteOpen) {
       commandQuery = "";
       selectedCommandIndex = 0;
-    } else {
+    } else if (projectIsOpen) {
+      editor?.focus();
+    }
+  }
+
+  function closePalette(): void {
+    paletteOpen = false;
+    commandQuery = "";
+    selectedCommandIndex = 0;
+    if (projectIsOpen) {
       editor?.focus();
     }
   }
 
   function toggleSidebar(): void {
+    if (!projectIsOpen) {
+      return;
+    }
     sidebarOpen = !sidebarOpen;
     if (sidebarOpen) {
       focusedSidebarItemId = activePath || sidebarItems[0]?.id || "";
@@ -261,7 +535,9 @@
 
   function closeSidebar(): void {
     sidebarOpen = false;
-    editor?.focus();
+    if (projectIsOpen) {
+      editor?.focus();
+    }
   }
 
   function setTheme(themeId: ClarosThemeId): void {
@@ -272,17 +548,20 @@
   }
 
   function runCommand(command: PaletteCommand): void {
+    if (command.disabled === true) {
+      return;
+    }
     command.run();
     paletteOpen = false;
     commandQuery = "";
     selectedCommandIndex = 0;
 
-    if (command.focusAfter === "sidebar") {
+    if (command.focusAfter === "sidebar" && projectIsOpen) {
       void tick().then(() => sidebarNav?.focus());
       return;
     }
 
-    if (command.focusAfter !== "none") {
+    if (command.focusAfter !== "none" && projectIsOpen) {
       void tick().then(() => editor?.focus());
     }
   }
@@ -329,23 +608,51 @@
 
   function buildPaletteCommands(
     currentTheme: ClarosThemeId,
-    currentVimMode: boolean
+    currentVimMode: boolean,
+    currentProjectIsOpen: boolean,
+    localProjectSupported: boolean
   ): PaletteCommand[] {
+    const projectCommandDisabled = !currentProjectIsOpen;
     return [
       {
         label: "Toggle Sidebar",
         active: sidebarOpen,
+        disabled: projectCommandDisabled,
         focusAfter: "none",
         run: toggleSidebar,
       },
       {
-        label: "Save Document",
+        label: "Open Project: Local Folder",
+        disabled: !localProjectSupported,
         focusAfter: "editor",
-        run: flushSave,
+        run: () => void openProjectWithBackend("file-picker"),
+      },
+      {
+        label: "New Project: Local Folder",
+        disabled: !localProjectSupported,
+        focusAfter: "editor",
+        run: () => void createProjectWithBackend("file-picker"),
+      },
+      {
+        label: "Open Project: Local Companion",
+        focusAfter: "editor",
+        run: () => void openProjectWithBackend("local-companion"),
+      },
+      {
+        label: "New Project: Local Companion",
+        focusAfter: "editor",
+        run: () => void createProjectWithBackend("local-companion"),
+      },
+      {
+        label: "Save Document",
+        disabled: projectCommandDisabled,
+        focusAfter: "editor",
+        run: flushSaveWithoutWaiting,
       },
       {
         label: currentVimMode ? "Disable Vim" : "Enable Vim",
         active: currentVimMode,
+        disabled: projectCommandDisabled,
         focusAfter: "editor",
         run: toggleVimMode,
       },
@@ -357,6 +664,7 @@
       })),
       {
         label: "Focus Editor",
+        disabled: projectCommandDisabled,
         focusAfter: "editor",
         run: () => undefined,
       },
@@ -378,6 +686,22 @@
     }
 
     return Math.min(index, commandCount - 1);
+  }
+
+  function buildStorageBackendOptions(localProjectSupported: boolean): StorageBackendOption[] {
+    return [
+      {
+        id: "file-picker",
+        label: "Local Folder",
+        available: localProjectSupported,
+        unavailableReason: localProjectSupported ? undefined : "Not supported by this browser",
+      },
+      {
+        id: "local-companion",
+        label: "Local Companion",
+        available: true,
+      },
+    ];
   }
 
   function buildSidebarItems(
@@ -593,7 +917,7 @@
   function activateFocusedItem(): void {
     const item = sidebarItems.find((candidate) => candidate.id === focusedSidebarItemId);
     if (item?.path !== undefined) {
-      openDocument(item.path);
+      void openDocument(item.path);
       return;
     }
     if (item?.collapsible) {
@@ -626,78 +950,72 @@
   <title>Claros</title>
 </svelte:head>
 
-<main bind:this={appShell} class={`app-shell ${sidebarOpen ? "sidebar-open" : ""}`}>
-  <button
-    type="button"
-    class="sidebar-tab"
-    aria-label={sidebarOpen ? "Close workspace sidebar" : "Open workspace sidebar"}
-    aria-expanded={sidebarOpen}
-    on:click={toggleSidebar}
-  >
-    <span>Project</span>
-  </button>
-
-  <aside class:open={sidebarOpen} class="sidebar" aria-label="Project sidebar">
-    <div class="sidebar-head">
-      <span>{project?.manifest.title ?? "Claros"}</span>
-      <button type="button" aria-label="Close sidebar" on:click={closeSidebar}>Close</button>
-    </div>
-    <div
-      bind:this={sidebarNav}
-      class="sidebar-nav"
-      tabindex="-1"
-      role="tree"
-      aria-label="Project documents"
-      on:keydown={handleSidebarKeydown}
+<main bind:this={appShell} class={`app-shell ${projectIsOpen && sidebarOpen ? "sidebar-open" : ""}`}>
+  {#if projectIsOpen}
+    <button
+      type="button"
+      class="sidebar-tab"
+      aria-label={sidebarOpen ? "Close workspace sidebar" : "Open workspace sidebar"}
+      aria-expanded={sidebarOpen}
+      on:click={toggleSidebar}
     >
-      {#each sidebarItems as item}
-        <button
-          type="button"
-          class="sidebar-item"
-          class:active={item.path === activePath}
-          class:focused={item.id === focusedSidebarItemId}
-          class:branch={item.collapsible}
-          style={`--depth: ${item.depth}`}
-          role="treeitem"
-          aria-selected={item.id === focusedSidebarItemId}
-          aria-current={item.path === activePath ? "page" : undefined}
-          aria-expanded={item.collapsible ? !item.collapsed : undefined}
-          on:focus={() => (focusedSidebarItemId = item.id)}
-          on:click={() => {
-            focusedSidebarItemId = item.id;
-            if (item.path !== undefined) {
-              openDocument(item.path);
-            } else if (item.collapsible) {
-              toggleCollapsed(item.id);
-            }
-          }}
-        >
-          <span class="item-caret">{item.collapsible ? (item.collapsed ? "+" : "-") : ""}</span>
-          <span>{item.label}</span>
-        </button>
-      {/each}
-    </div>
-  </aside>
+      <span>Project</span>
+    </button>
+
+    <aside class:open={sidebarOpen} class="sidebar" aria-label="Project sidebar">
+      <div class="sidebar-head">
+        <span>{project?.manifest.title ?? "Claros"}</span>
+        <button type="button" aria-label="Close sidebar" on:click={closeSidebar}>Close</button>
+      </div>
+      <div
+        bind:this={sidebarNav}
+        class="sidebar-nav"
+        tabindex="-1"
+        role="tree"
+        aria-label="Project documents"
+        on:keydown={handleSidebarKeydown}
+      >
+        {#each sidebarItems as item}
+          <button
+            type="button"
+            class="sidebar-item"
+            class:active={item.path === activePath}
+            class:focused={item.id === focusedSidebarItemId}
+            class:branch={item.collapsible}
+            style={`--depth: ${item.depth}`}
+            role="treeitem"
+            aria-selected={item.id === focusedSidebarItemId}
+            aria-current={item.path === activePath ? "page" : undefined}
+            aria-expanded={item.collapsible ? !item.collapsed : undefined}
+            on:focus={() => (focusedSidebarItemId = item.id)}
+            on:click={() => {
+              focusedSidebarItemId = item.id;
+              if (item.path !== undefined) {
+                void openDocument(item.path);
+              } else if (item.collapsible) {
+                toggleCollapsed(item.id);
+              }
+            }}
+          >
+            <span class="item-caret">{item.collapsible ? (item.collapsed ? "+" : "-") : ""}</span>
+            <span>{item.label}</span>
+          </button>
+        {/each}
+      </div>
+    </aside>
+  {/if}
 
   <section class="workspace">
     <header class="topbar" aria-label="Workspace">
       <div class="identity">
         <span class="product">{project?.manifest.title ?? "Claros"}</span>
-        <span class="draft-name">{activeTitle}</span>
-        <span class="document-kind">{activeKind}</span>
-        <span class:error={saveState === "error"} class="save-state">{saveStateLabel(saveState)}</span>
+        {#if projectIsOpen}
+          <span class="draft-name">{activeTitle}</span>
+          <span class="document-kind">{activeKind}</span>
+          <span class:error={saveState === "error"} class="save-state">{saveStateLabel(saveState)}</span>
+        {/if}
       </div>
       <nav class="actions" aria-label="Editor actions">
-        <button type="button" on:click={focusEditor}>Focus</button>
-        <button type="button" on:click={flushSave}>Save</button>
-        <button
-          type="button"
-          class:active={vimMode}
-          aria-pressed={vimMode}
-          on:click={toggleVimMode}
-        >
-          Vim
-        </button>
         <button
           type="button"
           aria-expanded={paletteOpen}
@@ -708,9 +1026,91 @@
       </nav>
     </header>
 
-    <section class="editor-frame" aria-label="Markdown editor">
-      <div bind:this={editorHost} class="editor-host"></div>
-    </section>
+    {#if projectIsOpen}
+      <section class="editor-frame" aria-label="Markdown editor">
+        <div bind:this={editorHost} class="editor-host"></div>
+      </section>
+    {:else}
+      <section class="project-empty-state" aria-label="Open project">
+        <strong>Open a Claros project</strong>
+        <span>
+          {projectOpenState === "opening"
+            ? "Opening project..."
+            : projectOpenState === "creating"
+              ? "Creating project..."
+              : projectOpenState === "connecting"
+                ? "Connecting local companion..."
+              : projectOpenState === "error"
+                ? projectError || "Unable to open project."
+                : "Choose how Claros should access the project folder."}
+        </span>
+        <div
+          class="project-launcher"
+          class:menu-open={storageBackendMenuOpen}
+        >
+          <div class="backend-select">
+            <button
+              type="button"
+              class="backend-trigger"
+              aria-label={`Storage backend: ${selectedStorageBackend.label}`}
+              aria-haspopup="menu"
+              aria-expanded={storageBackendMenuOpen}
+              on:click={() => (storageBackendMenuOpen = !storageBackendMenuOpen)}
+            >
+              {#if selectedStorageBackendId === "file-picker"}
+                <FolderOpen size={19} weight="regular" />
+              {:else}
+                <TerminalWindow size={19} weight="regular" />
+              {/if}
+              <CaretDown size={13} weight="bold" />
+            </button>
+            {#if storageBackendMenuOpen}
+              <div class="backend-menu" role="menu" aria-label="Storage backends">
+                {#each storageBackendOptions as backend}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class:selected={backend.id === selectedStorageBackendId}
+                    disabled={!backend.available}
+                    on:click={() => selectStorageBackend(backend)}
+                  >
+                    {#if backend.id === "file-picker"}
+                      <FolderOpen size={18} weight="regular" />
+                    {:else}
+                      <TerminalWindow size={18} weight="regular" />
+                    {/if}
+                    <span>{backend.label}</span>
+                    {#if !backend.available && backend.unavailableReason !== undefined}
+                      <small>{backend.unavailableReason}</small>
+                    {/if}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+          <button
+            type="button"
+            class="project-launcher-main"
+            aria-label={`Open Project: ${selectedStorageBackend.label}`}
+            on:click={() => void openProjectWithBackend(selectedStorageBackend.id)}
+          >
+            {createProjectIntent ? "New Project" : "Open Project"}
+          </button>
+          <button
+            type="button"
+            class="project-launcher-create"
+            aria-label={`New Project: ${selectedStorageBackend.label}`}
+            on:mouseenter={() => (createProjectIntent = true)}
+            on:mouseleave={() => (createProjectIntent = false)}
+            on:focus={() => (createProjectIntent = true)}
+            on:blur={() => (createProjectIntent = false)}
+            on:click={() => void createProjectWithBackend(selectedStorageBackend.id)}
+          >
+            <Plus size={18} weight="bold" />
+          </button>
+        </div>
+      </section>
+    {/if}
   </section>
 
   {#if paletteOpen}
@@ -719,7 +1119,7 @@
         type="button"
         class="palette-backdrop"
         aria-label="Close command palette"
-        on:click={focusEditor}
+        on:click={closePalette}
       ></button>
       <section class="palette" aria-label="Command palette">
         <input
@@ -742,6 +1142,8 @@
               role="option"
               class:active={command.active}
               class:selected={index === selectedCommandIndex}
+              class:disabled={command.disabled}
+              disabled={command.disabled}
               aria-selected={index === selectedCommandIndex}
               on:mouseenter={() => (selectedCommandIndex = index)}
               on:click={() => runCommand(command)}
@@ -998,13 +1400,144 @@
     outline: none;
   }
 
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
   .editor-frame {
+    position: relative;
     min-height: 100vh;
     background: var(--claros-editor-background);
   }
 
   .editor-host {
     min-height: 100vh;
+  }
+
+  .project-empty-state {
+    position: absolute;
+    z-index: 5;
+    top: 5rem;
+    left: 50%;
+    display: grid;
+    gap: 0.8rem;
+    width: min(24rem, calc(100vw - 2rem));
+    transform: translateX(-50%);
+    color: var(--claros-prose-muted);
+    font: 0.88rem/1.4 system-ui, sans-serif;
+    text-align: center;
+  }
+
+  .project-empty-state strong {
+    color: var(--claros-prose-text);
+    font: 600 1rem/1.2 system-ui, sans-serif;
+  }
+
+  .project-empty-state button {
+    border-color: var(--claros-prose-widget-border);
+    background: var(--claros-prose-widget-background);
+    color: var(--claros-prose-text);
+  }
+
+  .project-launcher {
+    position: relative;
+    display: inline-grid;
+    grid-template-columns: 3rem minmax(11rem, 14rem) 3rem;
+    justify-self: center;
+    min-height: 2.75rem;
+    border: 1px solid var(--claros-prose-widget-border);
+    border-radius: 8px;
+    background: var(--claros-prose-widget-background);
+    box-shadow: 0 0.75rem 2rem color-mix(in srgb, var(--claros-prose-text) 9%, transparent);
+  }
+
+  .project-launcher button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--claros-prose-text);
+  }
+
+  .project-launcher button:hover,
+  .project-launcher button:focus-visible,
+  .project-launcher button.selected {
+    background: color-mix(in srgb, var(--claros-editor-background) 70%, var(--claros-prose-widget-background));
+  }
+
+  .backend-select {
+    position: relative;
+    min-width: 0;
+  }
+
+  .backend-trigger {
+    gap: 0.15rem;
+    width: 100%;
+    border-radius: 7px 0 0 7px !important;
+    border-right: 1px solid var(--claros-prose-widget-border) !important;
+    padding: 0;
+  }
+
+  .project-launcher-main {
+    min-width: 0;
+    border-right: 1px solid var(--claros-prose-widget-border) !important;
+    padding: 0 1rem;
+    font-weight: 600;
+  }
+
+  .project-launcher-create {
+    width: 100%;
+    border-radius: 0 7px 7px 0 !important;
+    padding: 0;
+  }
+
+  .backend-menu {
+    position: absolute;
+    z-index: 15;
+    top: calc(100% + 0.45rem);
+    left: 0;
+    display: grid;
+    gap: 0.25rem;
+    width: max-content;
+    min-width: 14rem;
+    border: 1px solid var(--claros-prose-widget-border);
+    border-radius: 8px;
+    padding: 0.35rem;
+    background: var(--claros-editor-background);
+    box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--claros-prose-text) 14%, transparent);
+  }
+
+  .backend-menu button {
+    display: grid;
+    grid-template-columns: 1.25rem 1fr;
+    column-gap: 0.55rem;
+    row-gap: 0.1rem;
+    justify-items: start;
+    min-height: 2.3rem;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0.35rem 0.55rem;
+    color: var(--claros-prose-text);
+    text-align: left;
+  }
+
+  .backend-menu button small {
+    grid-column: 2;
+    color: var(--claros-prose-muted);
+    font: 0.72rem/1.2 system-ui, sans-serif;
+  }
+
+  .backend-menu button:disabled {
+    color: var(--claros-prose-muted);
+    opacity: 0.54;
+  }
+
+  .backend-menu button:disabled:hover {
+    background: transparent;
   }
 
   .palette-layer {

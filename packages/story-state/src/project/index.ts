@@ -11,7 +11,7 @@ import {
   type SceneFrontmatter,
   type SceneRef,
   type WikilinkRef,
-} from "@claros/story-format";
+} from "@claros/story-format/browser";
 import type { MacroRunFilter, MacroRunLedgerEntry } from "../runs/types.js";
 
 const RESERVED_NOTE_FRONTMATTER_KEYS = new Set(["title", "type", "aliases", "tags"]);

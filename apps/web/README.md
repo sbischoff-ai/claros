@@ -67,7 +67,17 @@ The web app mounts the editor component; it does not implement the editor.
         └── @claros/story-state       [workspace API boundary]
 ```
 
-Production editor behavior should target `@claros/story-state` rather than importing `@claros/emergence-engine` directly. The current web UI uses an app-local sample project adapter for browser-only workspace prototyping until it is wired to the real `ClarosProject` API.
+Production editor behavior targets `@claros/story-state` rather than importing `@claros/emergence-engine` directly. The current web UI opens a user-selected Claros project folder through the browser File System Access API and wraps it in the real `ClarosProject` API.
+
+Firefox and other browsers without writable directory picker support can use the local companion:
+
+```bash
+pnpm --filter @claros/local-companion start -- /path/to/project
+```
+
+Then choose the Local Companion backend from the start-screen project launcher, or run an
+`Open Project: Local Companion` command from the command palette. Browsers that support
+writable folder picking can keep using the Local Folder backend directly.
 
 ---
 

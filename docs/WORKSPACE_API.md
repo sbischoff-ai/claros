@@ -34,6 +34,16 @@ const project = await openProject(projectRoot);
 - builds the in-memory project index
 - returns a `ClarosProject`
 
+Browser consumers that provide their own file adapters can import the browser-safe entrypoint:
+
+```ts
+import { openProject } from "@claros/story-state/browser";
+
+const project = await openProject("/", { fileReader, fileWriter });
+```
+
+This path avoids the default Node file implementations and is intended for browser APIs such as the File System Access API.
+
 ## `OpenProjectOptions`
 
 The current workspace layer accepts file abstractions:
@@ -223,7 +233,7 @@ If you are building the editor, the normal integration path is:
 
 Not current guarantees:
 
-- browser-native workspace adapters bundled in repo packages
+- browser-native workspace adapters bundled in core packages
 - persistent index backends such as SQLite/IndexedDB
 - raw Git/timeline implementation details
 - richer structural mutation APIs beyond current document/frontmatter/state helpers

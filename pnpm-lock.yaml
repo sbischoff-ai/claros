@@ -48,11 +48,33 @@ importers:
         specifier: '*'
         version: 2.1.9(@types/node@25.8.0)
 
+  apps/local-companion:
+    dependencies:
+      '@claros/story-state':
+        specifier: workspace:*
+        version: link:../../packages/story-state
+    devDependencies:
+      '@types/node':
+        specifier: ^25.8.0
+        version: 25.8.0
+      typescript:
+        specifier: '*'
+        version: 5.9.3
+      vitest:
+        specifier: '*'
+        version: 2.1.9(@types/node@25.8.0)
+
   apps/web:
     dependencies:
       '@claros/editor-core':
         specifier: workspace:^
         version: link:../../packages/editor-core
+      '@claros/story-state':
+        specifier: workspace:^
+        version: link:../../packages/story-state
+      phosphor-svelte:
+        specifier: ^1.4.2
+        version: 1.4.2(svelte@4.2.19)
     devDependencies:
       '@sveltejs/adapter-auto':
         specifier: 3.0.0
@@ -1338,6 +1360,11 @@ packages:
 
   periscopic@3.1.0:
     resolution: {integrity: sha512-vKiQ8RRtkl9P+r/+oefh25C3fhybptkHKCZSPlcXiJux2tJF55GnEj3BVn4A5gKfq9NWWXXrxkHBwVPUfH0opw==}
+
+  phosphor-svelte@1.4.2:
+    resolution: {integrity: sha512-wdHKlZbE5D3ad1dd4K9bqWxpOb6gIwe+/ZeXGI9YpdKqECxqd+g3/NsLYE1+/hjlXixTWhQ7VMVIxTtBRXegCg==}
+    peerDependencies:
+      svelte: '>=3'
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -2727,6 +2754,10 @@ snapshots:
       '@types/estree': 1.0.9
       estree-walker: 3.0.3
       is-reference: 3.0.3
+
+  phosphor-svelte@1.4.2(svelte@4.2.19):
+    dependencies:
+      svelte: 4.2.19
 
   picocolors@1.1.1: {}
 
