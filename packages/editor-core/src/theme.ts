@@ -27,6 +27,9 @@ export interface ClarosThemeTokens {
   proseMarker: string;
   proseWidgetBackground: string;
   proseWidgetBorder: string;
+  statusOkay: string;
+  statusWarning: string;
+  statusError: string;
   proseFont: string;
   proseMonoFont: string;
   proseFontSize: string;
@@ -55,6 +58,9 @@ export const DEFAULT_CLAROS_THEME: ClarosThemeTokens = {
   proseMarker: "rgba(39, 36, 31, 0.18)",
   proseWidgetBackground: "#f0ede5",
   proseWidgetBorder: "#d8d1c4",
+  statusOkay: "#4f7d4f",
+  statusWarning: "#b7791f",
+  statusError: "#9d3d3d",
   proseFont: "Iowan Old Style, Palatino Linotype, Palatino, Charter, Georgia, serif",
   proseMonoFont:
     'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
@@ -77,6 +83,9 @@ const DEFAULT_DARK_CLAROS_THEME: ClarosThemeTokens = {
   proseMarker: "rgba(231, 223, 209, 0.24)",
   proseWidgetBackground: "#29261f",
   proseWidgetBorder: "#4c4539",
+  statusOkay: "#8fbf83",
+  statusWarning: "#d6a64f",
+  statusError: "#d47777",
 };
 
 function theme(
@@ -106,6 +115,9 @@ export const CLAROS_THEMES: readonly ClarosThemeDefinition[] = [
     proseMarker: "rgba(60, 56, 54, 0.23)",
     proseWidgetBackground: "#ebdbb2",
     proseWidgetBorder: "#d5c4a1",
+    statusOkay: "#79740e",
+    statusWarning: "#b57614",
+    statusError: "#9d0006",
   }),
   theme("gruvbox-dark", "Gruvbox Dark", "Gruvbox", "dark", {
     ...DEFAULT_CLAROS_THEME,
@@ -121,6 +133,9 @@ export const CLAROS_THEMES: readonly ClarosThemeDefinition[] = [
     proseMarker: "rgba(213, 196, 161, 0.24)",
     proseWidgetBackground: "#32302f",
     proseWidgetBorder: "#504945",
+    statusOkay: "#b8bb26",
+    statusWarning: "#fabd2f",
+    statusError: "#fb4934",
   }),
   theme("solarized-light", "Solarized Light", "Solarized", "light", {
     ...DEFAULT_CLAROS_THEME,
@@ -136,6 +151,9 @@ export const CLAROS_THEMES: readonly ClarosThemeDefinition[] = [
     proseMarker: "rgba(88, 110, 117, 0.24)",
     proseWidgetBackground: "#eee8d5",
     proseWidgetBorder: "#d8cfb5",
+    statusOkay: "#859900",
+    statusWarning: "#b58900",
+    statusError: "#dc322f",
   }),
   theme("solarized-dark", "Solarized Dark", "Solarized", "dark", {
     ...DEFAULT_CLAROS_THEME,
@@ -151,6 +169,9 @@ export const CLAROS_THEMES: readonly ClarosThemeDefinition[] = [
     proseMarker: "rgba(147, 161, 161, 0.26)",
     proseWidgetBackground: "#073642",
     proseWidgetBorder: "#164b56",
+    statusOkay: "#859900",
+    statusWarning: "#b58900",
+    statusError: "#dc322f",
   }),
   theme("everforest-light", "Everforest Light", "Everforest", "light", {
     ...DEFAULT_CLAROS_THEME,
@@ -166,6 +187,9 @@ export const CLAROS_THEMES: readonly ClarosThemeDefinition[] = [
     proseMarker: "rgba(92, 106, 114, 0.24)",
     proseWidgetBackground: "#f4f0d9",
     proseWidgetBorder: "#d8d3ba",
+    statusOkay: "#8da101",
+    statusWarning: "#dfa000",
+    statusError: "#f85552",
   }),
   theme("everforest-dark", "Everforest Dark", "Everforest", "dark", {
     ...DEFAULT_CLAROS_THEME,
@@ -181,6 +205,9 @@ export const CLAROS_THEMES: readonly ClarosThemeDefinition[] = [
     proseMarker: "rgba(211, 198, 170, 0.24)",
     proseWidgetBackground: "#2e383c",
     proseWidgetBorder: "#4f5b58",
+    statusOkay: "#a7c080",
+    statusWarning: "#dbbc7f",
+    statusError: "#e67e80",
   }),
   theme("catppuccin-light", "Catppuccin Light", "Catppuccin", "light", {
     ...DEFAULT_CLAROS_THEME,
@@ -196,6 +223,9 @@ export const CLAROS_THEMES: readonly ClarosThemeDefinition[] = [
     proseMarker: "rgba(76, 79, 105, 0.24)",
     proseWidgetBackground: "#e6e9ef",
     proseWidgetBorder: "#ccd0da",
+    statusOkay: "#40a02b",
+    statusWarning: "#df8e1d",
+    statusError: "#d20f39",
   }),
   theme("catppuccin-dark", "Catppuccin Dark", "Catppuccin", "dark", {
     ...DEFAULT_CLAROS_THEME,
@@ -211,6 +241,9 @@ export const CLAROS_THEMES: readonly ClarosThemeDefinition[] = [
     proseMarker: "rgba(205, 214, 244, 0.24)",
     proseWidgetBackground: "#313244",
     proseWidgetBorder: "#45475a",
+    statusOkay: "#a6e3a1",
+    statusWarning: "#f9e2af",
+    statusError: "#f38ba8",
   }),
 ];
 
@@ -237,6 +270,9 @@ const tokenNames: Record<keyof ClarosThemeTokens, string> = {
   proseMarker: "--claros-prose-marker",
   proseWidgetBackground: "--claros-prose-widget-background",
   proseWidgetBorder: "--claros-prose-widget-border",
+  statusOkay: "--claros-status-okay",
+  statusWarning: "--claros-status-warning",
+  statusError: "--claros-status-error",
   proseFont: "--claros-prose-font",
   proseMonoFont: "--claros-prose-mono-font",
   proseFontSize: "--claros-prose-font-size",
