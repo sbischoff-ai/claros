@@ -67,6 +67,15 @@ export class NodeProjectFileWriter implements ProjectFileWriter {
   async mkdir(dirPath: string, recursive = true): Promise<void> {
     await mkdir(dirPath, { recursive });
   }
+
+  async renameFile(fromPath: string, toPath: string): Promise<void> {
+    await mkdir(path.dirname(toPath), { recursive: true });
+    await rename(fromPath, toPath);
+  }
+
+  async removeFile(filePath: string): Promise<void> {
+    await rm(filePath, { force: true });
+  }
 }
 
 export function normalizeProjectRoot(root: string): string {
