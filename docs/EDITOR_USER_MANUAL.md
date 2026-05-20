@@ -4,7 +4,7 @@ This is the living user manual for the Claros editor. It should describe the edi
 
 ## Current Editor Scope
 
-The current editor is an early web-based writing surface for a sample Claros project.
+The current editor is an early web-based writing surface for a local Claros project folder.
 
 It is meant to prove the core writing experience:
 
@@ -12,10 +12,10 @@ It is meant to prove the core writing experience:
 - Minimal visible UI
 - Optional Vim-style editing
 - A command palette shell
-- Browser-local project persistence
+- Browser-mediated local project persistence
 - Project header and collapsible sidebar navigation
 
-It does not yet provide real filesystem project opening, wikilink resolution, emergence/oracle execution, export, or desktop integration.
+It does not yet provide emergence/oracle execution, export, or desktop integration.
 
 ## Writing Surface
 
@@ -44,11 +44,17 @@ Emphasis and strong emphasis are rendered inline as italic and bold text while p
 
 ## Project Persistence
 
-The editor currently works with one browser-local sample project.
+The editor opens a local Claros project folder using the browser File System Access API when the browser provides it.
 
-Changes are saved automatically to the browser's `localStorage`. Reloading the page restores the same sample project documents in the same browser profile.
+On the start screen, choose a storage backend from the left side of the project launcher, then use `Open Project` or the `+` segment for `New Project`.
 
-This is temporary. Later Claros versions will replace this with real project and file persistence through the workspace API.
+The Local Folder backend chooses a folder containing `claros.yaml` and `manuscript/`. The editor builds its sidebar from the actual project files and saves Markdown edits back to those files.
+
+Firefox and other browsers without writable directory picker support can use the Claros local files companion. Run `pnpm --filter @claros/local-companion start -- /path/to/project`, then choose Local Companion in the start-screen launcher or open the URL printed by the companion.
+
+`New Project` initializes a selected folder or companion-served folder with a minimal Claros project. Unsupported backends are shown as unavailable in the launcher.
+
+The web editor does not persist recent project handles yet, so you may need to reopen or reconnect after reloading.
 
 ## Top Bar
 
@@ -56,24 +62,21 @@ The top bar contains:
 
 - The project title and active document title
 - The active document kind and save state
-- `Focus`
-- `Save`
-- `Vim`
 - `Commands`
 
 The top bar is intentionally quiet and becomes more visible when hovered or focused.
 
 ## Focus
 
-`Focus` moves keyboard focus back into the editor.
+`Focus Editor` moves keyboard focus back into the editor from the command palette.
 
 Use it after clicking the top bar or command palette if you want to return immediately to writing.
 
-`Focus` does not yet enable a special distraction-free mode. It is currently just a focus-return command.
+`Focus Editor` does not yet enable a special distraction-free mode. It is currently just a focus-return command.
 
 ## Vim Mode
 
-`Vim` toggles Vim-style editing.
+`Enable Vim` and `Disable Vim` toggle Vim-style editing from the command palette.
 
 When Vim mode is enabled, the editor uses the Vim keybinding layer provided by `@replit/codemirror-vim`. This includes standard Vim-like normal and insert mode behavior, such as movement, insertion, deletion, search, and mode switching.
 
@@ -106,6 +109,10 @@ The command palette currently contains:
 
 - Enable or disable Vim mode
 - Toggle the sidebar
+- Open Project: Local Folder
+- New Project: Local Folder
+- Open Project: Local Companion
+- New Project: Local Companion
 - Save the current document
 - Theme commands for Default, Gruvbox, Solarized, Everforest, and Catppuccin light/dark variants
 - Focus Editor
@@ -141,7 +148,6 @@ Vim mode adds Vim-style keybindings while it is enabled.
 
 The current editor does not yet include:
 
-- Open/save dialogs
 - Desktop filesystem access
 - Wikilink resolution
 - Backlinks

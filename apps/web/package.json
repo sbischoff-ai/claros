@@ -21,6 +21,8 @@
     "vitest": "*"
   },
   "dependencies": {
-    "@claros/editor-core": "workspace:^"
+    "@claros/editor-core": "workspace:^",
+    "@claros/story-state": "workspace:^",
+    "phosphor-svelte": "^1.4.2"
   }
 }

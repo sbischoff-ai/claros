@@ -1,0 +1,162 @@
+import { afterEach, describe, expect, it } from "vitest";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import { createLocalCompanionServer, type LocalCompanionServer } from "../src/server.js";
+
+const tempDirs: string[] = [];
+const servers: LocalCompanionServer[] = [];
+
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map((server) => server.close()));
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+});
+
+describe("local companion server", () => {
+  it("serves project summary and documents with token auth", async () => {
+    const root = await createProjectRoot();
+    const { baseUrl, token } = await start(root);
+
+    const unauthorized = await fetch(`${baseUrl}/api/project`);
+    expect(unauthorized.status).toBe(401);
+
+    const project = (await fetchJson(baseUrl, token, "/api/project")) as ProjectResponse;
+    expect(project.project.manifest.title).toBe("Companion Workspace");
+    expect(project.project.chapters[0].scenes[0].path).toBe("manuscript/01-start/01-opening.md");
+
+    const document = (await fetchJson(
+      baseUrl,
+      token,
+      "/api/document?path=manuscript/01-start/01-opening.md"
+    )) as DocumentResponse;
+    expect(document.document.body).toBe("\nStart.");
+  });
+
+  it("writes document bodies while preserving frontmatter", async () => {
+    const root = await createProjectRoot();
+    const { baseUrl, token } = await start(root);
+
+    const response = await fetch(`${baseUrl}/api/document`, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: "notes/characters/kareth.md",
+        body: "# Kareth\n\nUpdated.",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const written = await fs.readFile(path.join(root, "notes/characters/kareth.md"), "utf8");
+    expect(written).toContain("---\ntitle: Kareth");
+    expect(written).toContain("tags:\n  - character");
+    expect(written).toContain("# Kareth\n\nUpdated.");
+  });
+
+  it("rejects disallowed origins and unknown document paths", async () => {
+    const root = await createProjectRoot();
+    const { baseUrl, token } = await start(root, ["http://allowed.example"]);
+
+    const forbidden = await fetch(`${baseUrl}/api/project`, {
+      headers: {
+        authorization: `Bearer ${token}`,
+        origin: "http://evil.example",
+      },
+    });
+    expect(forbidden.status).toBe(403);
+
+    const unknown = await fetch(`${baseUrl}/api/document?path=../../outside.md`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(unknown.status).toBe(400);
+  });
+
+  it("initializes a new project in an empty folder", async () => {
+    const root = await makeTempDir();
+    const { baseUrl, token } = await start(root);
+
+    const response = await fetch(`${baseUrl}/api/project/new`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(201);
+    expect(await fs.readFile(path.join(root, "claros.yaml"), "utf8")).toContain("Untitled Project");
+    expect(
+      await fs.readFile(path.join(root, "manuscript/01-draft/01-opening.md"), "utf8")
+    ).toContain("## Opening");
+  });
+});
+
+async function start(
+  root: string,
+  allowedOrigins = ["http://127.0.0.1:5173"]
+): Promise<{ baseUrl: string; token: string }> {
+  const companion = createLocalCompanionServer({
+    projectRoot: root,
+    token: "test-token",
+    allowedOrigins,
+  });
+  servers.push(companion);
+  const address = await companion.listen(0);
+  return {
+    baseUrl: `http://${address.host}:${address.port}`,
+    token: companion.token,
+  };
+}
+
+async function fetchJson(baseUrl: string, token: string, path: string): Promise<unknown> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+}
+
+interface ProjectResponse {
+  project: {
+    manifest: { title: string };
+    chapters: Array<{ scenes: Array<{ path: string }> }>;
+  };
+}
+
+interface DocumentResponse {
+  document: {
+    body: string;
+  };
+}
+
+async function createProjectRoot(): Promise<string> {
+  const root = await makeTempDir();
+  await writeProjectFile(root, "claros.yaml", "claros: 1\ntitle: Companion Workspace\n");
+  await writeProjectFile(root, "manuscript/01-start/chapter.yaml", "title: Start\n");
+  await writeProjectFile(
+    root,
+    "manuscript/01-start/01-opening.md",
+    "---\ntitle: Opening\n---\n\nStart."
+  );
+  await writeProjectFile(
+    root,
+    "notes/characters/kareth.md",
+    "---\ntitle: Kareth\ntags:\n  - character\n---\n# Kareth\n\nA cautious mercenary."
+  );
+  return root;
+}
+
+async function makeTempDir(): Promise<string> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "claros-local-companion-"));
+  tempDirs.push(root);
+  return root;
+}
+
+async function writeProjectFile(
+  root: string,
+  relativePath: string,
+  content: string
+): Promise<void> {
+  const absolutePath = path.join(root, relativePath);
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  await fs.writeFile(absolutePath, content, "utf8");
+}

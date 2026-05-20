@@ -1,0 +1,442 @@
+import { randomBytes } from "node:crypto";
+import { mkdir, stat, writeFile } from "node:fs/promises";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import * as path from "node:path";
+import {
+  openProject,
+  type ChapterRef,
+  type ClarosProject,
+  type MarkdownDocument,
+  type NoteRef,
+  type ProjectManifest,
+  type SceneRef,
+} from "@claros/story-state";
+
+export interface LocalCompanionOptions {
+  projectRoot: string;
+  token?: string;
+  allowedOrigins?: string[];
+}
+
+export interface LocalCompanionServer {
+  readonly server: Server;
+  readonly token: string;
+  listen(port: number, host?: string): Promise<{ port: number; host: string }>;
+  close(): Promise<void>;
+}
+
+export interface ProjectSummary {
+  manifest: WorkspaceManifest;
+  chapters: WorkspaceChapter[];
+  notes: WorkspaceNote[];
+}
+
+interface WorkspaceManifest {
+  title: string;
+}
+
+interface WorkspaceChapter {
+  kind: "chapter";
+  id: string;
+  sequence: number;
+  title: string;
+  scenes: WorkspaceScene[];
+}
+
+interface WorkspaceScene {
+  kind: "scene";
+  id: string;
+  chapterId: string;
+  sequence: number;
+  title: string;
+  path: string;
+}
+
+interface WorkspaceNote {
+  kind: "note";
+  id: string;
+  path: string;
+  title: string;
+  folderPath: string[];
+}
+
+interface WorkspaceDocument {
+  path: string;
+  raw: string;
+  body: string;
+  title: string;
+  kind: "scene" | "note";
+}
+
+export const DEFAULT_ALLOWED_ORIGINS = [
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+  "http://localhost:5173",
+  "http://localhost:5174",
+];
+
+export function createLocalCompanionServer(options: LocalCompanionOptions): LocalCompanionServer {
+  const token = options.token ?? randomBytes(24).toString("base64url");
+  const allowedOrigins = new Set(options.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS);
+  const projectRoot = path.resolve(options.projectRoot);
+  let project: ClarosProject | undefined;
+
+  const server = createServer(async (request, response) => {
+    try {
+      if (!handleCors(request, response, allowedOrigins)) {
+        return;
+      }
+      if (request.method === "OPTIONS") {
+        response.writeHead(204);
+        response.end();
+        return;
+      }
+
+      const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      if (url.pathname !== "/api/health" && !isAuthorized(request, token)) {
+        writeJson(response, 401, {
+          ok: false,
+          error: { code: "UNAUTHORIZED", message: "Invalid token" },
+        });
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/health") {
+        writeJson(response, 200, {
+          ok: true,
+          projectLabel: path.basename(projectRoot) || "project",
+          projectOpen: await hasProject(projectRoot),
+        });
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/project") {
+        project = await openProject(projectRoot);
+        writeJson(response, 200, { ok: true, project: summarizeProject(project) });
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/document") {
+        const current = await ensureProject();
+        const documentPath = url.searchParams.get("path") ?? "";
+        ensureKnownDocumentPath(current, documentPath);
+        writeJson(response, 200, {
+          ok: true,
+          document: toWorkspaceDocument(
+            current,
+            await current.readDocument({ path: documentPath })
+          ),
+        });
+        return;
+      }
+
+      if (request.method === "PUT" && url.pathname === "/api/document") {
+        const current = await ensureProject();
+        const body = await readJsonBody(request);
+        if (!isRecord(body) || typeof body.path !== "string" || typeof body.body !== "string") {
+          writeJson(response, 400, {
+            ok: false,
+            error: { code: "BAD_REQUEST", message: "Expected JSON body with path and body" },
+          });
+          return;
+        }
+        ensureKnownDocumentPath(current, body.path);
+        const before = await current.readDocument({ path: body.path });
+        await current.writeDocument(
+          { path: body.path },
+          mergeBodyWithExistingFrontmatter(before.raw, body.body)
+        );
+        const after = await current.readDocument({ path: body.path });
+        writeJson(response, 200, {
+          ok: true,
+          project: summarizeProject(current),
+          document: toWorkspaceDocument(current, after),
+        });
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/project/new") {
+        await initializeProject(projectRoot);
+        project = await openProject(projectRoot);
+        writeJson(response, 201, { ok: true, project: summarizeProject(project) });
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/reload") {
+        project = await openProject(projectRoot);
+        writeJson(response, 200, { ok: true, project: summarizeProject(project) });
+        return;
+      }
+
+      writeJson(response, 404, {
+        ok: false,
+        error: { code: "NOT_FOUND", message: "Unknown endpoint" },
+      });
+    } catch (error) {
+      const status = error instanceof CompanionError ? error.status : 500;
+      const code = error instanceof CompanionError ? error.code : "INTERNAL_ERROR";
+      const message = error instanceof Error ? error.message : "Internal error";
+      writeJson(response, status, { ok: false, error: { code, message } });
+    }
+  });
+
+  async function ensureProject(): Promise<ClarosProject> {
+    project ??= await openProject(projectRoot);
+    return project;
+  }
+
+  return {
+    server,
+    token,
+    listen(port: number, host = "127.0.0.1"): Promise<{ port: number; host: string }> {
+      return new Promise((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(port, host, () => {
+          server.off("error", reject);
+          const address = server.address();
+          resolve({
+            host,
+            port: typeof address === "object" && address !== null ? address.port : port,
+          });
+        });
+      });
+    },
+    close(): Promise<void> {
+      return new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error !== undefined) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    },
+  };
+}
+
+async function initializeProject(projectRoot: string): Promise<void> {
+  if (await exists(path.join(projectRoot, "claros.yaml"))) {
+    throw new CompanionError(409, "PROJECT_EXISTS", "claros.yaml already exists");
+  }
+
+  await mkdir(path.join(projectRoot, "manuscript", "01-draft"), { recursive: true });
+  await mkdir(path.join(projectRoot, "notes"), { recursive: true });
+  await writeFile(path.join(projectRoot, "claros.yaml"), "claros: 1\ntitle: Untitled Project\n", {
+    encoding: "utf8",
+    flag: "wx",
+  });
+  await writeFile(
+    path.join(projectRoot, "manuscript", "01-draft", "chapter.yaml"),
+    "title: Draft\n",
+    { encoding: "utf8", flag: "wx" }
+  );
+  await writeFile(
+    path.join(projectRoot, "manuscript", "01-draft", "01-opening.md"),
+    "---\ntitle: Opening\n---\n\n# Draft\n\n## Opening\n\n",
+    { encoding: "utf8", flag: "wx" }
+  );
+}
+
+async function hasProject(projectRoot: string): Promise<boolean> {
+  return exists(path.join(projectRoot, "claros.yaml"));
+}
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function summarizeProject(project: ClarosProject): ProjectSummary {
+  const scenesByChapter = new Map<string, WorkspaceScene[]>();
+  for (const scene of project.listScenes()) {
+    const scenes = scenesByChapter.get(scene.chapterId) ?? [];
+    scenes.push(toWorkspaceScene(scene));
+    scenesByChapter.set(scene.chapterId, scenes);
+  }
+
+  return {
+    manifest: normalizeManifest(project.manifest),
+    chapters: project
+      .listChapters()
+      .map((chapter) => toWorkspaceChapter(chapter, scenesByChapter.get(chapter.id) ?? [])),
+    notes: project.listNotes().map(toWorkspaceNote),
+  };
+}
+
+function normalizeManifest(manifest: ProjectManifest): WorkspaceManifest {
+  return {
+    title: typeof manifest.title === "string" && manifest.title.trim() ? manifest.title : "Claros",
+  };
+}
+
+function toWorkspaceChapter(chapter: ChapterRef, scenes: WorkspaceScene[]): WorkspaceChapter {
+  return {
+    kind: "chapter",
+    id: chapter.id,
+    sequence: chapter.sequence,
+    title: chapter.title || `Chapter ${chapter.sequence}`,
+    scenes,
+  };
+}
+
+function toWorkspaceScene(scene: SceneRef): WorkspaceScene {
+  return {
+    kind: "scene",
+    id: scene.id,
+    chapterId: scene.chapterId,
+    sequence: scene.sequence,
+    title: scene.title || `Scene ${scene.sequence}`,
+    path: scene.path,
+  };
+}
+
+function toWorkspaceNote(note: NoteRef): WorkspaceNote {
+  return {
+    kind: "note",
+    id: note.path,
+    path: note.path,
+    title: note.title || titleFromSlug(note.slug),
+    folderPath: note.path.startsWith("notes/")
+      ? note.path.slice("notes/".length).split("/").slice(0, -1)
+      : [],
+  };
+}
+
+function toWorkspaceDocument(
+  project: ClarosProject,
+  document: MarkdownDocument
+): WorkspaceDocument {
+  const scene = project.listScenes().find((candidate) => candidate.path === document.path);
+  if (scene !== undefined) {
+    return {
+      path: document.path,
+      raw: document.raw,
+      body: document.body,
+      title: scene.title || `Scene ${scene.sequence}`,
+      kind: "scene",
+    };
+  }
+
+  const note = project.listNotes().find((candidate) => candidate.path === document.path);
+  return {
+    path: document.path,
+    raw: document.raw,
+    body: document.body,
+    title: note?.title || document.path,
+    kind: "note",
+  };
+}
+
+function ensureKnownDocumentPath(project: ClarosProject, candidatePath: string): void {
+  if (candidatePath.includes("..") || path.isAbsolute(candidatePath)) {
+    throw new CompanionError(400, "INVALID_PATH", "Document path must be project-relative");
+  }
+
+  const knownPaths = new Set([
+    ...project.listScenes().map((scene) => scene.path),
+    ...project.listNotes().map((note) => note.path),
+  ]);
+  if (!knownPaths.has(candidatePath)) {
+    throw new CompanionError(404, "DOCUMENT_NOT_FOUND", `Unknown document path: ${candidatePath}`);
+  }
+}
+
+function handleCors(
+  request: IncomingMessage,
+  response: ServerResponse,
+  allowedOrigins: Set<string>
+): boolean {
+  const origin = request.headers.origin;
+  if (origin === undefined) {
+    return true;
+  }
+  if (!allowedOrigins.has(origin)) {
+    writeJson(response, 403, {
+      ok: false,
+      error: { code: "ORIGIN_FORBIDDEN", message: `Origin is not allowed: ${origin}` },
+    });
+    return false;
+  }
+
+  response.setHeader("Access-Control-Allow-Origin", origin);
+  response.setHeader("Vary", "Origin");
+  response.setHeader("Access-Control-Allow-Methods", "GET,PUT,POST,OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "authorization,content-type,x-claros-token");
+  if (request.headers["access-control-request-private-network"] === "true") {
+    response.setHeader("Access-Control-Allow-Private-Network", "true");
+  }
+  return true;
+}
+
+function isAuthorized(request: IncomingMessage, token: string): boolean {
+  const authorization = request.headers.authorization;
+  if (authorization === `Bearer ${token}`) {
+    return true;
+  }
+  return request.headers["x-claros-token"] === token;
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  if (chunks.length === 0) {
+    return undefined;
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function writeJson(response: ServerResponse, status: number, body: unknown): void {
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  response.end(JSON.stringify(body));
+}
+
+function splitFrontmatter(raw: string): { frontmatter: string; body: string } {
+  if (!raw.startsWith("---\n") && !raw.startsWith("---\r\n")) {
+    return { frontmatter: "", body: raw };
+  }
+
+  const match = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n)?(?:\r?\n)?/.exec(raw);
+  if (match === null) {
+    return { frontmatter: "", body: raw };
+  }
+
+  return {
+    frontmatter: match[0],
+    body: raw.slice(match[0].length),
+  };
+}
+
+function mergeBodyWithExistingFrontmatter(previousRaw: string, body: string): string {
+  const { frontmatter } = splitFrontmatter(previousRaw);
+  return frontmatter.length === 0 ? body : `${frontmatter}${body}`;
+}
+
+function titleFromSlug(slug: string): string {
+  return slug
+    .split("-")
+    .filter((part) => part.length > 0)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+class CompanionError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string
+  ) {
+    super(message);
+    this.name = "CompanionError";
+  }
+}
