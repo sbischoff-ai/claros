@@ -20,7 +20,7 @@
   export let items: SidebarItem[] = [];
   export let open = false;
   export let rememberFocus: (itemId: string) => void;
-  export let sidebarNav: HTMLElement;
+  export let sidebarNav: HTMLElement | undefined;
   export let titleDraft = "";
   export let draggingItemId = "";
   export let dragging = false;
