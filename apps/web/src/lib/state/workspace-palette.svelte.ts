@@ -51,16 +51,19 @@ export class WorkspacePalette {
       canDeleteChapter: this.ctx.canDeleteCurrentChapter,
       toggleSidebar: () => this.focus.toggleSidebar(),
       openProjectWithBackend: (backendId) => void this.projects.openProjectWithBackend(backendId),
-      createProjectWithBackend: (backendId) => void this.projects.createProjectWithBackend(backendId),
+      createProjectWithBackend: (backendId) =>
+        void this.projects.createProjectWithBackend(backendId),
       flushSaveWithoutWaiting: () => this.documents.flushSaveWithoutWaiting(),
       openProjectTitleModal: () => this.titles.openProjectTitleModal(),
       openAppendChapterModal: () => this.titles.openAppendChapterModal(),
-      openInsertChapterModal: (placement, chapter) => this.titles.openInsertChapterModal(placement, chapter),
+      openInsertChapterModal: (placement, chapter) =>
+        this.titles.openInsertChapterModal(placement, chapter),
       openCurrentChapterTitleModal: () => this.titles.openCurrentChapterTitleModal(),
       moveCurrentChapter: (direction) => void this.manuscript.moveCurrentChapter(direction),
       openCurrentChapterDeleteModal: () => this.sidebar.openCurrentChapterDeleteModal(),
       openAppendSceneModal: () => this.titles.openAppendSceneModal(),
-      openInsertSceneModal: (placement, scene) => this.titles.openInsertSceneModal(placement, scene),
+      openInsertSceneModal: (placement, scene) =>
+        this.titles.openInsertSceneModal(placement, scene),
       openCurrentSceneTitleModal: () => this.titles.openCurrentSceneTitleModal(),
       moveCurrentScene: (direction) => void this.manuscript.moveCurrentScene(direction),
       openCurrentSceneDeleteModal: () => this.sidebar.openCurrentSceneDeleteModal(),
@@ -74,7 +77,10 @@ export class WorkspacePalette {
   }
 
   normalizeSelectedCommandIndex(): void {
-    this.ctx.selectedCommandIndex = clampCommandIndex(this.ctx.selectedCommandIndex, this.filteredCommands.length);
+    this.ctx.selectedCommandIndex = clampCommandIndex(
+      this.ctx.selectedCommandIndex,
+      this.filteredCommands.length
+    );
   }
 
   async focusCommandInput(): Promise<void> {
@@ -88,7 +94,8 @@ export class WorkspacePalette {
 
   togglePalette(): void {
     if (!this.ctx.paletteOpen) {
-      this.ctx.paletteReturnFocus = this.ctx.paletteReturnFocus ?? this.focus.captureWorkspaceFocus();
+      this.ctx.paletteReturnFocus =
+        this.ctx.paletteReturnFocus ?? this.focus.captureWorkspaceFocus();
       this.ctx.paletteOpen = true;
       this.ctx.commandQuery = "";
       this.ctx.selectedCommandIndex = 0;
@@ -109,7 +116,8 @@ export class WorkspacePalette {
   setTheme(themeId: ClarosThemeId): void {
     this.ctx.activeTheme = themeId;
     saveTheme(this.ctx.environment.storage, themeId);
-    if (this.ctx.appShell !== undefined) this.ctx.editorRuntime.applyTheme(this.ctx.appShell, themeId);
+    if (this.ctx.appShell !== undefined)
+      this.ctx.editorRuntime.applyTheme(this.ctx.appShell, themeId);
     this.ctx.editorRuntime.setTheme(themeId);
   }
 
@@ -144,7 +152,8 @@ export class WorkspacePalette {
       return;
     }
     this.ctx.selectedCommandIndex =
-      (this.ctx.selectedCommandIndex + delta + this.filteredCommands.length) % this.filteredCommands.length;
+      (this.ctx.selectedCommandIndex + delta + this.filteredCommands.length) %
+      this.filteredCommands.length;
   }
 
   handleCommandInputKeydown(event: KeyboardEvent): void {

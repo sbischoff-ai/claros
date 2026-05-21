@@ -31,7 +31,9 @@ export class WorkspaceLifecycle {
       this.ctx.editorRuntime.applyTheme(this.ctx.appShell, this.ctx.activeTheme);
     }
     this.ctx.canOpenLocalProject = this.ctx.environment.canPickLocalDirectory();
-    this.ctx.selectedStorageBackendId = this.ctx.canOpenLocalProject ? "file-picker" : "local-companion";
+    this.ctx.selectedStorageBackendId = this.ctx.canOpenLocalProject
+      ? "file-picker"
+      : "local-companion";
     this.ctx.companionConnection =
       companionConnectionFromUrl(this.ctx.environment.currentUrl) ??
       loadCompanionConnection(this.ctx.environment.storage);
@@ -85,7 +87,11 @@ export class WorkspaceLifecycle {
     } else if ((event.metaKey || event.ctrlKey) && event.key === "ArrowRight") {
       event.preventDefault();
       if (this.ctx.projectIsOpen) this.documents.focusEditorPreservingSidebar();
-    } else if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "v") {
+    } else if (
+      (event.metaKey || event.ctrlKey) &&
+      event.shiftKey &&
+      event.key.toLowerCase() === "v"
+    ) {
       event.preventDefault();
       if (this.ctx.projectIsOpen) this.documents.toggleVimMode();
     } else if (event.key === "Escape") {

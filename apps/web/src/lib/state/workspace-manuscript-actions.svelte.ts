@@ -12,7 +12,10 @@ export class WorkspaceManuscriptActions {
   ) {}
 
   canDeleteChapter(chapter: WorkspaceChapter): boolean {
-    return this.ctx.chapters.length > 1 && this.ctx.scenes.some((scene) => scene.chapterId !== chapter.id);
+    return (
+      this.ctx.chapters.length > 1 &&
+      this.ctx.scenes.some((scene) => scene.chapterId !== chapter.id)
+    );
   }
 
   canDeleteScene(): boolean {
@@ -79,7 +82,10 @@ export class WorkspaceManuscriptActions {
   ): Promise<void> {
     if (this.ctx.project === undefined) return;
     this.ctx.contextMenu = undefined;
-    if (!moveOptions.skipEmptyChapterConfirmation && this.shouldConfirmEmptyChapterDeletion(scenePath, options)) {
+    if (
+      !moveOptions.skipEmptyChapterConfirmation &&
+      this.shouldConfirmEmptyChapterDeletion(scenePath, options)
+    ) {
       this.openEmptyChapterMoveConfirmation(scenePath, options);
       return;
     }
@@ -107,7 +113,9 @@ export class WorkspaceManuscriptActions {
   openEmptyChapterMoveConfirmation(scenePath: string, options: SceneMoveOptions): void {
     const scene = this.ctx.scenes.find((candidate) => candidate.path === scenePath);
     const chapter =
-      scene === undefined ? undefined : this.ctx.chapters.find((candidate) => candidate.id === scene.chapterId);
+      scene === undefined
+        ? undefined
+        : this.ctx.chapters.find((candidate) => candidate.id === scene.chapterId);
     const sceneLabel = scene?.title ?? "this scene";
     const chapterLabel = chapter?.title ?? "its current chapter";
     this.ctx.confirmationModal = {
@@ -115,7 +123,8 @@ export class WorkspaceManuscriptActions {
       message: `Moving "${sceneLabel}" out of "${chapterLabel}" will delete the empty chapter.`,
       confirmLabel: "Move and Delete Chapter",
       cancelLabel: "Cancel",
-      onConfirm: () => void this.moveScene(scenePath, options, { skipEmptyChapterConfirmation: true }),
+      onConfirm: () =>
+        void this.moveScene(scenePath, options, { skipEmptyChapterConfirmation: true }),
     };
   }
 
@@ -130,8 +139,12 @@ export class WorkspaceManuscriptActions {
     }
   }
 
-  chapterCreationSequence(placement: ManuscriptInsertionPlacement, targetChapterId?: string): number {
-    if (placement === "append" || targetChapterId === undefined) return this.ctx.chapters.length + 1;
+  chapterCreationSequence(
+    placement: ManuscriptInsertionPlacement,
+    targetChapterId?: string
+  ): number {
+    if (placement === "append" || targetChapterId === undefined)
+      return this.ctx.chapters.length + 1;
     const targetIndex = this.ctx.chapters.findIndex((chapter) => chapter.id === targetChapterId);
     if (targetIndex === -1) return this.ctx.chapters.length + 1;
     return placement === "before" ? targetIndex + 1 : targetIndex + 2;
@@ -155,7 +168,9 @@ export class WorkspaceManuscriptActions {
     if (targetIndex === -1) return this.ctx.scenes.length + 1;
     return (
       this.ctx.scenes.filter((scene) => {
-        const chapterIndex = this.ctx.chapters.findIndex((chapter) => chapter.id === scene.chapterId);
+        const chapterIndex = this.ctx.chapters.findIndex(
+          (chapter) => chapter.id === scene.chapterId
+        );
         return placement === "before" ? chapterIndex < targetIndex : chapterIndex <= targetIndex;
       }).length + 1
     );

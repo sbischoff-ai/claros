@@ -2,7 +2,12 @@ import type { Unsubscriber } from "svelte/store";
 import type { ClarosThemeId } from "@claros/editor-core";
 
 import type { ManuscriptDragController, ManuscriptDragState } from "$lib/manuscript-drag";
-import type { CompanionConnection, ProjectSession, WorkspaceChapter, WorkspaceScene } from "$lib/project-session";
+import type {
+  CompanionConnection,
+  ProjectSession,
+  WorkspaceChapter,
+  WorkspaceScene,
+} from "$lib/project-session";
 import { buildSidebarItems } from "$lib/sidebar-model";
 import { buildStorageBackendOptions, type StorageBackendOption } from "$lib/storage-backends";
 import type {
@@ -23,7 +28,10 @@ import {
   listProjectScenes,
   projectTitleForDisplay,
 } from "$lib/workspace-view-model";
-import { createBrowserEnvironment, type BrowserEnvironment } from "$lib/services/browser-environment";
+import {
+  createBrowserEnvironment,
+  type BrowserEnvironment,
+} from "$lib/services/browser-environment";
 import {
   createMarkdownEditorRuntime,
   type MarkdownEditorRuntime,
@@ -102,7 +110,10 @@ export class WorkspaceContext {
   }
 
   get visibleChapters(): WorkspaceChapter[] {
-    return this.manuscriptDragController?.previewChapters(this.chapters, this.manuscriptDrag) ?? this.chapters;
+    return (
+      this.manuscriptDragController?.previewChapters(this.chapters, this.manuscriptDrag) ??
+      this.chapters
+    );
   }
 
   get sidebarItems(): SidebarItem[] {
@@ -121,7 +132,9 @@ export class WorkspaceContext {
 
   get activeChapter(): WorkspaceChapter | undefined {
     const scene = this.activeScene;
-    return scene === undefined ? undefined : this.chapters.find((chapter) => chapter.id === scene.chapterId);
+    return scene === undefined
+      ? undefined
+      : this.chapters.find((chapter) => chapter.id === scene.chapterId);
   }
 
   get projectIsOpen(): boolean {
@@ -147,7 +160,11 @@ export class WorkspaceContext {
   }
 
   get canMoveCurrentSceneDown(): boolean {
-    return this.projectIsOpen && this.activeSceneIndex >= 0 && this.activeSceneIndex < this.scenes.length - 1;
+    return (
+      this.projectIsOpen &&
+      this.activeSceneIndex >= 0 &&
+      this.activeSceneIndex < this.scenes.length - 1
+    );
   }
 
   get canMoveCurrentChapterUp(): boolean {
@@ -155,7 +172,11 @@ export class WorkspaceContext {
   }
 
   get canMoveCurrentChapterDown(): boolean {
-    return this.projectIsOpen && this.activeChapterIndex >= 0 && this.activeChapterIndex < this.chapters.length - 1;
+    return (
+      this.projectIsOpen &&
+      this.activeChapterIndex >= 0 &&
+      this.activeChapterIndex < this.chapters.length - 1
+    );
   }
 
   get storageBackendOptions(): StorageBackendOption[] {
@@ -163,24 +184,39 @@ export class WorkspaceContext {
   }
 
   get selectedStorageBackend(): StorageBackendOption {
-    return this.storageBackendOptions.find((backend) => backend.id === this.selectedStorageBackendId) ?? this.storageBackendOptions[0];
+    return (
+      this.storageBackendOptions.find((backend) => backend.id === this.selectedStorageBackendId) ??
+      this.storageBackendOptions[0]
+    );
   }
 
   get openStorageBackend(): StorageBackendOption {
-    return this.storageBackendOptions.find((backend) => backend.id === this.openStorageBackendId) ?? this.storageBackendOptions[0];
+    return (
+      this.storageBackendOptions.find((backend) => backend.id === this.openStorageBackendId) ??
+      this.storageBackendOptions[0]
+    );
   }
 
   get chapterDropIndicatorItemId(): string {
-    return this.manuscriptDragController?.chapterDropIndicatorItemId(this.visibleChapters, this.manuscriptDrag) ?? "";
+    return (
+      this.manuscriptDragController?.chapterDropIndicatorItemId(
+        this.visibleChapters,
+        this.manuscriptDrag
+      ) ?? ""
+    );
   }
 
   get activeSceneIndex(): number {
     const scene = this.activeScene;
-    return scene === undefined ? -1 : this.scenes.findIndex((candidate) => candidate.path === scene.path);
+    return scene === undefined
+      ? -1
+      : this.scenes.findIndex((candidate) => candidate.path === scene.path);
   }
 
   get activeChapterIndex(): number {
     const chapter = this.activeChapter;
-    return chapter === undefined ? -1 : this.chapters.findIndex((candidate) => candidate.id === chapter.id);
+    return chapter === undefined
+      ? -1
+      : this.chapters.findIndex((candidate) => candidate.id === chapter.id);
   }
 }

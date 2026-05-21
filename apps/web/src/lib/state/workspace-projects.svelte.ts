@@ -105,10 +105,7 @@ export class WorkspaceProjects {
     });
   }
 
-  async createProjectWithBackendTitle(
-    backendId: StorageBackendId,
-    title: string
-  ): Promise<void> {
+  async createProjectWithBackendTitle(backendId: StorageBackendId, title: string): Promise<void> {
     if (backendId === "file-picker") {
       await this.createNewProject(title);
       return;

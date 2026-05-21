@@ -42,7 +42,9 @@ export class WorkspaceSidebarController {
   }
 
   get sidebarContextMenuItems(): ActionMenuItem[] {
-    return this.ctx.contextMenu === undefined ? [] : this.buildSidebarContextMenuItems(this.ctx.contextMenu.item);
+    return this.ctx.contextMenu === undefined
+      ? []
+      : this.buildSidebarContextMenuItems(this.ctx.contextMenu.item);
   }
 
   toggleCollapsed(itemId: string): void {
@@ -75,7 +77,9 @@ export class WorkspaceSidebarController {
     ) {
       return;
     }
-    const currentIndex = this.ctx.sidebarItems.findIndex((item) => item.id === this.ctx.focusedSidebarItemId);
+    const currentIndex = this.ctx.sidebarItems.findIndex(
+      (item) => item.id === this.ctx.focusedSidebarItemId
+    );
     const intent = directionalIntentFromKeydown(event);
 
     if ((event.metaKey || event.ctrlKey) && event.key === "ArrowLeft") {
@@ -109,7 +113,8 @@ export class WorkspaceSidebarController {
   }
 
   focusSidebarIndex(index: number): void {
-    this.ctx.focusedSidebarItemId = this.ctx.sidebarItems[index]?.id ?? this.ctx.focusedSidebarItemId;
+    this.ctx.focusedSidebarItemId =
+      this.ctx.sidebarItems[index]?.id ?? this.ctx.focusedSidebarItemId;
   }
 
   expandFocusedItem(): void {
@@ -142,9 +147,9 @@ export class WorkspaceSidebarController {
   }
 
   sidebarItemElement(itemId: string): HTMLElement | undefined {
-    return Array.from(this.ctx.sidebarNav?.querySelectorAll<HTMLElement>("[data-sidebar-item-id]") ?? []).find(
-      (element) => element.dataset.sidebarItemId === itemId
-    );
+    return Array.from(
+      this.ctx.sidebarNav?.querySelectorAll<HTMLElement>("[data-sidebar-item-id]") ?? []
+    ).find((element) => element.dataset.sidebarItemId === itemId);
   }
 
   openSidebarContextMenu(event: MouseEvent, item: SidebarItem): void {
@@ -173,11 +178,14 @@ export class WorkspaceSidebarController {
   }
 
   beginContextMenuTitleEdit(): void {
-    if (this.ctx.contextMenu !== undefined) this.titles.beginSidebarTitleEdit(this.ctx.contextMenu.item);
+    if (this.ctx.contextMenu !== undefined)
+      this.titles.beginSidebarTitleEdit(this.ctx.contextMenu.item);
   }
 
   buildSidebarContextMenuItems(item: SidebarItem): ActionMenuItem[] {
-    const menuItems: ActionMenuItem[] = [{ label: "Change title", run: () => this.beginContextMenuTitleEdit() }];
+    const menuItems: ActionMenuItem[] = [
+      { label: "Change title", run: () => this.beginContextMenuTitleEdit() },
+    ];
     if (item.kind === "chapter") {
       this.appendChapterMenuItems(menuItems, this.chapterForItem(item));
     } else {
@@ -186,7 +194,10 @@ export class WorkspaceSidebarController {
     return menuItems;
   }
 
-  private appendChapterMenuItems(menuItems: ActionMenuItem[], chapter: WorkspaceChapter | undefined): void {
+  private appendChapterMenuItems(
+    menuItems: ActionMenuItem[],
+    chapter: WorkspaceChapter | undefined
+  ): void {
     menuItems.push({
       label: "Add new chapter",
       disabled: chapter === undefined,
@@ -207,7 +218,10 @@ export class WorkspaceSidebarController {
     });
   }
 
-  private appendSceneMenuItems(menuItems: ActionMenuItem[], scene: WorkspaceScene | undefined): void {
+  private appendSceneMenuItems(
+    menuItems: ActionMenuItem[],
+    scene: WorkspaceScene | undefined
+  ): void {
     menuItems.push({
       label: "Add new scene",
       disabled: scene === undefined,
@@ -216,7 +230,11 @@ export class WorkspaceSidebarController {
         { label: "After", run: () => this.titles.openInsertSceneModal("after", scene) },
       ],
     });
-    menuItems.push({ label: "Move", disabled: scene === undefined, submenu: this.moveSceneItems(scene) });
+    menuItems.push({
+      label: "Move",
+      disabled: scene === undefined,
+      submenu: this.moveSceneItems(scene),
+    });
     menuItems.push({
       label: "Delete scene",
       disabled: scene === undefined || !this.manuscript.canDeleteScene(),
@@ -226,7 +244,8 @@ export class WorkspaceSidebarController {
 
   openCurrentChapterDeleteModal(): void {
     const chapter = this.ctx.activeChapter;
-    if (chapter !== undefined && this.manuscript.canDeleteChapter(chapter)) this.openDeleteChapterModal(chapter);
+    if (chapter !== undefined && this.manuscript.canDeleteChapter(chapter))
+      this.openDeleteChapterModal(chapter);
   }
 
   openCurrentSceneDeleteModal(): void {
@@ -236,37 +255,73 @@ export class WorkspaceSidebarController {
 
   openDeleteChapterModal(chapter: WorkspaceChapter): void {
     this.ctx.contextMenu = undefined;
-    this.ctx.deleteModal = { target: "chapter", heading: "Delete Chapter", label: chapter.title, chapterId: chapter.id, confirmation: "" };
+    this.ctx.deleteModal = {
+      target: "chapter",
+      heading: "Delete Chapter",
+      label: chapter.title,
+      chapterId: chapter.id,
+      confirmation: "",
+    };
   }
 
   openDeleteSceneModal(scene: WorkspaceScene): void {
     this.ctx.contextMenu = undefined;
-    this.ctx.deleteModal = { target: "scene", heading: "Delete Scene", label: scene.title, scenePath: scene.path, confirmation: "" };
+    this.ctx.deleteModal = {
+      target: "scene",
+      heading: "Delete Scene",
+      label: scene.title,
+      scenePath: scene.path,
+      confirmation: "",
+    };
   }
 
   private moveChapterItems(chapter: WorkspaceChapter | undefined): ActionMenuItem[] {
     return [
-      { label: "Up", disabled: chapter === undefined || !this.manuscript.canMoveChapter(chapter, "up"), run: () => chapter !== undefined && void this.manuscript.moveChapterByDirection(chapter, "up") },
-      { label: "Down", disabled: chapter === undefined || !this.manuscript.canMoveChapter(chapter, "down"), run: () => chapter !== undefined && void this.manuscript.moveChapterByDirection(chapter, "down") },
+      {
+        label: "Up",
+        disabled: chapter === undefined || !this.manuscript.canMoveChapter(chapter, "up"),
+        run: () =>
+          chapter !== undefined && void this.manuscript.moveChapterByDirection(chapter, "up"),
+      },
+      {
+        label: "Down",
+        disabled: chapter === undefined || !this.manuscript.canMoveChapter(chapter, "down"),
+        run: () =>
+          chapter !== undefined && void this.manuscript.moveChapterByDirection(chapter, "down"),
+      },
     ];
   }
 
   private moveSceneItems(scene: WorkspaceScene | undefined): ActionMenuItem[] {
     return [
-      { label: "Up", disabled: scene === undefined || !this.manuscript.canMoveScene(scene, "up"), run: () => scene !== undefined && void this.manuscript.moveSceneByDirection(scene, "up") },
-      { label: "Down", disabled: scene === undefined || !this.manuscript.canMoveScene(scene, "down"), run: () => scene !== undefined && void this.manuscript.moveSceneByDirection(scene, "down") },
+      {
+        label: "Up",
+        disabled: scene === undefined || !this.manuscript.canMoveScene(scene, "up"),
+        run: () => scene !== undefined && void this.manuscript.moveSceneByDirection(scene, "up"),
+      },
+      {
+        label: "Down",
+        disabled: scene === undefined || !this.manuscript.canMoveScene(scene, "down"),
+        run: () => scene !== undefined && void this.manuscript.moveSceneByDirection(scene, "down"),
+      },
     ];
   }
 
   private focusedItem(): SidebarItem | undefined {
-    return this.ctx.sidebarItems.find((candidate) => candidate.id === this.ctx.focusedSidebarItemId);
+    return this.ctx.sidebarItems.find(
+      (candidate) => candidate.id === this.ctx.focusedSidebarItemId
+    );
   }
 
   private chapterForItem(item: SidebarItem): WorkspaceChapter | undefined {
-    return item.chapterId === undefined ? undefined : this.ctx.chapters.find((chapter) => chapter.id === item.chapterId);
+    return item.chapterId === undefined
+      ? undefined
+      : this.ctx.chapters.find((chapter) => chapter.id === item.chapterId);
   }
 
   private sceneForItem(item: SidebarItem): WorkspaceScene | undefined {
-    return item.path === undefined ? undefined : this.ctx.scenes.find((scene) => scene.path === item.path);
+    return item.path === undefined
+      ? undefined
+      : this.ctx.scenes.find((scene) => scene.path === item.path);
   }
 }

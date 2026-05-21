@@ -23,7 +23,8 @@ export class WorkspaceTitles {
   ) {}
 
   openTitleModal(state: TitleModalState): void {
-    const returnFocus = state.returnFocus ?? this.ctx.paletteReturnFocus ?? this.focus.captureWorkspaceFocus();
+    const returnFocus =
+      state.returnFocus ?? this.ctx.paletteReturnFocus ?? this.focus.captureWorkspaceFocus();
     this.ctx.paletteOpen = false;
     this.ctx.contextMenu = undefined;
     this.ctx.titleModal = { ...state, returnFocus };
@@ -153,7 +154,8 @@ export class WorkspaceTitles {
 
   beginProjectTitleEdit(): void {
     if (!this.ctx.projectIsOpen) return;
-    this.ctx.projectTitleReturnFocus = this.ctx.projectTitleReturnFocus ?? this.focus.captureWorkspaceFocus();
+    this.ctx.projectTitleReturnFocus =
+      this.ctx.projectTitleReturnFocus ?? this.focus.captureWorkspaceFocus();
     this.ctx.projectTitleDraft = this.ctx.project?.manifest.title ?? "";
     this.ctx.editingProjectTitle = true;
     void tick().then(() => this.focusTitleInput(".project-title-input"));
@@ -193,13 +195,18 @@ export class WorkspaceTitles {
   async setChapterTitleFromInput(chapterId: string, title: string): Promise<void> {
     if (this.ctx.project === undefined) return;
     const nextTitle = normalizedChapterTitle(chapterId, title, this.ctx.chapters);
-    const activeSceneSequence = this.ctx.activeChapter?.id === chapterId ? this.ctx.activeScene?.sequence : undefined;
-    this.ctx.optimisticChapterTitles = new Map(this.ctx.optimisticChapterTitles).set(chapterId, nextTitle);
+    const activeSceneSequence =
+      this.ctx.activeChapter?.id === chapterId ? this.ctx.activeScene?.sequence : undefined;
+    this.ctx.optimisticChapterTitles = new Map(this.ctx.optimisticChapterTitles).set(
+      chapterId,
+      nextTitle
+    );
     try {
       const updatedChapter = await this.ctx.project.setChapterTitle(chapterId, title);
-      const updatedActiveScene = activeSceneSequence === undefined
-        ? undefined
-        : updatedChapter.scenes.find((scene) => scene.sequence === activeSceneSequence);
+      const updatedActiveScene =
+        activeSceneSequence === undefined
+          ? undefined
+          : updatedChapter.scenes.find((scene) => scene.sequence === activeSceneSequence);
       if (updatedActiveScene !== undefined) {
         await this.documents.loadDocument(updatedActiveScene.path);
         this.documents.setEditorMarkdown(this.ctx.currentMarkdown);
@@ -215,7 +222,10 @@ export class WorkspaceTitles {
   async setSceneTitleFromInput(scenePath: string, title: string): Promise<void> {
     if (this.ctx.project === undefined) return;
     const nextTitle = normalizedSceneTitle(scenePath, title, this.ctx.scenes);
-    this.ctx.optimisticSceneTitles = new Map(this.ctx.optimisticSceneTitles).set(scenePath, nextTitle);
+    this.ctx.optimisticSceneTitles = new Map(this.ctx.optimisticSceneTitles).set(
+      scenePath,
+      nextTitle
+    );
     if (scenePath === this.ctx.activePath) this.ctx.activeTitle = nextTitle;
     try {
       const updatedScene = await this.ctx.project.setSceneTitle(scenePath, title);
@@ -284,7 +294,8 @@ export class WorkspaceTitles {
       await this.focus.restoreWorkspaceFocus(modal.returnFocus);
     } else if (modal.target === "scene" && modal.scenePath !== undefined) {
       await this.setSceneTitleFromInput(modal.scenePath, modal.value);
-      if (modal.scenePath === this.ctx.activePath) await this.documents.loadDocument(this.ctx.activePath);
+      if (modal.scenePath === this.ctx.activePath)
+        await this.documents.loadDocument(this.ctx.activePath);
       await this.focus.restoreWorkspaceFocus(modal.returnFocus);
     }
   }

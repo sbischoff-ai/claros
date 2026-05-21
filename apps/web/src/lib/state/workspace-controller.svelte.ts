@@ -33,7 +33,15 @@ export function createWorkspaceController(
   projects.titles = titles;
   const sidebar = new WorkspaceSidebarController(ctx, documents, focus, manuscript, titles);
   const overlays = new WorkspaceOverlays(ctx, documents, focus);
-  const palette = new WorkspacePalette(ctx, documents, focus, manuscript, projects, sidebar, titles);
+  const palette = new WorkspacePalette(
+    ctx,
+    documents,
+    focus,
+    manuscript,
+    projects,
+    sidebar,
+    titles
+  );
   const lifecycle = new WorkspaceLifecycle(
     ctx,
     documents,

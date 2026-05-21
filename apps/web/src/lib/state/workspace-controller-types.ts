@@ -190,10 +190,7 @@ export interface WorkspaceController {
     placement: Exclude<ManuscriptInsertionPlacement, "append">,
     chapter?: WorkspaceChapter
   ): void;
-  openChapterCreationModal(
-    placement: ManuscriptInsertionPlacement,
-    targetChapterId?: string
-  ): void;
+  openChapterCreationModal(placement: ManuscriptInsertionPlacement, targetChapterId?: string): void;
   openAppendSceneModal(): void;
   openInsertSceneModal(
     placement: Exclude<ManuscriptInsertionPlacement, "append">,
