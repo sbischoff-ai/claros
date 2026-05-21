@@ -40,7 +40,18 @@ const workspaceSource = [
   "./lib/services/browser-environment.ts",
   "./lib/services/markdown-editor-runtime.ts",
   "./lib/state/action-menu-controller.svelte.ts",
+  "./lib/state/workspace-context.svelte.ts",
   "./lib/state/workspace-controller.svelte.ts",
+  "./lib/state/workspace-controller-types.ts",
+  "./lib/state/workspace-documents.svelte.ts",
+  "./lib/state/workspace-focus.svelte.ts",
+  "./lib/state/workspace-lifecycle.svelte.ts",
+  "./lib/state/workspace-manuscript-actions.svelte.ts",
+  "./lib/state/workspace-overlays.svelte.ts",
+  "./lib/state/workspace-palette.svelte.ts",
+  "./lib/state/workspace-projects.svelte.ts",
+  "./lib/state/workspace-sidebar.svelte.ts",
+  "./lib/state/workspace-titles.svelte.ts",
   "./lib/storage-backends.ts",
   "./lib/title-model.ts",
   "./lib/workspace-commands.ts",
@@ -388,7 +399,7 @@ describe("workspace command surface", () => {
     expect(workspaceSource).toContain("suppressEditorChange");
     expect(workspaceSource).toContain("forceReload?: boolean; skipSave?: boolean");
     expect(workspaceSource).toContain(
-      "await this.openDocument(nextPath, { forceReload: true, skipSave: true })"
+      "await this.documents.openDocument(nextPath, { forceReload: true, skipSave: true })"
     );
     expect(workspaceSource).toContain('activeDocumentKind === "note" ? "start" : "end"');
     expect(workspaceSource).toContain("lastWorkspaceFocus");
@@ -437,7 +448,9 @@ describe("workspace command surface", () => {
     expect(workspaceSource.indexOf("{:else}")).toBeLessThan(
       workspaceSource.indexOf('<section class="project-empty-state"')
     );
-    expect(workspaceSource).toContain("await this.connectCompanion(this.companionConnection)");
+    expect(workspaceSource).toContain(
+      "await this.projects.connectCompanion(this.ctx.companionConnection)"
+    );
     expect(workspaceSource).toContain("async finishStartup()");
   });
 });
