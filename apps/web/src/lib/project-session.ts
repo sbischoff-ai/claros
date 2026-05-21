@@ -568,7 +568,7 @@ function splitFrontmatter(raw: string): { frontmatter: string; body: string } {
     return { frontmatter: "", body: raw };
   }
 
-  const match = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n)?(?:\r?\n)?/.exec(raw);
+  const match = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(raw);
   if (match === null) {
     return { frontmatter: "", body: raw };
   }

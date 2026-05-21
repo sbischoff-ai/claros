@@ -123,6 +123,20 @@ describe("project session", () => {
     expect(written.body).toBe("# Kareth\n\nUpdated body.");
   });
 
+  it("does not add leading blank lines when saving a body that starts empty", async () => {
+    const handle = createProjectHandle();
+    const session = await openLocalProjectSession(handle);
+    const path = firstDocumentPath(session);
+    const document = await session.readDocument({ path });
+
+    await session.writeDocument({ path }, document.body);
+    await session.writeDocument({ path }, document.body);
+
+    expect(await readHandleFile(handle, "/manuscript/01-start/01-opening.md")).toBe(
+      "---\ntitle: Opening\n---\n\nStart."
+    );
+  });
+
   it("creates a new project from browser file handles", async () => {
     const handle = directory("project");
     const session = await createNewLocalProjectSession(handle, "Browser Draft");
