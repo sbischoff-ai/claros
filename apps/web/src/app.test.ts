@@ -252,6 +252,11 @@ describe("workspace command surface", () => {
     expect(pageSource).toContain("optimisticChapterTitles");
     expect(pageSource).toContain("optimisticSceneTitles");
     expect(pageSource).toContain("await focusEditorAfterOpen()");
+    expect(pageSource).toContain('activeDocumentKind === "note" ? "start" : "end"');
+    expect(pageSource).toContain("lastWorkspaceFocus");
+    expect(pageSource).toContain("restoreWorkspaceFocus(modal.returnFocus)");
+    expect(pageSource).toContain("rememberEditorFocus");
+    expect(pageSource).toContain("getCursorPosition()");
     expect(pageSource).not.toContain("Connect Local Companion");
     expect(pageSource).toContain('event.key === "ArrowLeft"');
     expect(pageSource).toContain('event.key === "ArrowRight"');

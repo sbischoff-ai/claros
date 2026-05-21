@@ -1,8 +1,12 @@
 export {
   createMarkdownEditor,
   defaultMarkdown,
+  resolveMarkdownCursorPosition,
   type ClarosMarkdownEditor,
+  type MarkdownEditorCursor,
+  type MarkdownEditorFocusOptions,
   type MarkdownEditorOptions,
+  type MarkdownEditorSetMarkdownOptions,
 } from "./editor";
 export {
   CLAROS_THEMES,

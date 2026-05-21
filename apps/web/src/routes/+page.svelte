@@ -28,6 +28,7 @@
     type CompanionConnection,
     type ProjectSession,
     type WorkspaceChapter,
+    type WorkspaceDocument,
     type WorkspaceNote,
     type WorkspaceScene,
   } from "$lib/project-session";
@@ -47,6 +48,9 @@
     | "chapter"
     | "scene";
   type DeleteModalTarget = "chapter" | "scene";
+  type WorkspaceFocusTarget =
+    | { region: "editor"; path: string; cursor: number }
+    | { region: "sidebar"; itemId: string };
 
   interface PaletteCommand {
     label: string;
@@ -76,6 +80,7 @@
     chapterTitle?: string;
     chapterId?: string;
     scenePath?: string;
+    returnFocus?: WorkspaceFocusTarget;
   }
 
   interface DeleteModalState {
@@ -110,6 +115,7 @@
   let projectRevision = 0;
   let activePath = "";
   let activeTitle = "Draft";
+  let activeDocumentKind: WorkspaceDocument["kind"] = "scene";
   let currentMarkdown = "";
   let vimMode = false;
   let paletteOpen = false;
@@ -142,6 +148,10 @@
   let optimisticSceneTitles = new Map<string, string>();
   let editingSidebarItemId = "";
   let sidebarTitleDraft = "";
+  let lastWorkspaceFocus: WorkspaceFocusTarget | undefined;
+  let paletteReturnFocus: WorkspaceFocusTarget | undefined;
+  let projectTitleReturnFocus: WorkspaceFocusTarget | undefined;
+  let sidebarTitleReturnFocus: WorkspaceFocusTarget | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   $: chapters = listProjectChapters(projectRevision, project);
@@ -265,11 +275,11 @@
           return;
         }
         if (titleModal !== undefined) {
-          titleModal = undefined;
+          closeTitleModal();
           return;
         }
         if (deleteModal !== undefined) {
-          deleteModal = undefined;
+          closeDeleteModal();
           return;
         }
         if (paletteOpen) {
@@ -282,10 +292,16 @@
       }
     };
 
+    const handleWindowFocus = () => {
+      void repairWorkspaceFocus();
+    };
+
     window.addEventListener("keydown", handleKeydown);
+    window.addEventListener("focus", handleWindowFocus);
 
     return () => {
       window.removeEventListener("keydown", handleKeydown);
+      window.removeEventListener("focus", handleWindowFocus);
     };
   });
 
@@ -293,8 +309,8 @@
     startupReady = true;
     if (projectIsOpen) {
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown);
-      editor?.focus();
+      editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
+      focusEditorWithDefaultCursor();
     }
   }
 
@@ -335,8 +351,8 @@
       openStorageBackendId = "file-picker";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown);
-      editor?.focus();
+      editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
+      focusEditorWithDefaultCursor();
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         projectOpenState = project ? "open" : "idle";
@@ -376,8 +392,8 @@
       openStorageBackendId = "file-picker";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown);
-      editor?.focus();
+      editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
+      focusEditorWithDefaultCursor();
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         projectOpenState = project ? "open" : "idle";
@@ -460,8 +476,8 @@
       openStorageBackendId = "local-companion";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown);
-      editor?.focus();
+      editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
+      focusEditorWithDefaultCursor();
     } catch (error) {
       projectOpenState = hadOpenProject ? "open" : "error";
       projectError = error instanceof Error ? error.message : "Unable to connect local companion";
@@ -498,8 +514,8 @@
       openStorageBackendId = "local-companion";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown);
-      editor?.focus();
+      editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
+      focusEditorWithDefaultCursor();
     } catch (error) {
       projectOpenState = hadOpenProject ? "open" : "error";
       projectError = error instanceof Error ? error.message : "Unable to create project";
@@ -578,6 +594,7 @@
     const document = await project.readDocument({ path });
     activePath = document.path;
     activeTitle = document.title;
+    activeDocumentKind = document.kind;
     currentMarkdown = document.body;
     saveState = "saved";
   }
@@ -590,13 +607,13 @@
 
     await flushSave();
     await loadDocument(path);
-    editor?.setMarkdown(currentMarkdown);
+    editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
     await focusEditorAfterOpen();
   }
 
   async function focusEditorAfterOpen(): Promise<void> {
     await tick();
-    editor?.focus();
+    focusEditorWithDefaultCursor();
   }
 
   function toggleVimMode(): void {
@@ -608,7 +625,7 @@
     if (paletteOpen) {
       focusEditor();
     } else {
-      editor?.focus();
+      focusEditorPreservingSidebar();
     }
   }
 
@@ -617,7 +634,7 @@
     commandQuery = "";
     selectedCommandIndex = 0;
     if (projectIsOpen) {
-      editor?.focus();
+      focusEditorWithDefaultCursor();
     }
   }
 
@@ -627,7 +644,95 @@
     selectedCommandIndex = 0;
     if (projectIsOpen) {
       editor?.focus();
+      rememberEditorFocus();
     }
+  }
+
+  function defaultCursorForActiveDocument(): "start" | "end" {
+    return activeDocumentKind === "note" ? "start" : "end";
+  }
+
+  function focusEditorWithDefaultCursor(): void {
+    if (!projectIsOpen) {
+      return;
+    }
+    editor?.focus({ cursor: defaultCursorForActiveDocument() });
+    rememberEditorFocus();
+  }
+
+  function rememberEditorFocus(): void {
+    if (!projectIsOpen || editor === undefined) {
+      return;
+    }
+    lastWorkspaceFocus = {
+      region: "editor",
+      path: activePath,
+      cursor: editor.getCursorPosition(),
+    };
+  }
+
+  function rememberSidebarFocus(itemId = focusedSidebarItemId): void {
+    if (!projectIsOpen || itemId.length === 0) {
+      return;
+    }
+    lastWorkspaceFocus = { region: "sidebar", itemId };
+  }
+
+  function captureWorkspaceFocus(): WorkspaceFocusTarget | undefined {
+    const activeElement = document.activeElement;
+    if (activeElement !== null && editorHost?.contains(activeElement)) {
+      rememberEditorFocus();
+      return lastWorkspaceFocus;
+    }
+    if (activeElement !== null && sidebarNav?.contains(activeElement)) {
+      rememberSidebarFocus();
+      return lastWorkspaceFocus;
+    }
+    return lastWorkspaceFocus;
+  }
+
+  async function restoreWorkspaceFocus(target = lastWorkspaceFocus): Promise<void> {
+    if (!projectIsOpen || hasTransientFocus()) {
+      return;
+    }
+    await tick();
+    if (target?.region === "sidebar" && sidebarOpen && sidebarItems.some((item) => item.id === target.itemId)) {
+      focusedSidebarItemId = target.itemId;
+      sidebarNav?.focus();
+      rememberSidebarFocus(target.itemId);
+      return;
+    }
+    if (target?.region === "editor" && target.path === activePath) {
+      editor?.focus({ cursor: target.cursor });
+      rememberEditorFocus();
+      return;
+    }
+    focusEditorWithDefaultCursor();
+  }
+
+  async function repairWorkspaceFocus(): Promise<void> {
+    if (!projectIsOpen || hasTransientFocus()) {
+      return;
+    }
+    await tick();
+    const activeElement = document.activeElement;
+    if (
+      activeElement !== null &&
+      (editorHost?.contains(activeElement) || sidebarNav?.contains(activeElement))
+    ) {
+      return;
+    }
+    await restoreWorkspaceFocus();
+  }
+
+  function hasTransientFocus(): boolean {
+    return (
+      paletteOpen ||
+      titleModal !== undefined ||
+      deleteModal !== undefined ||
+      editingProjectTitle ||
+      editingSidebarItemId.length > 0
+    );
   }
 
   function focusSidebar(): void {
@@ -641,25 +746,31 @@
       sidebarOpen = true;
     }
     focusedSidebarItemId = activePath || sidebarItems[0]?.id || "";
-    void tick().then(() => sidebarNav?.focus());
+    void tick().then(() => {
+      sidebarNav?.focus();
+      rememberSidebarFocus();
+    });
   }
 
   function togglePalette(): void {
-    paletteOpen = !paletteOpen;
-    if (paletteOpen) {
+    if (!paletteOpen) {
+      paletteReturnFocus = paletteReturnFocus ?? captureWorkspaceFocus();
+      paletteOpen = true;
       commandQuery = "";
       selectedCommandIndex = 0;
-    } else if (projectIsOpen) {
-      editor?.focus();
+      return;
     }
+    closePalette();
   }
 
   function closePalette(): void {
+    const returnFocus = paletteReturnFocus;
     paletteOpen = false;
     commandQuery = "";
     selectedCommandIndex = 0;
+    paletteReturnFocus = undefined;
     if (projectIsOpen) {
-      editor?.focus();
+      void restoreWorkspaceFocus(returnFocus);
     }
   }
 
@@ -670,16 +781,19 @@
     sidebarOpen = !sidebarOpen;
     if (sidebarOpen) {
       focusedSidebarItemId = activePath || sidebarItems[0]?.id || "";
-      void tick().then(() => sidebarNav?.focus());
+      void tick().then(() => {
+        sidebarNav?.focus();
+        rememberSidebarFocus();
+      });
     } else {
-      editor?.focus();
+      focusEditorPreservingSidebar();
     }
   }
 
   function closeSidebar(): void {
     sidebarOpen = false;
     if (projectIsOpen) {
-      editor?.focus();
+      focusEditorPreservingSidebar();
     }
   }
 
@@ -698,14 +812,18 @@
     paletteOpen = false;
     commandQuery = "";
     selectedCommandIndex = 0;
+    paletteReturnFocus = undefined;
 
     if (command.focusAfter === "sidebar" && projectIsOpen) {
-      void tick().then(() => sidebarNav?.focus());
+      void tick().then(() => {
+        sidebarNav?.focus();
+        rememberSidebarFocus();
+      });
       return;
     }
 
     if (command.focusAfter !== "none" && projectIsOpen) {
-      void tick().then(() => editor?.focus());
+      void tick().then(() => focusEditorPreservingSidebar());
     }
   }
 
@@ -1189,9 +1307,10 @@
   }
 
   function openTitleModal(state: TitleModalState): void {
+    const returnFocus = state.returnFocus ?? paletteReturnFocus ?? captureWorkspaceFocus();
     paletteOpen = false;
     contextMenu = undefined;
-    titleModal = state;
+    titleModal = { ...state, returnFocus };
   }
 
   function openProjectTitleModal(): void {
@@ -1297,6 +1416,7 @@
     }
     if (modal.target === "project") {
       await setProjectTitleFromInput(modal.value);
+      await restoreWorkspaceFocus(modal.returnFocus);
       return;
     }
     if (modal.target === "new-chapter") {
@@ -1306,6 +1426,7 @@
         value: "",
         placeholder: `Scene ${scenes.length + 1}`,
         chapterTitle: modal.value,
+        returnFocus: modal.returnFocus,
       });
       return;
     }
@@ -1323,6 +1444,7 @@
     }
     if (modal.target === "chapter" && modal.chapterId !== undefined) {
       await setChapterTitleFromInput(modal.chapterId, modal.value);
+      await restoreWorkspaceFocus(modal.returnFocus);
       return;
     }
     if (modal.target === "scene" && modal.scenePath !== undefined) {
@@ -1330,6 +1452,7 @@
       if (modal.scenePath === activePath) {
         await loadDocument(activePath);
       }
+      await restoreWorkspaceFocus(modal.returnFocus);
     }
   }
 
@@ -1353,10 +1476,22 @@
     }
   }
 
+  function closeTitleModal(): void {
+    const returnFocus = titleModal?.returnFocus;
+    titleModal = undefined;
+    void restoreWorkspaceFocus(returnFocus);
+  }
+
+  function closeDeleteModal(): void {
+    deleteModal = undefined;
+    void restoreWorkspaceFocus();
+  }
+
   function beginProjectTitleEdit(): void {
     if (!projectIsOpen) {
       return;
     }
+    projectTitleReturnFocus = projectTitleReturnFocus ?? captureWorkspaceFocus();
     projectTitleDraft = project?.manifest.title ?? "";
     editingProjectTitle = true;
     void tick().then(() => {
@@ -1370,8 +1505,11 @@
     if (!project || !editingProjectTitle) {
       return;
     }
+    const returnFocus = projectTitleReturnFocus;
+    projectTitleReturnFocus = undefined;
     editingProjectTitle = false;
     await setProjectTitleFromInput(projectTitleDraft);
+    await restoreWorkspaceFocus(returnFocus);
   }
 
   async function setProjectTitleFromInput(title: string): Promise<void> {
@@ -1423,6 +1561,7 @@
   }
 
   function beginSidebarTitleEdit(item: SidebarItem): void {
+    sidebarTitleReturnFocus = captureWorkspaceFocus();
     editingSidebarItemId = item.id;
     sidebarTitleDraft = item.label;
     contextMenu = undefined;
@@ -1437,6 +1576,8 @@
     if (!project || editingSidebarItemId !== item.id) {
       return;
     }
+    const returnFocus = sidebarTitleReturnFocus;
+    sidebarTitleReturnFocus = undefined;
     editingSidebarItemId = "";
     if (item.kind === "chapter" && item.chapterId !== undefined) {
       await setChapterTitleFromInput(item.chapterId, sidebarTitleDraft);
@@ -1447,11 +1588,16 @@
         await loadDocument(activePath);
       }
     }
+    await restoreWorkspaceFocus(returnFocus);
   }
 
   function cancelInlineTitleEdit(): void {
+    const returnFocus = sidebarTitleReturnFocus ?? projectTitleReturnFocus;
     editingProjectTitle = false;
     editingSidebarItemId = "";
+    projectTitleReturnFocus = undefined;
+    sidebarTitleReturnFocus = undefined;
+    void restoreWorkspaceFocus(returnFocus);
   }
 
   function openSidebarContextMenu(event: MouseEvent, item: SidebarItem): void {
@@ -1575,7 +1721,10 @@
             aria-selected={item.path === activePath}
             aria-current={item.path === activePath ? "page" : undefined}
             aria-expanded={item.collapsible ? !item.collapsed : undefined}
-            on:focus={() => (focusedSidebarItemId = item.id)}
+            on:focus={() => {
+              focusedSidebarItemId = item.id;
+              rememberSidebarFocus(item.id);
+            }}
             on:contextmenu={(event) => openSidebarContextMenu(event, item)}
             on:click={() => {
               if (editingSidebarItemId === item.id) {
@@ -1656,6 +1805,7 @@
           <button
             type="button"
             class="product title-button"
+            on:mousedown={() => (projectTitleReturnFocus = captureWorkspaceFocus())}
             on:click={beginProjectTitleEdit}
           >
             {displayProjectTitle}
@@ -1681,6 +1831,7 @@
           class="icon-button"
           aria-label="Open command palette"
           aria-expanded={paletteOpen}
+          on:mousedown={() => (paletteReturnFocus = captureWorkspaceFocus())}
           on:click={togglePalette}
         >
           <Command size={19} weight="regular" />
@@ -1689,7 +1840,7 @@
     </header>
 
     {#if projectIsOpen}
-      <section class="editor-frame" aria-label="Markdown editor">
+      <section class="editor-frame" aria-label="Markdown editor" on:focusin={rememberEditorFocus}>
         <div bind:this={editorHost} class="editor-host"></div>
       </section>
     {:else}
@@ -1857,7 +2008,7 @@
         type="button"
         class="modal-backdrop"
         aria-label="Close title dialog"
-        on:click={() => (titleModal = undefined)}
+        on:click={closeTitleModal}
       ></button>
       <section class="modal" aria-label={titleModal.heading}>
         <h2>{titleModal.heading}</h2>
@@ -1869,7 +2020,7 @@
             aria-label={titleModal.heading}
           />
           <div class="modal-actions">
-            <button type="button" on:click={() => (titleModal = undefined)}>Cancel</button>
+            <button type="button" on:click={closeTitleModal}>Cancel</button>
             <button type="submit">Save</button>
           </div>
         </form>
@@ -1883,7 +2034,7 @@
         type="button"
         class="modal-backdrop"
         aria-label="Close delete dialog"
-        on:click={() => (deleteModal = undefined)}
+        on:click={closeDeleteModal}
       ></button>
       <section class="modal" aria-label={deleteModal.heading}>
         <h2>{deleteModal.heading}</h2>
@@ -1896,7 +2047,7 @@
             aria-label={`Confirm ${deleteModal.label}`}
           />
           <div class="modal-actions">
-            <button type="button" on:click={() => (deleteModal = undefined)}>Cancel</button>
+            <button type="button" on:click={closeDeleteModal}>Cancel</button>
             <button type="submit" disabled={deleteModal.confirmation !== "delete"}>Delete</button>
           </div>
         </form>
