@@ -16,6 +16,21 @@ const pageSource = readFileSync(
   fileURLToPath(new URL("./routes/+page.svelte", import.meta.url)),
   "utf-8"
 );
+const workspaceSource = [
+  "./routes/+page.svelte",
+  "./lib/CommandPalette.svelte",
+  "./lib/DeleteModal.svelte",
+  "./lib/ProjectLauncher.svelte",
+  "./lib/TitleModal.svelte",
+  "./lib/WorkspaceSidebar.svelte",
+  "./lib/sidebar-model.ts",
+  "./lib/storage-backends.ts",
+  "./lib/title-model.ts",
+  "./lib/workspace-view-model.ts",
+  "./lib/workspace-types.ts",
+]
+  .map((path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf-8"))
+  .join("\n");
 const appHtmlSource = readFileSync(fileURLToPath(new URL("./app.html", import.meta.url)), "utf-8");
 
 class MemoryStorage {
@@ -247,8 +262,8 @@ describe("workspace command surface", () => {
     expect(pageSource).toContain("Open Project: Local Companion");
     expect(pageSource).toContain("New Project: Local Companion");
     expect(pageSource).toContain("Change Title: Current Scene");
-    expect(pageSource).toContain("<span>Project Workspace</span>");
-    expect(pageSource).toContain('target: "new-chapter-scene"');
+    expect(workspaceSource).toContain("<span>Project Workspace</span>");
+    expect(workspaceSource).toContain('target: "new-chapter-scene"');
     expect(pageSource).toContain("optimisticChapterTitles");
     expect(pageSource).toContain("optimisticSceneTitles");
     expect(pageSource).toContain("await focusEditorAfterOpen()");
@@ -263,15 +278,15 @@ describe("workspace command surface", () => {
   });
 
   it("uses shared Phosphor icon metadata for workspace controls", () => {
-    expect(pageSource).toContain("phosphor-svelte/lib/Command");
-    expect(pageSource).toContain("phosphor-svelte/lib/Files");
-    expect(pageSource).toContain("phosphor-svelte/lib/CaretLeft");
-    expect(pageSource).toContain("phosphor-svelte/lib/Book");
-    expect(pageSource).toContain("phosphor-svelte/lib/Notebook");
-    expect(pageSource).toContain("phosphor-svelte/lib/FolderOpen");
-    expect(pageSource).toContain("phosphor-svelte/lib/TerminalWindow");
-    expect(pageSource).toContain("icon: FolderOpen");
-    expect(pageSource).toContain("icon: TerminalWindow");
+    expect(workspaceSource).toContain("phosphor-svelte/lib/Command");
+    expect(workspaceSource).toContain("phosphor-svelte/lib/Files");
+    expect(workspaceSource).toContain("phosphor-svelte/lib/CaretLeft");
+    expect(workspaceSource).toContain("phosphor-svelte/lib/Book");
+    expect(workspaceSource).toContain("phosphor-svelte/lib/Notebook");
+    expect(workspaceSource).toContain("phosphor-svelte/lib/FolderOpen");
+    expect(workspaceSource).toContain("phosphor-svelte/lib/TerminalWindow");
+    expect(workspaceSource).toContain("icon: FolderOpen");
+    expect(workspaceSource).toContain("icon: TerminalWindow");
     expect(pageSource).toContain("openStorageBackendId");
   });
 

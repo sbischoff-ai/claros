@@ -1,14 +1,9 @@
 <script lang="ts">
+  import "./page.css";
+
   import { onDestroy, onMount, tick } from "svelte";
-  import Book from "phosphor-svelte/lib/Book";
-  import CaretLeft from "phosphor-svelte/lib/CaretLeft";
-  import CaretDown from "phosphor-svelte/lib/CaretDown";
   import Command from "phosphor-svelte/lib/Command";
   import Files from "phosphor-svelte/lib/Files";
-  import FolderOpen from "phosphor-svelte/lib/FolderOpen";
-  import Notebook from "phosphor-svelte/lib/Notebook";
-  import Plus from "phosphor-svelte/lib/Plus";
-  import TerminalWindow from "phosphor-svelte/lib/TerminalWindow";
   import {
     CLAROS_THEMES,
     applyNamedTheme,
@@ -28,83 +23,43 @@
     type CompanionConnection,
     type ProjectSession,
     type WorkspaceChapter,
-    type WorkspaceDocument,
-    type WorkspaceNote,
     type WorkspaceScene,
   } from "$lib/project-session";
   import type { BrowserDirectoryPicker } from "$lib/browser-file-system";
+  import CommandPalette from "$lib/CommandPalette.svelte";
+  import DeleteModal from "$lib/DeleteModal.svelte";
+  import ProjectLauncher from "$lib/ProjectLauncher.svelte";
+  import { buildSidebarItems } from "$lib/sidebar-model";
+  import { buildStorageBackendOptions, type StorageBackendOption } from "$lib/storage-backends";
   import { loadTheme, saveTheme } from "$lib/theme";
-
-  type SaveState = "saved" | "dirty" | "saving" | "error";
-  type ProjectOpenState = "idle" | "opening" | "creating" | "connecting" | "open" | "error";
-  type StorageBackendId = "file-picker" | "local-companion";
-  type SidebarItemKind = "section" | "chapter" | "folder" | "scene" | "note" | "add-chapter" | "add-scene";
-  type TitleModalTarget =
-    | "new-project"
-    | "project"
-    | "new-chapter"
-    | "new-chapter-scene"
-    | "new-scene"
-    | "chapter"
-    | "scene";
-  type DeleteModalTarget = "chapter" | "scene";
-  type WorkspaceFocusTarget =
-    | { region: "editor"; path: string; cursor: number }
-    | { region: "sidebar"; itemId: string };
-
-  interface PaletteCommand {
-    label: string;
-    active?: boolean;
-    disabled?: boolean;
-    focusAfter?: "editor" | "sidebar" | "none";
-    run(): void;
-  }
-
-  interface SidebarItem {
-    id: string;
-    kind: SidebarItemKind;
-    label: string;
-    depth: number;
-    collapsible: boolean;
-    collapsed: boolean;
-    path?: string;
-    chapterId?: string;
-  }
-
-  interface TitleModalState {
-    target: TitleModalTarget;
-    heading: string;
-    value: string;
-    placeholder: string;
-    storageBackendId?: StorageBackendId;
-    chapterTitle?: string;
-    chapterId?: string;
-    scenePath?: string;
-    returnFocus?: WorkspaceFocusTarget;
-  }
-
-  interface DeleteModalState {
-    target: DeleteModalTarget;
-    heading: string;
-    label: string;
-    chapterId?: string;
-    scenePath?: string;
-    confirmation: string;
-  }
-
-  interface ContextMenuState {
-    x: number;
-    y: number;
-    item: SidebarItem;
-  }
-
-  interface StorageBackendOption {
-    id: StorageBackendId;
-    label: string;
-    icon: typeof FolderOpen;
-    available: boolean;
-    unavailableReason?: string;
-  }
+  import TitleModal from "$lib/TitleModal.svelte";
+  import {
+    normalizedChapterTitle,
+    normalizedProjectTitle,
+    normalizedSceneTitle,
+  } from "$lib/title-model";
+  import WorkspaceSidebar from "$lib/WorkspaceSidebar.svelte";
+  import {
+    clampCommandIndex,
+    filterCommands,
+    listProjectChapters,
+    listProjectNotes,
+    listProjectScenes,
+    projectTitleForDisplay,
+    saveStateLabel,
+  } from "$lib/workspace-view-model";
+  import type {
+    ActiveDocumentKind,
+    ContextMenuState,
+    DeleteModalState,
+    PaletteCommand,
+    ProjectOpenState,
+    SaveState,
+    SidebarItem,
+    StorageBackendId,
+    TitleModalState,
+    WorkspaceFocusTarget,
+  } from "$lib/workspace-types";
 
   let appShell: HTMLElement;
   let editorHost: HTMLDivElement;
@@ -115,7 +70,7 @@
   let projectRevision = 0;
   let activePath = "";
   let activeTitle = "Draft";
-  let activeDocumentKind: WorkspaceDocument["kind"] = "scene";
+  let activeDocumentKind: ActiveDocumentKind = "scene";
   let currentMarkdown = "";
   let vimMode = false;
   let paletteOpen = false;
@@ -137,8 +92,6 @@
   let collapsedItems = new Set<string>(["notes"]);
   let titleModal: TitleModalState | undefined;
   let deleteModal: DeleteModalState | undefined;
-  let titleModalInput: HTMLInputElement;
-  let deleteModalInput: HTMLInputElement;
   let contextMenu: ContextMenuState | undefined;
   let editingProjectTitle = false;
   let projectTitleDraft = "";
@@ -190,14 +143,6 @@
   $: if (paletteOpen) {
     selectedCommandIndex = 0;
     void tick().then(() => commandInput?.focus());
-  }
-
-  $: if (titleModal !== undefined) {
-    void tick().then(() => titleModalInput?.focus());
-  }
-
-  $: if (deleteModal !== undefined) {
-    void tick().then(() => deleteModalInput?.focus());
   }
 
   onMount(() => {
@@ -974,223 +919,6 @@
     ];
   }
 
-  function filterCommands(commands: PaletteCommand[], query: string): PaletteCommand[] {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return commands;
-    }
-
-    return commands.filter((command) => command.label.toLowerCase().includes(normalizedQuery));
-  }
-
-  function clampCommandIndex(index: number, commandCount: number): number {
-    if (commandCount === 0) {
-      return 0;
-    }
-
-    return Math.min(index, commandCount - 1);
-  }
-
-  function buildStorageBackendOptions(localProjectSupported: boolean): StorageBackendOption[] {
-    return [
-      {
-        id: "file-picker",
-        label: "Local Folder",
-        icon: FolderOpen,
-        available: localProjectSupported,
-        unavailableReason: localProjectSupported ? undefined : "Not supported by this browser",
-      },
-      {
-        id: "local-companion",
-        label: "Local Companion",
-        icon: TerminalWindow,
-        available: true,
-      },
-    ];
-  }
-
-  function listProjectChapters(
-    revision: number,
-    session: ProjectSession | undefined
-  ): WorkspaceChapter[] {
-    return revision < 0 ? [] : (session?.listChapters() ?? []);
-  }
-
-  function listProjectScenes(
-    revision: number,
-    session: ProjectSession | undefined
-  ): WorkspaceScene[] {
-    return revision < 0 ? [] : (session?.listScenes() ?? []);
-  }
-
-  function listProjectNotes(
-    revision: number,
-    session: ProjectSession | undefined
-  ): WorkspaceNote[] {
-    return revision < 0 ? [] : (session?.listNotes() ?? []);
-  }
-
-  function projectTitleForDisplay(
-    revision: number,
-    session: ProjectSession | undefined,
-    optimisticTitle: string | undefined
-  ): string {
-    if (optimisticTitle !== undefined) {
-      return optimisticTitle;
-    }
-    return revision < 0 ? "Claros" : (session?.manifest.title ?? "Claros");
-  }
-
-  function buildSidebarItems(
-    chapterList: WorkspaceChapter[],
-    noteList: WorkspaceNote[],
-    collapsed: Set<string>,
-    optimisticChapters: Map<string, string>,
-    optimisticScenes: Map<string, string>
-  ): SidebarItem[] {
-    const items: SidebarItem[] = [
-      {
-        id: "manuscript",
-        kind: "section",
-        label: "Manuscript",
-        depth: 0,
-        collapsible: true,
-        collapsed: collapsed.has("manuscript"),
-      },
-    ];
-
-    if (!collapsed.has("manuscript")) {
-      for (const chapter of chapterList) {
-        const chapterId = `chapter:${chapter.id}`;
-        items.push({
-          id: chapterId,
-          kind: "chapter",
-          label: optimisticChapters.get(chapter.id) ?? chapter.title ?? `Chapter ${chapter.sequence}`,
-          depth: 1,
-          collapsible: true,
-          collapsed: collapsed.has(chapterId),
-          chapterId: chapter.id,
-        });
-
-        if (!collapsed.has(chapterId)) {
-          for (const scene of chapter.scenes) {
-            items.push({
-              id: scene.path,
-              kind: "scene",
-              label: optimisticScenes.get(scene.path) ?? scene.title ?? `Scene ${scene.sequence}`,
-              depth: 2,
-              collapsible: false,
-              collapsed: false,
-              path: scene.path,
-              chapterId: chapter.id,
-            });
-          }
-
-          if (chapter.id === chapterList.at(-1)?.id) {
-            items.push({
-              id: "action:add-scene:append",
-              kind: "add-scene",
-              label: "Add Scene",
-              depth: 2,
-              collapsible: false,
-              collapsed: false,
-              chapterId: chapter.id,
-            });
-          }
-        }
-      }
-
-      items.push({
-        id: "action:add-chapter:append",
-        kind: "add-chapter",
-        label: "Add Chapter",
-        depth: 1,
-        collapsible: false,
-        collapsed: false,
-      });
-    }
-
-    items.push({
-      id: "notes",
-      kind: "section",
-      label: "Notes",
-      depth: 0,
-      collapsible: true,
-      collapsed: collapsed.has("notes"),
-    });
-
-    if (!collapsed.has("notes")) {
-      appendNoteItems(items, noteList, [], 1, collapsed);
-    }
-
-    return items;
-  }
-
-  function appendNoteItems(
-    items: SidebarItem[],
-    noteList: WorkspaceNote[],
-    folderPath: string[],
-    depth: number,
-    collapsed: Set<string>
-  ): void {
-    const childFolderNames = Array.from(
-      new Set(
-        noteList
-          .filter((note) => startsWithPath(note.folderPath, folderPath))
-          .map((note) => note.folderPath[folderPath.length])
-          .filter((folderName): folderName is string => folderName !== undefined)
-      )
-    ).sort((left, right) => left.localeCompare(right));
-
-    for (const folderName of childFolderNames) {
-      const nextFolderPath = [...folderPath, folderName];
-      const folderId = `folder:${nextFolderPath.join("/")}`;
-      items.push({
-        id: folderId,
-        kind: "folder",
-        label: titleFromSlug(folderName),
-        depth,
-        collapsible: true,
-        collapsed: collapsed.has(folderId),
-      });
-
-      if (!collapsed.has(folderId)) {
-        appendNoteItems(items, noteList, nextFolderPath, depth + 1, collapsed);
-      }
-    }
-
-    noteList
-      .filter((note) => pathsEqual(note.folderPath, folderPath))
-      .sort((left, right) => left.title.localeCompare(right.title))
-      .forEach((note) => {
-        items.push({
-          id: note.path,
-          kind: "note",
-          label: note.title,
-          depth,
-          collapsible: false,
-          collapsed: false,
-          path: note.path,
-        });
-      });
-  }
-
-  function startsWithPath(path: string[], prefix: string[]): boolean {
-    return prefix.every((part, index) => path[index] === part);
-  }
-
-  function pathsEqual(left: string[], right: string[]): boolean {
-    return left.length === right.length && startsWithPath(left, right);
-  }
-
-  function titleFromSlug(slug: string): string {
-    return slug
-      .split("-")
-      .filter((part) => part.length > 0)
-      .map((part) => part[0].toUpperCase() + part.slice(1))
-      .join(" ");
-  }
-
   function toggleCollapsed(itemId: string): void {
     const next = new Set(collapsedItems);
     if (next.has(itemId)) {
@@ -1199,6 +927,24 @@
       next.add(itemId);
     }
     collapsedItems = next;
+  }
+
+  function handleSidebarItemClick(item: SidebarItem): void {
+    if (item.kind === "add-chapter") {
+      openAppendChapterModal();
+      return;
+    }
+    if (item.kind === "add-scene") {
+      openAppendSceneModal();
+      return;
+    }
+    if (item.path !== undefined) {
+      void openDocument(item.path);
+      return;
+    }
+    if (item.collapsible) {
+      toggleCollapsed(item.id);
+    }
   }
 
   function handleSidebarKeydown(event: KeyboardEvent): void {
@@ -1529,7 +1275,7 @@
     if (project === undefined) {
       return;
     }
-    const nextTitle = normalizedChapterTitle(chapterId, title);
+    const nextTitle = normalizedChapterTitle(chapterId, title, chapters);
     optimisticChapterTitles = new Map(optimisticChapterTitles).set(chapterId, nextTitle);
     try {
       await project.setChapterTitle(chapterId, title);
@@ -1545,7 +1291,7 @@
     if (project === undefined) {
       return;
     }
-    const nextTitle = normalizedSceneTitle(scenePath, title);
+    const nextTitle = normalizedSceneTitle(scenePath, title, scenes);
     optimisticSceneTitles = new Map(optimisticSceneTitles).set(scenePath, nextTitle);
     if (scenePath === activePath) {
       activeTitle = nextTitle;
@@ -1623,29 +1369,6 @@
     return scenes.length > 1;
   }
 
-  function normalizedProjectTitle(title: string): string {
-    const normalized = title.trim();
-    return normalized.length > 0 ? normalized : "Untitled Project";
-  }
-
-  function normalizedChapterTitle(chapterId: string, title: string): string {
-    const normalized = title.trim();
-    if (normalized.length > 0) {
-      return normalized;
-    }
-    const chapter = chapters.find((candidate) => candidate.id === chapterId);
-    return `Chapter ${chapter?.sequence ?? 1}`;
-  }
-
-  function normalizedSceneTitle(scenePath: string, title: string): string {
-    const normalized = title.trim();
-    if (normalized.length > 0) {
-      return normalized;
-    }
-    const scene = scenes.find((candidate) => candidate.path === scenePath);
-    return `Scene ${scene?.sequence ?? 1}`;
-  }
-
   function chapterForItem(item: SidebarItem): WorkspaceChapter | undefined {
     return item.chapterId === undefined
       ? undefined
@@ -1656,18 +1379,6 @@
     return item.path === undefined ? undefined : scenes.find((scene) => scene.path === item.path);
   }
 
-  function saveStateLabel(state: SaveState): string {
-    if (state === "dirty") {
-      return "Unsaved";
-    }
-    if (state === "saving") {
-      return "Saving";
-    }
-    if (state === "error") {
-      return "Save failed";
-    }
-    return "Saved";
-  }
 </script>
 
 <svelte:head>
@@ -1693,92 +1404,22 @@
       </button>
     {/if}
 
-    <aside class:open={sidebarOpen} class="sidebar" aria-label="Project sidebar">
-      <div class="sidebar-head">
-        <span>Project Workspace</span>
-        <button type="button" class="icon-button" aria-label="Close sidebar" on:click={closeSidebar}>
-          <CaretLeft size={18} weight="bold" />
-        </button>
-      </div>
-      <div
-        bind:this={sidebarNav}
-        class="sidebar-nav"
-        tabindex="-1"
-        role="tree"
-        aria-label="Project documents"
-        on:keydown={handleSidebarKeydown}
-      >
-        {#each sidebarItems as item}
-          <button
-            type="button"
-            class="sidebar-item"
-            class:active={item.path === activePath}
-            class:focused={item.id === focusedSidebarItemId}
-            class:branch={item.collapsible}
-            class:add-line={item.kind === "add-chapter" || item.kind === "add-scene"}
-            style={`--depth: ${item.depth}`}
-            role="treeitem"
-            aria-selected={item.path === activePath}
-            aria-current={item.path === activePath ? "page" : undefined}
-            aria-expanded={item.collapsible ? !item.collapsed : undefined}
-            on:focus={() => {
-              focusedSidebarItemId = item.id;
-              rememberSidebarFocus(item.id);
-            }}
-            on:contextmenu={(event) => openSidebarContextMenu(event, item)}
-            on:click={() => {
-              if (editingSidebarItemId === item.id) {
-                return;
-              }
-              focusedSidebarItemId = item.id;
-              if (item.kind === "add-chapter") {
-                openAppendChapterModal();
-                return;
-              }
-              if (item.kind === "add-scene") {
-                openAppendSceneModal();
-                return;
-              }
-              if (item.path !== undefined) {
-                void openDocument(item.path);
-              } else if (item.collapsible) {
-                toggleCollapsed(item.id);
-              }
-            }}
-          >
-            <span class="item-caret">{item.collapsible ? (item.collapsed ? "+" : "-") : ""}</span>
-            {#if item.id === "manuscript"}
-              <Book size={16} weight="regular" />
-            {:else if item.id === "notes"}
-              <Notebook size={16} weight="regular" />
-            {:else}
-              <span class="item-icon-spacer"></span>
-            {/if}
-            {#if editingSidebarItemId === item.id}
-              <input
-                class="sidebar-title-input"
-                bind:value={sidebarTitleDraft}
-                aria-label="Title"
-                on:click|stopPropagation
-                on:keydown|stopPropagation={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void commitSidebarTitleEdit(item);
-                  }
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    cancelInlineTitleEdit();
-                  }
-                }}
-                on:blur={() => void commitSidebarTitleEdit(item)}
-              />
-            {:else}
-              <span class="item-label">{item.label}</span>
-            {/if}
-          </button>
-        {/each}
-      </div>
-    </aside>
+    <WorkspaceSidebar
+      bind:sidebarNav
+      bind:focusedItemId={focusedSidebarItemId}
+      bind:titleDraft={sidebarTitleDraft}
+      activePath={activePath}
+      close={closeSidebar}
+      commitTitle={(item) => void commitSidebarTitleEdit(item)}
+      cancelTitleEdit={cancelInlineTitleEdit}
+      editingItemId={editingSidebarItemId}
+      handleContextMenu={openSidebarContextMenu}
+      handleItemClick={handleSidebarItemClick}
+      handleKeydown={handleSidebarKeydown}
+      items={sidebarItems}
+      open={sidebarOpen}
+      rememberFocus={rememberSidebarFocus}
+    />
     {/if}
 
     <section class="workspace">
@@ -1857,110 +1498,31 @@
                 ? projectError || "Unable to open project."
                 : "Choose how Claros should access the project folder."}
         </span>
-        <div
-          class="project-launcher"
-          class:menu-open={storageBackendMenuOpen}
-        >
-          <div class="backend-select">
-            <button
-              type="button"
-              class="backend-trigger"
-              aria-label={`Storage backend: ${selectedStorageBackend.label}`}
-              aria-haspopup="menu"
-              aria-expanded={storageBackendMenuOpen}
-              on:click={() => (storageBackendMenuOpen = !storageBackendMenuOpen)}
-            >
-              <svelte:component this={selectedStorageBackend.icon} size={19} weight="regular" />
-              <CaretDown size={13} weight="bold" />
-            </button>
-            {#if storageBackendMenuOpen}
-              <div class="backend-menu" role="menu" aria-label="Storage backends">
-                {#each storageBackendOptions as backend}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    class:selected={backend.id === selectedStorageBackendId}
-                    disabled={!backend.available}
-                    on:click={() => selectStorageBackend(backend)}
-                  >
-                    <svelte:component this={backend.icon} size={18} weight="regular" />
-                    <span>{backend.label}</span>
-                    {#if !backend.available && backend.unavailableReason !== undefined}
-                      <small>{backend.unavailableReason}</small>
-                    {/if}
-                  </button>
-                {/each}
-              </div>
-            {/if}
-          </div>
-          <button
-            type="button"
-            class="project-launcher-main"
-            aria-label={`Open Project: ${selectedStorageBackend.label}`}
-            on:click={() => void openProjectWithBackend(selectedStorageBackend.id)}
-          >
-            {createProjectIntent ? "New Project" : "Open Project"}
-          </button>
-          <button
-            type="button"
-            class="project-launcher-create"
-            aria-label={`New Project: ${selectedStorageBackend.label}`}
-            on:mouseenter={() => (createProjectIntent = true)}
-            on:mouseleave={() => (createProjectIntent = false)}
-            on:focus={() => (createProjectIntent = true)}
-            on:blur={() => (createProjectIntent = false)}
-            on:click={() => void createProjectWithBackend(selectedStorageBackend.id)}
-          >
-            <Plus size={18} weight="bold" />
-          </button>
-        </div>
+        <ProjectLauncher
+          bind:createIntent={createProjectIntent}
+          bind:menuOpen={storageBackendMenuOpen}
+          createProject={(backend) => void createProjectWithBackend(backend.id)}
+          openProject={(backend) => void openProjectWithBackend(backend.id)}
+          options={storageBackendOptions}
+          selected={selectedStorageBackend}
+          selectedId={selectedStorageBackendId}
+          selectBackend={selectStorageBackend}
+        />
       </section>
     {/if}
     </section>
 
     {#if paletteOpen}
-    <div class="palette-layer">
-      <button
-        type="button"
-        class="palette-backdrop"
-        aria-label="Close command palette"
-        on:click={closePalette}
-      ></button>
-      <section class="palette" aria-label="Command palette">
-        <input
-          bind:this={commandInput}
-          bind:value={commandQuery}
-          placeholder="Command"
-          aria-label="Command"
-          role="combobox"
-          aria-controls="command-list"
-          aria-expanded="true"
-          aria-activedescendant={`command-${selectedCommandIndex}`}
-          on:input={handleCommandInput}
-          on:keydown={handleCommandInputKeydown}
-        />
-        <div id="command-list" role="listbox" class="command-list">
-          {#each filteredCommands as command, index}
-            <button
-              id={`command-${index}`}
-              type="button"
-              role="option"
-              class:active={command.active}
-              class:selected={index === selectedCommandIndex}
-              class:disabled={command.disabled}
-              disabled={command.disabled}
-              aria-selected={index === selectedCommandIndex}
-              on:mouseenter={() => (selectedCommandIndex = index)}
-              on:click={() => runCommand(command)}
-            >
-              {command.label}
-            </button>
-          {:else}
-            <p class="empty-command">No commands</p>
-          {/each}
-        </div>
-      </section>
-    </div>
+    <CommandPalette
+      bind:commandInput
+      bind:query={commandQuery}
+      bind:selectedIndex={selectedCommandIndex}
+      commands={filteredCommands}
+      close={closePalette}
+      handleInput={handleCommandInput}
+      handleKeydown={handleCommandInputKeydown}
+      runCommand={runCommand}
+    />
     {/if}
 
     {#if contextMenu !== undefined}
@@ -2003,841 +1565,19 @@
     {/if}
 
     {#if titleModal !== undefined}
-    <div class="modal-layer">
-      <button
-        type="button"
-        class="modal-backdrop"
-        aria-label="Close title dialog"
-        on:click={closeTitleModal}
-      ></button>
-      <section class="modal" aria-label={titleModal.heading}>
-        <h2>{titleModal.heading}</h2>
-        <form on:submit|preventDefault={() => void submitTitleModal()}>
-          <input
-            bind:this={titleModalInput}
-            bind:value={titleModal.value}
-            placeholder={titleModal.placeholder}
-            aria-label={titleModal.heading}
-          />
-          <div class="modal-actions">
-            <button type="button" on:click={closeTitleModal}>Cancel</button>
-            <button type="submit">Save</button>
-          </div>
-        </form>
-      </section>
-    </div>
+    <TitleModal
+      state={titleModal}
+      close={closeTitleModal}
+      submit={() => void submitTitleModal()}
+    />
     {/if}
 
     {#if deleteModal !== undefined}
-    <div class="modal-layer">
-      <button
-        type="button"
-        class="modal-backdrop"
-        aria-label="Close delete dialog"
-        on:click={closeDeleteModal}
-      ></button>
-      <section class="modal" aria-label={deleteModal.heading}>
-        <h2>{deleteModal.heading}</h2>
-        <p>Type delete to confirm.</p>
-        <form on:submit|preventDefault={() => void submitDeleteModal()}>
-          <input
-            bind:this={deleteModalInput}
-            bind:value={deleteModal.confirmation}
-            placeholder="delete"
-            aria-label={`Confirm ${deleteModal.label}`}
-          />
-          <div class="modal-actions">
-            <button type="button" on:click={closeDeleteModal}>Cancel</button>
-            <button type="submit" disabled={deleteModal.confirmation !== "delete"}>Delete</button>
-          </div>
-        </form>
-      </section>
-    </div>
+    <DeleteModal
+      state={deleteModal}
+      close={closeDeleteModal}
+      submit={() => void submitDeleteModal()}
+    />
     {/if}
   {/if}
 </main>
-
-<style>
-  :global(html) {
-    background: var(--claros-app-background, #f7f5f0);
-  }
-
-  :global(body) {
-    margin: 0;
-    min-width: 320px;
-    background: var(--claros-app-background, #f7f5f0);
-    color: var(--claros-prose-text, #27241f);
-  }
-
-  :global(button),
-  :global(input) {
-    font: inherit;
-  }
-
-  .app-shell {
-    min-height: 100vh;
-    background: var(--claros-app-background);
-  }
-
-  .startup-screen {
-    display: grid;
-    min-height: 100vh;
-    place-items: center;
-    background: var(--claros-app-background);
-    color: var(--claros-prose-text);
-  }
-
-  .startup-spinner {
-    width: 2.1rem;
-    height: 2.1rem;
-    border: 2px solid color-mix(in srgb, var(--claros-startup-spinner, currentColor) 24%, transparent);
-    border-top-color: var(--claros-startup-spinner, currentColor);
-    border-radius: 999px;
-    animation: startup-spin 760ms linear infinite;
-  }
-
-  @keyframes startup-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .workspace {
-    min-height: 100vh;
-    transition: margin-left 180ms ease;
-  }
-
-  .sidebar-open .workspace {
-    margin-left: 16.5rem;
-  }
-
-  .sidebar-tab {
-    position: fixed;
-    z-index: 30;
-    top: 45vh;
-    left: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.25rem;
-    min-height: 2.25rem;
-    border: 1px solid var(--claros-prose-widget-border);
-    border-left: 0;
-    border-radius: 0 6px 6px 0;
-    padding: 0;
-    background: var(--claros-editor-background);
-    color: var(--claros-prose-muted);
-    box-shadow: 0 0.75rem 2rem color-mix(in srgb, var(--claros-prose-text) 8%, transparent);
-  }
-
-  .sidebar {
-    position: fixed;
-    z-index: 25;
-    inset: 0 auto 0 0;
-    display: grid;
-    grid-template-rows: auto 1fr;
-    width: 16.5rem;
-    border-right: 1px solid var(--claros-prose-widget-border);
-    background: color-mix(in srgb, var(--claros-editor-background) 94%, var(--claros-app-background));
-    box-shadow: 1rem 0 3rem color-mix(in srgb, var(--claros-prose-text) 10%, transparent);
-    transform: translateX(-100%);
-    transition: transform 180ms ease;
-  }
-
-  .sidebar.open {
-    transform: translateX(0);
-  }
-
-  .sidebar-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    min-height: 3.25rem;
-    padding: 0 0.75rem 0 1rem;
-    border-bottom: 1px solid var(--claros-prose-widget-border);
-    color: var(--claros-prose-text);
-    font: 600 0.86rem/1.2 system-ui, sans-serif;
-  }
-
-  .sidebar-head span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .sidebar-nav {
-    overflow: auto;
-    padding: 0.65rem 0.5rem 1rem;
-    outline: none;
-  }
-
-  .sidebar-item {
-    display: grid;
-    grid-template-columns: 1rem 1.25rem 1fr;
-    column-gap: 0.15rem;
-    align-items: center;
-    width: 100%;
-    min-height: 1.9rem;
-    border: 1px solid transparent;
-    border-radius: 5px;
-    padding: 0 0.45rem 0 calc(0.35rem + var(--depth) * 0.82rem);
-    background: transparent;
-    color: var(--claros-prose-muted);
-    cursor: pointer;
-    font: 0.82rem/1.2 system-ui, sans-serif;
-    text-align: left;
-  }
-
-  .sidebar-item .item-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .item-icon-spacer {
-    display: block;
-    width: 1.25rem;
-  }
-
-  .sidebar-item.branch {
-    color: var(--claros-prose-text);
-    font-weight: 600;
-  }
-
-  .item-caret {
-    color: var(--claros-prose-muted);
-    font: 0.8rem/1 var(--claros-prose-mono-font, monospace);
-  }
-
-  .sidebar-item.active {
-    background: var(--claros-prose-widget-background);
-    color: var(--claros-prose-text);
-  }
-
-  .sidebar-item:hover,
-  .sidebar-item:focus-visible,
-  .sidebar-item.focused {
-    border-color: var(--claros-prose-focus-ring);
-    background: transparent;
-    color: var(--claros-prose-text);
-    outline: none;
-  }
-
-  .sidebar-item.active:hover,
-  .sidebar-item.active:focus-visible,
-  .sidebar-item.active.focused {
-    border-color: var(--claros-prose-focus-ring);
-    background: var(--claros-prose-widget-background);
-  }
-
-  .sidebar-item.add-line {
-    position: relative;
-    grid-template-columns: 1fr;
-    min-height: 1.55rem;
-    border-color: transparent;
-    padding-left: calc(0.35rem + var(--depth) * 0.82rem);
-    color: var(--claros-prose-muted);
-  }
-
-  .sidebar-item.add-line .item-label {
-    position: absolute;
-    z-index: 1;
-    left: 50%;
-    top: 50%;
-    max-width: max-content;
-    padding: 0 0.35rem;
-    transform: translate(-50%, -50%);
-    background: color-mix(in srgb, var(--claros-editor-background) 94%, var(--claros-app-background));
-    color: var(--claros-prose-text);
-    font-weight: 600;
-    visibility: hidden;
-  }
-
-  .sidebar-item.add-line .item-caret,
-  .sidebar-item.add-line .item-icon-spacer {
-    display: none;
-  }
-
-  .sidebar-item.add-line::before {
-    content: "";
-    position: absolute;
-    left: calc(0.55rem + var(--depth) * 0.82rem);
-    right: 0.55rem;
-    top: 50%;
-    height: 1px;
-    background: var(--claros-prose-widget-border);
-  }
-
-  .sidebar-item.add-line::after {
-    content: "+";
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    z-index: 1;
-    min-width: 1.2rem;
-    transform: translate(-50%, -50%);
-    background: color-mix(in srgb, var(--claros-editor-background) 94%, var(--claros-app-background));
-    color: var(--claros-prose-muted);
-    font: 0.86rem/1 system-ui, sans-serif;
-    text-align: center;
-  }
-
-  .sidebar-item.add-line.focused::before,
-  .sidebar-item.add-line:hover::before,
-  .sidebar-item.add-line:focus-visible::before {
-    height: 2px;
-    background: var(--claros-prose-focus-ring);
-  }
-
-  .sidebar-item.add-line.focused::after,
-  .sidebar-item.add-line:hover::after,
-  .sidebar-item.add-line:focus-visible::after {
-    content: "";
-  }
-
-  .sidebar-item.add-line.focused .item-label,
-  .sidebar-item.add-line:hover .item-label,
-  .sidebar-item.add-line:focus-visible .item-label {
-    visibility: visible;
-  }
-
-  .sidebar-title-input {
-    min-width: 0;
-    width: 100%;
-    border: 0;
-    border-bottom: 1px solid var(--claros-prose-focus-ring);
-    background: transparent;
-    color: var(--claros-prose-text);
-    outline: none;
-    font: inherit;
-  }
-
-  .topbar {
-    position: fixed;
-    z-index: 10;
-    top: 0;
-    left: 0;
-    right: 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    min-height: 3.25rem;
-    padding: 0 1rem 0 2.4rem;
-    color: var(--claros-prose-muted);
-    pointer-events: none;
-  }
-
-  .sidebar-open .topbar {
-    left: 16.5rem;
-  }
-
-  .identity,
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    min-width: 0;
-    pointer-events: auto;
-  }
-
-  .identity {
-    overflow: hidden;
-  }
-
-  .product {
-    color: var(--claros-prose-text);
-    font: 600 0.92rem/1.2 system-ui, sans-serif;
-  }
-
-  .title-button {
-    min-height: 1.8rem;
-    padding: 0 0.25rem;
-    color: var(--claros-prose-text);
-  }
-
-  .title-button:disabled {
-    cursor: default;
-    opacity: 1;
-  }
-
-  .static-title {
-    display: inline-flex;
-    align-items: center;
-    min-height: 1.8rem;
-  }
-
-  .project-title-input {
-    width: min(18rem, 38vw);
-    min-height: 1.8rem;
-    border: 0;
-    border-bottom: 1px solid var(--claros-prose-focus-ring);
-    background: transparent;
-    color: var(--claros-prose-text);
-    outline: none;
-    font: 600 0.92rem/1.2 system-ui, sans-serif;
-  }
-
-  .draft-name {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--claros-prose-text);
-    font: 0.84rem/1.2 system-ui, sans-serif;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .save-state {
-    color: var(--claros-prose-muted);
-    font: 0.72rem/1.2 system-ui, sans-serif;
-    text-transform: uppercase;
-  }
-
-  .save-state {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.35rem;
-    height: 1.35rem;
-    color: var(--claros-prose-muted);
-  }
-
-  .save-state-dot {
-    position: absolute;
-    top: 0.05rem;
-    right: 0.05rem;
-    width: 0.42rem;
-    height: 0.42rem;
-    border: 1px solid var(--claros-editor-background);
-    border-radius: 999px;
-    background: var(--claros-status-okay);
-  }
-
-  .save-state.status-dirty .save-state-dot,
-  .save-state.status-saving .save-state-dot {
-    background: var(--claros-status-warning);
-  }
-
-  .save-state.status-error .save-state-dot {
-    background: var(--claros-status-error);
-  }
-
-  .actions {
-    flex-shrink: 0;
-    opacity: 0.52;
-    transition: opacity 140ms ease;
-  }
-
-  .topbar:focus-within .actions,
-  .topbar:hover .actions {
-    opacity: 1;
-  }
-
-  button {
-    min-height: 2rem;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    padding: 0 0.65rem;
-    background: transparent;
-    color: var(--claros-prose-muted);
-    cursor: pointer;
-  }
-
-  button:hover,
-  button:focus-visible,
-  button.active,
-  button.selected {
-    border-color: var(--claros-prose-focus-ring);
-    background: var(--claros-prose-widget-background);
-    color: var(--claros-prose-text);
-    outline: none;
-  }
-
-  button:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-  }
-
-  .icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    padding: 0;
-  }
-
-  .editor-frame {
-    position: relative;
-    min-height: 100vh;
-    background: var(--claros-editor-background);
-  }
-
-  .editor-host {
-    min-height: 100vh;
-  }
-
-  .project-empty-state {
-    position: absolute;
-    z-index: 5;
-    top: 5rem;
-    left: 50%;
-    display: grid;
-    gap: 0.8rem;
-    width: min(24rem, calc(100vw - 2rem));
-    transform: translateX(-50%);
-    color: var(--claros-prose-muted);
-    font: 0.88rem/1.4 system-ui, sans-serif;
-    text-align: center;
-  }
-
-  .project-empty-state strong {
-    color: var(--claros-prose-text);
-    font: 600 1rem/1.2 system-ui, sans-serif;
-  }
-
-  .project-empty-state button {
-    border-color: var(--claros-prose-widget-border);
-    background: var(--claros-prose-widget-background);
-    color: var(--claros-prose-text);
-  }
-
-  .project-launcher {
-    position: relative;
-    display: inline-grid;
-    grid-template-columns: 3rem minmax(11rem, 14rem) 3rem;
-    justify-self: center;
-    min-height: 2.75rem;
-    border: 1px solid var(--claros-prose-widget-border);
-    border-radius: 8px;
-    background: var(--claros-prose-widget-background);
-    box-shadow: 0 0.75rem 2rem color-mix(in srgb, var(--claros-prose-text) 9%, transparent);
-  }
-
-  .project-launcher button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 2.75rem;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    color: var(--claros-prose-text);
-  }
-
-  .project-launcher button:hover,
-  .project-launcher button:focus-visible,
-  .project-launcher button.selected {
-    background: color-mix(in srgb, var(--claros-editor-background) 70%, var(--claros-prose-widget-background));
-  }
-
-  .backend-select {
-    position: relative;
-    min-width: 0;
-  }
-
-  .backend-trigger {
-    gap: 0.15rem;
-    width: 100%;
-    border-radius: 7px 0 0 7px !important;
-    border-right: 1px solid var(--claros-prose-widget-border) !important;
-    padding: 0;
-  }
-
-  .project-launcher-main {
-    min-width: 0;
-    border-right: 1px solid var(--claros-prose-widget-border) !important;
-    padding: 0 1rem;
-    font-weight: 600;
-  }
-
-  .project-launcher-create {
-    width: 100%;
-    border-radius: 0 7px 7px 0 !important;
-    padding: 0;
-  }
-
-  .backend-menu {
-    position: absolute;
-    z-index: 15;
-    top: calc(100% + 0.45rem);
-    left: 0;
-    display: grid;
-    gap: 0.25rem;
-    width: max-content;
-    min-width: 14rem;
-    border: 1px solid var(--claros-prose-widget-border);
-    border-radius: 8px;
-    padding: 0.35rem;
-    background: var(--claros-editor-background);
-    box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--claros-prose-text) 14%, transparent);
-  }
-
-  .backend-menu button {
-    display: grid;
-    grid-template-columns: 1.25rem 1fr;
-    column-gap: 0.55rem;
-    row-gap: 0.1rem;
-    justify-items: start;
-    min-height: 2.3rem;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    padding: 0.35rem 0.55rem;
-    color: var(--claros-prose-text);
-    text-align: left;
-  }
-
-  .backend-menu button small {
-    grid-column: 2;
-    color: var(--claros-prose-muted);
-    font: 0.72rem/1.2 system-ui, sans-serif;
-  }
-
-  .backend-menu button:disabled {
-    color: var(--claros-prose-muted);
-    opacity: 0.54;
-  }
-
-  .backend-menu button:disabled:hover {
-    background: transparent;
-  }
-
-  .palette-layer {
-    position: fixed;
-    z-index: 40;
-    inset: 0;
-    display: grid;
-    align-items: center;
-    justify-items: center;
-    padding: 1rem;
-  }
-
-  .palette-backdrop {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    min-height: 100%;
-    border: 0;
-    border-radius: 0;
-    padding: 0;
-    background: color-mix(in srgb, var(--claros-app-background) 60%, transparent);
-    cursor: default;
-  }
-
-  .palette-backdrop:hover,
-  .palette-backdrop:focus-visible {
-    border-color: transparent;
-    background: color-mix(in srgb, var(--claros-app-background) 60%, transparent);
-    outline: none;
-  }
-
-  .palette {
-    position: relative;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: 0.375rem;
-    width: min(34rem, calc(100vw - 2rem));
-    min-height: min(18rem, calc(100vh - 2rem));
-    max-height: min(38rem, calc(100vh - 2rem));
-    border: 1px solid var(--claros-prose-widget-border);
-    border-radius: 8px;
-    padding: 0.5rem;
-    background: var(--claros-editor-background);
-    box-shadow: 0 1.25rem 4rem color-mix(in srgb, var(--claros-prose-text) 16%, transparent);
-    overflow: hidden;
-  }
-
-  .palette input {
-    min-height: 2.75rem;
-    border: 0;
-    border-bottom: 1px solid var(--claros-prose-widget-border);
-    background: transparent;
-    color: var(--claros-prose-text);
-    font: 1rem/1.3 system-ui, sans-serif;
-    outline: none;
-    padding: 0 0.5rem 0.35rem;
-  }
-
-  .command-list {
-    display: grid;
-    align-content: start;
-    gap: 0.375rem;
-    min-height: 0;
-    overflow-y: auto;
-    padding-right: 0.15rem;
-  }
-
-  .palette button {
-    justify-content: flex-start;
-    width: 100%;
-    text-align: left;
-  }
-
-  .palette button.active {
-    background: var(--claros-prose-widget-background);
-    color: var(--claros-prose-text);
-  }
-
-  .palette button:hover,
-  .palette button:focus-visible,
-  .palette button.selected {
-    border-color: var(--claros-prose-focus-ring);
-    background: transparent;
-    color: var(--claros-prose-text);
-    outline: none;
-  }
-
-  .palette button.active:hover,
-  .palette button.active:focus-visible,
-  .palette button.active.selected {
-    background: var(--claros-prose-widget-background);
-  }
-
-  .empty-command {
-    margin: 0;
-    padding: 0.65rem 0.5rem;
-    color: var(--claros-prose-muted);
-    font: 0.95rem/1.3 system-ui, sans-serif;
-  }
-
-  .context-backdrop,
-  .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 45;
-    width: 100%;
-    min-height: 100%;
-    border: 0;
-    border-radius: 0;
-    padding: 0;
-    background: transparent;
-    cursor: default;
-  }
-
-  .context-backdrop:hover,
-  .context-backdrop:focus-visible {
-    border-color: transparent;
-    background: transparent;
-    outline: none;
-  }
-
-  .modal-backdrop:hover,
-  .modal-backdrop:focus-visible {
-    border-color: transparent;
-    background: color-mix(in srgb, var(--claros-app-background) 62%, transparent);
-    outline: none;
-  }
-
-  .context-menu {
-    position: fixed;
-    z-index: 50;
-    display: grid;
-    gap: 0.2rem;
-    min-width: 11rem;
-    border: 1px solid var(--claros-prose-widget-border);
-    border-radius: 8px;
-    padding: 0.35rem;
-    background: var(--claros-editor-background);
-    box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--claros-prose-text) 14%, transparent);
-  }
-
-  .context-menu button {
-    justify-content: flex-start;
-    width: 100%;
-    text-align: left;
-  }
-
-  .modal-layer {
-    position: fixed;
-    z-index: 55;
-    inset: 0;
-    display: grid;
-    align-items: start;
-    justify-items: center;
-    padding-top: 16vh;
-  }
-
-  .modal-backdrop {
-    background: color-mix(in srgb, var(--claros-app-background) 62%, transparent);
-  }
-
-  .modal {
-    position: relative;
-    z-index: 56;
-    display: grid;
-    gap: 0.8rem;
-    width: min(24rem, calc(100vw - 2rem));
-    border: 1px solid var(--claros-prose-widget-border);
-    border-radius: 8px;
-    padding: 1rem;
-    background: var(--claros-editor-background);
-    box-shadow: 0 1.25rem 4rem color-mix(in srgb, var(--claros-prose-text) 16%, transparent);
-  }
-
-  .modal h2,
-  .modal p {
-    margin: 0;
-  }
-
-  .modal h2 {
-    color: var(--claros-prose-text);
-    font: 600 0.98rem/1.2 system-ui, sans-serif;
-  }
-
-  .modal p {
-    color: var(--claros-prose-muted);
-    font: 0.84rem/1.4 system-ui, sans-serif;
-  }
-
-  .modal form {
-    display: grid;
-    gap: 0.75rem;
-  }
-
-  .modal input {
-    min-height: 2.5rem;
-    border: 0;
-    border-bottom: 1px solid var(--claros-prose-widget-border);
-    background: transparent;
-    color: var(--claros-prose-text);
-    outline: none;
-  }
-
-  .modal input:focus {
-    border-bottom-color: var(--claros-prose-focus-ring);
-  }
-
-  .modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.4rem;
-  }
-
-  @media (max-width: 800px) {
-    .sidebar-open .workspace {
-      margin-left: 0;
-    }
-
-    .sidebar {
-      width: min(18rem, calc(100vw - 2.25rem));
-    }
-
-    .sidebar-open .topbar {
-      left: 0;
-    }
-
-    .topbar {
-      align-items: flex-start;
-      min-height: auto;
-      padding: 0.75rem 0.75rem 0.75rem 2.4rem;
-    }
-
-    .actions {
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-  }
-</style>
