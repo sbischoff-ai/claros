@@ -1,16 +1,10 @@
 <script lang="ts">
+  import "./page.css";
+
   import { onDestroy, onMount, tick } from "svelte";
-  import Book from "phosphor-svelte/lib/Book";
-  import CaretLeft from "phosphor-svelte/lib/CaretLeft";
-  import CaretDown from "phosphor-svelte/lib/CaretDown";
   import Command from "phosphor-svelte/lib/Command";
   import Files from "phosphor-svelte/lib/Files";
-  import FolderOpen from "phosphor-svelte/lib/FolderOpen";
-  import Notebook from "phosphor-svelte/lib/Notebook";
-  import Plus from "phosphor-svelte/lib/Plus";
-  import TerminalWindow from "phosphor-svelte/lib/TerminalWindow";
   import {
-    CLAROS_THEMES,
     applyNamedTheme,
     createMarkdownEditor,
     type ClarosMarkdownEditor,
@@ -28,41 +22,56 @@
     type CompanionConnection,
     type ProjectSession,
     type WorkspaceChapter,
-    type WorkspaceNote,
+    type WorkspaceMoveResult,
+    type WorkspaceScene,
   } from "$lib/project-session";
   import type { BrowserDirectoryPicker } from "$lib/browser-file-system";
+  import ActionMenu from "$lib/ActionMenu.svelte";
+  import CommandPalette from "$lib/CommandPalette.svelte";
+  import ConfirmationModal from "$lib/ConfirmationModal.svelte";
+  import DeleteModal from "$lib/DeleteModal.svelte";
+  import { directionalIntentFromKeydown } from "$lib/directional-navigation";
+  import ManuscriptDragPreview from "$lib/ManuscriptDragPreview.svelte";
+  import {
+    ManuscriptDragController,
+    type SceneMoveOptions,
+  } from "$lib/manuscript-drag";
+  import ProjectLauncher from "$lib/ProjectLauncher.svelte";
+  import { buildSidebarItems } from "$lib/sidebar-model";
+  import { buildStorageBackendOptions, type StorageBackendOption } from "$lib/storage-backends";
   import { loadTheme, saveTheme } from "$lib/theme";
-
-  type SaveState = "saved" | "dirty" | "saving" | "error";
-  type ProjectOpenState = "idle" | "opening" | "creating" | "connecting" | "open" | "error";
-  type StorageBackendId = "file-picker" | "local-companion";
-  type SidebarItemKind = "section" | "chapter" | "folder" | "scene" | "note";
-
-  interface PaletteCommand {
-    label: string;
-    active?: boolean;
-    disabled?: boolean;
-    focusAfter?: "editor" | "sidebar" | "none";
-    run(): void;
-  }
-
-  interface SidebarItem {
-    id: string;
-    kind: SidebarItemKind;
-    label: string;
-    depth: number;
-    collapsible: boolean;
-    collapsed: boolean;
-    path?: string;
-  }
-
-  interface StorageBackendOption {
-    id: StorageBackendId;
-    label: string;
-    icon: typeof FolderOpen;
-    available: boolean;
-    unavailableReason?: string;
-  }
+  import TitleModal from "$lib/TitleModal.svelte";
+  import {
+    normalizedChapterTitle,
+    normalizedProjectTitle,
+    normalizedSceneTitle,
+  } from "$lib/title-model";
+  import WorkspaceSidebar from "$lib/WorkspaceSidebar.svelte";
+  import {
+    clampCommandIndex,
+    filterCommands,
+    listProjectChapters,
+    listProjectNotes,
+    listProjectScenes,
+    projectTitleForDisplay,
+    saveStateLabel,
+  } from "$lib/workspace-view-model";
+  import { buildWorkspacePaletteCommands } from "$lib/workspace-commands";
+  import type { ManuscriptInsertionPlacement } from "@claros/story-state";
+  import type {
+    ActionMenuItem,
+    ActiveDocumentKind,
+    ConfirmationModalState,
+    ContextMenuState,
+    DeleteModalState,
+    PaletteCommand,
+    ProjectOpenState,
+    SaveState,
+    SidebarItem,
+    StorageBackendId,
+    TitleModalState,
+    WorkspaceFocusTarget,
+  } from "$lib/workspace-types";
 
   let appShell: HTMLElement;
   let editorHost: HTMLDivElement;
@@ -70,15 +79,17 @@
   let commandInput: HTMLInputElement;
   let sidebarNav: HTMLElement;
   let project: ProjectSession | undefined;
+  let projectRevision = 0;
   let activePath = "";
   let activeTitle = "Draft";
-  let activeKind: "scene" | "note" = "scene";
+  let activeDocumentKind: ActiveDocumentKind = "scene";
   let currentMarkdown = "";
   let vimMode = false;
   let paletteOpen = false;
   let commandQuery = "";
   let selectedCommandIndex = 0;
   let activeTheme: ClarosThemeId = "default-light";
+  let startupReady = false;
   let sidebarOpen = false;
   let focusedSidebarItemId = "";
   let saveState: SaveState = "saved";
@@ -91,11 +102,72 @@
   let createProjectIntent = false;
   let companionConnection: CompanionConnection | undefined;
   let collapsedItems = new Set<string>(["notes"]);
+  let titleModal: TitleModalState | undefined;
+  let deleteModal: DeleteModalState | undefined;
+  let confirmationModal: ConfirmationModalState | undefined;
+  let contextMenu: ContextMenuState | undefined;
+  let editingProjectTitle = false;
+  let projectTitleDraft = "";
+  let optimisticProjectTitle: string | undefined;
+  let displayProjectTitle = "Claros";
+  let optimisticChapterTitles = new Map<string, string>();
+  let optimisticSceneTitles = new Map<string, string>();
+  let editingSidebarItemId = "";
+  let sidebarTitleDraft = "";
+  const manuscriptDragController = new ManuscriptDragController({
+    getChapters: () => chapters,
+    getScenes: () => scenes,
+    getCollapsedItems: () => collapsedItems,
+    setCollapsedItems: (next) => {
+      collapsedItems = next;
+    },
+    getSidebarNav: () => sidebarNav,
+    isTitleEditing: () => editingSidebarItemId.length > 0,
+    rowForItemId: sidebarItemElement,
+    moveChapter,
+    moveScene,
+  });
+  const manuscriptDrag = manuscriptDragController.state;
+  let lastWorkspaceFocus: WorkspaceFocusTarget | undefined;
+  let paletteReturnFocus: WorkspaceFocusTarget | undefined;
+  let projectTitleReturnFocus: WorkspaceFocusTarget | undefined;
+  let sidebarTitleReturnFocus: WorkspaceFocusTarget | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let suppressEditorChange = false;
 
-  $: chapters = project?.listChapters() ?? [];
-  $: notes = project?.listNotes() ?? [];
-  $: sidebarItems = buildSidebarItems(chapters, notes, collapsedItems);
+  $: chapters = listProjectChapters(projectRevision, project);
+  $: scenes = listProjectScenes(projectRevision, project);
+  $: notes = listProjectNotes(projectRevision, project);
+  $: displayProjectTitle = projectTitleForDisplay(projectRevision, project, optimisticProjectTitle);
+  $: visibleChapters = manuscriptDragController.previewChapters(chapters, $manuscriptDrag);
+  $: sidebarItems = buildSidebarItems(
+    visibleChapters,
+    notes,
+    collapsedItems,
+    optimisticChapterTitles,
+    optimisticSceneTitles
+  );
+  $: activeScene = scenes.find((scene) => scene.path === activePath);
+  $: activeChapter = activeScene
+    ? chapters.find((chapter) => chapter.id === activeScene.chapterId)
+    : undefined;
+  $: canDeleteCurrentScene = projectIsOpen && activeScene !== undefined && scenes.length > 1;
+  $: canDeleteCurrentChapter =
+    projectIsOpen &&
+    activeChapter !== undefined &&
+    chapters.length > 1 &&
+    scenes.some((scene) => scene.chapterId !== activeChapter.id);
+  $: activeSceneIndex =
+    activeScene === undefined ? -1 : scenes.findIndex((scene) => scene.path === activeScene.path);
+  $: activeChapterIndex =
+    activeChapter === undefined
+      ? -1
+      : chapters.findIndex((chapter) => chapter.id === activeChapter.id);
+  $: canMoveCurrentSceneUp = projectIsOpen && activeSceneIndex > 0;
+  $: canMoveCurrentSceneDown = projectIsOpen && activeSceneIndex >= 0 && activeSceneIndex < scenes.length - 1;
+  $: canMoveCurrentChapterUp = projectIsOpen && activeChapterIndex > 0;
+  $: canMoveCurrentChapterDown =
+    projectIsOpen && activeChapterIndex >= 0 && activeChapterIndex < chapters.length - 1;
   $: storageBackendOptions = buildStorageBackendOptions(canOpenLocalProject);
   $: selectedStorageBackend =
     storageBackendOptions.find((backend) => backend.id === selectedStorageBackendId) ??
@@ -104,9 +176,46 @@
     storageBackendOptions.find((backend) => backend.id === openStorageBackendId) ??
     storageBackendOptions[0];
   $: projectIsOpen = projectOpenState === "open";
-  $: paletteCommands = buildPaletteCommands(activeTheme, vimMode, projectIsOpen, canOpenLocalProject);
+  $: paletteCommands = buildWorkspacePaletteCommands({
+    currentTheme: activeTheme,
+    currentVimMode: vimMode,
+    currentProjectIsOpen: projectIsOpen,
+    localProjectSupported: canOpenLocalProject,
+    sidebarOpen,
+    currentScene: activeScene,
+    currentChapter: activeChapter,
+    canMoveSceneUp: canMoveCurrentSceneUp,
+    canMoveSceneDown: canMoveCurrentSceneDown,
+    canMoveChapterUp: canMoveCurrentChapterUp,
+    canMoveChapterDown: canMoveCurrentChapterDown,
+    canDeleteScene: canDeleteCurrentScene,
+    canDeleteChapter: canDeleteCurrentChapter,
+    toggleSidebar,
+    openProjectWithBackend: (backendId) => void openProjectWithBackend(backendId),
+    createProjectWithBackend: (backendId) => void createProjectWithBackend(backendId),
+    flushSaveWithoutWaiting,
+    openProjectTitleModal,
+    openAppendChapterModal,
+    openInsertChapterModal,
+    openCurrentChapterTitleModal,
+    moveCurrentChapter: (direction) => void moveCurrentChapter(direction),
+    openCurrentChapterDeleteModal,
+    openAppendSceneModal,
+    openInsertSceneModal,
+    openCurrentSceneTitleModal,
+    moveCurrentScene: (direction) => void moveCurrentScene(direction),
+    openCurrentSceneDeleteModal,
+    toggleVimMode,
+    setTheme,
+  });
   $: filteredCommands = filterCommands(paletteCommands, commandQuery);
   $: selectedCommandIndex = clampCommandIndex(selectedCommandIndex, filteredCommands.length);
+  $: chapterDropIndicatorItemId = manuscriptDragController.chapterDropIndicatorItemId(
+    visibleChapters,
+    $manuscriptDrag
+  );
+  $: sidebarContextMenuItems =
+    contextMenu === undefined ? [] : buildSidebarContextMenuItems(contextMenu.item);
 
   $: if (paletteOpen) {
     selectedCommandIndex = 0;
@@ -124,7 +233,11 @@
       loadCompanionConnection(window.localStorage);
     if (companionConnection !== undefined) {
       saveCompanionConnection(window.localStorage, companionConnection);
-      void connectCompanion(companionConnection);
+      void connectCompanion(companionConnection).finally(() => {
+        void finishStartup();
+      });
+    } else {
+      startupReady = true;
     }
 
     const handleKeydown = (event: KeyboardEvent) => {
@@ -171,8 +284,33 @@
       }
 
       if (event.key === "Escape") {
+        if ($manuscriptDrag !== undefined) {
+          event.preventDefault();
+          manuscriptDragController.cancel();
+          return;
+        }
         if (storageBackendMenuOpen) {
           storageBackendMenuOpen = false;
+          return;
+        }
+        if (contextMenu !== undefined) {
+          closeSidebarContextMenu();
+          return;
+        }
+        if (editingProjectTitle || editingSidebarItemId.length > 0) {
+          cancelInlineTitleEdit();
+          return;
+        }
+        if (titleModal !== undefined) {
+          closeTitleModal();
+          return;
+        }
+        if (deleteModal !== undefined) {
+          closeDeleteModal();
+          return;
+        }
+        if (confirmationModal !== undefined) {
+          closeConfirmationModal();
           return;
         }
         if (paletteOpen) {
@@ -185,18 +323,34 @@
       }
     };
 
+    const handleWindowFocus = () => {
+      void repairWorkspaceFocus();
+    };
+
     window.addEventListener("keydown", handleKeydown);
+    window.addEventListener("focus", handleWindowFocus);
 
     return () => {
       window.removeEventListener("keydown", handleKeydown);
+      window.removeEventListener("focus", handleWindowFocus);
     };
   });
+
+  async function finishStartup(): Promise<void> {
+    startupReady = true;
+    if (projectIsOpen) {
+      await ensureEditor();
+      setEditorMarkdown(currentMarkdown);
+      focusEditorWithDefaultCursor();
+    }
+  }
 
   onDestroy(() => {
     if (saveTimer !== undefined) {
       clearTimeout(saveTimer);
       void flushSave();
     }
+    manuscriptDragController.destroy();
     editor?.destroy();
   });
 
@@ -229,8 +383,8 @@
       openStorageBackendId = "file-picker";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown);
-      editor?.focus();
+      setEditorMarkdown(currentMarkdown);
+      focusEditorWithDefaultCursor();
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         projectOpenState = project ? "open" : "idle";
@@ -241,7 +395,7 @@
     }
   }
 
-  async function createNewProject(): Promise<void> {
+  async function createNewProject(title = "Untitled Project"): Promise<void> {
     if (!canOpenLocalProject) {
       projectOpenState = "error";
       projectError = "Local folder access is not supported in this browser.";
@@ -263,15 +417,15 @@
     projectError = "";
     try {
       const handle = await picker.showDirectoryPicker({ mode: "readwrite" });
-      project = await createNewLocalProjectSession(handle);
+      project = await createNewLocalProjectSession(handle, title);
       activePath = firstDocumentPath(project);
       await loadDocument(activePath);
       projectOpenState = "open";
       openStorageBackendId = "file-picker";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown);
-      editor?.focus();
+      setEditorMarkdown(currentMarkdown);
+      focusEditorWithDefaultCursor();
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         projectOpenState = project ? "open" : "idle";
@@ -293,11 +447,24 @@
 
   async function createProjectWithBackend(backendId: StorageBackendId): Promise<void> {
     storageBackendMenuOpen = false;
+    openTitleModal({
+      target: "new-project",
+      heading: "New Project",
+      value: "",
+      placeholder: "Untitled Project",
+      storageBackendId: backendId,
+    });
+  }
+
+  async function createProjectWithBackendTitle(
+    backendId: StorageBackendId,
+    title: string
+  ): Promise<void> {
     if (backendId === "file-picker") {
-      await createNewProject();
+      await createNewProject(title);
       return;
     }
-    await createNewCompanionProject();
+    await createNewCompanionProject(title);
   }
 
   function selectStorageBackend(backend: StorageBackendOption): void {
@@ -341,15 +508,15 @@
       openStorageBackendId = "local-companion";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown);
-      editor?.focus();
+      setEditorMarkdown(currentMarkdown);
+      focusEditorWithDefaultCursor();
     } catch (error) {
       projectOpenState = hadOpenProject ? "open" : "error";
       projectError = error instanceof Error ? error.message : "Unable to connect local companion";
     }
   }
 
-  async function createNewCompanionProject(): Promise<void> {
+  async function createNewCompanionProject(title = "Untitled Project"): Promise<void> {
     let connection = companionConnection;
     if (connection === undefined) {
       const url = window.prompt("Local companion URL", "http://127.0.0.1:3000");
@@ -372,15 +539,15 @@
     projectError = "";
     try {
       companionConnection = connection;
-      project = await createNewCompanionProjectSession(connection);
+      project = await createNewCompanionProjectSession(connection, title);
       activePath = firstDocumentPath(project);
       await loadDocument(activePath);
       projectOpenState = "open";
       openStorageBackendId = "local-companion";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown);
-      editor?.focus();
+      setEditorMarkdown(currentMarkdown);
+      focusEditorWithDefaultCursor();
     } catch (error) {
       projectOpenState = hadOpenProject ? "open" : "error";
       projectError = error instanceof Error ? error.message : "Unable to create project";
@@ -388,6 +555,9 @@
   }
 
   function handleEditorChange(markdown: string): void {
+    if (suppressEditorChange) {
+      return;
+    }
     if (!projectIsOpen) {
       return;
     }
@@ -447,6 +617,22 @@
     void flushSave();
   }
 
+  function refreshProjectView(): void {
+    projectRevision += 1;
+  }
+
+  function setEditorMarkdown(markdown: string): void {
+    if (editor === undefined) {
+      return;
+    }
+    suppressEditorChange = true;
+    try {
+      editor.setMarkdown(markdown, { cursor: defaultCursorForActiveDocument() });
+    } finally {
+      suppressEditorChange = false;
+    }
+  }
+
   async function loadDocument(path: string): Promise<void> {
     if (!project) {
       return;
@@ -455,19 +641,31 @@
     const document = await project.readDocument({ path });
     activePath = document.path;
     activeTitle = document.title;
-    activeKind = document.kind;
+    activeDocumentKind = document.kind;
     currentMarkdown = document.body;
     saveState = "saved";
   }
 
-  async function openDocument(path: string): Promise<void> {
-    if (path === activePath) {
+  async function openDocument(
+    path: string,
+    options: { forceReload?: boolean; skipSave?: boolean } = {}
+  ): Promise<void> {
+    if (path === activePath && options.forceReload !== true) {
+      await focusEditorAfterOpen();
       return;
     }
 
-    await flushSave();
+    if (options.skipSave !== true) {
+      await flushSave();
+    }
     await loadDocument(path);
-    editor?.setMarkdown(currentMarkdown);
+    setEditorMarkdown(currentMarkdown);
+    await focusEditorAfterOpen();
+  }
+
+  async function focusEditorAfterOpen(): Promise<void> {
+    await tick();
+    focusEditorWithDefaultCursor();
   }
 
   function toggleVimMode(): void {
@@ -479,7 +677,7 @@
     if (paletteOpen) {
       focusEditor();
     } else {
-      editor?.focus();
+      focusEditorPreservingSidebar();
     }
   }
 
@@ -488,7 +686,7 @@
     commandQuery = "";
     selectedCommandIndex = 0;
     if (projectIsOpen) {
-      editor?.focus();
+      focusEditorWithDefaultCursor();
     }
   }
 
@@ -498,7 +696,97 @@
     selectedCommandIndex = 0;
     if (projectIsOpen) {
       editor?.focus();
+      rememberEditorFocus();
     }
+  }
+
+  function defaultCursorForActiveDocument(): "start" | "end" {
+    return activeDocumentKind === "note" ? "start" : "end";
+  }
+
+  function focusEditorWithDefaultCursor(): void {
+    if (!projectIsOpen) {
+      return;
+    }
+    editor?.focus({ cursor: defaultCursorForActiveDocument() });
+    rememberEditorFocus();
+  }
+
+  function rememberEditorFocus(): void {
+    if (!projectIsOpen || editor === undefined) {
+      return;
+    }
+    lastWorkspaceFocus = {
+      region: "editor",
+      path: activePath,
+      cursor: editor.getCursorPosition(),
+    };
+  }
+
+  function rememberSidebarFocus(itemId = focusedSidebarItemId): void {
+    if (!projectIsOpen || itemId.length === 0) {
+      return;
+    }
+    lastWorkspaceFocus = { region: "sidebar", itemId };
+  }
+
+  function captureWorkspaceFocus(): WorkspaceFocusTarget | undefined {
+    const activeElement = document.activeElement;
+    if (activeElement !== null && editorHost?.contains(activeElement)) {
+      rememberEditorFocus();
+      return lastWorkspaceFocus;
+    }
+    if (activeElement !== null && sidebarNav?.contains(activeElement)) {
+      rememberSidebarFocus();
+      return lastWorkspaceFocus;
+    }
+    return lastWorkspaceFocus;
+  }
+
+  async function restoreWorkspaceFocus(target = lastWorkspaceFocus): Promise<void> {
+    if (!projectIsOpen || hasTransientFocus()) {
+      return;
+    }
+    await tick();
+    if (target?.region === "sidebar" && sidebarOpen && sidebarItems.some((item) => item.id === target.itemId)) {
+      focusedSidebarItemId = target.itemId;
+      sidebarNav?.focus();
+      rememberSidebarFocus(target.itemId);
+      return;
+    }
+    if (target?.region === "editor" && target.path === activePath) {
+      editor?.focus({ cursor: target.cursor });
+      rememberEditorFocus();
+      return;
+    }
+    focusEditorWithDefaultCursor();
+  }
+
+  async function repairWorkspaceFocus(): Promise<void> {
+    if (!projectIsOpen || hasTransientFocus()) {
+      return;
+    }
+    await tick();
+    const activeElement = document.activeElement;
+    if (
+      activeElement !== null &&
+      (editorHost?.contains(activeElement) || sidebarNav?.contains(activeElement))
+    ) {
+      return;
+    }
+    await restoreWorkspaceFocus();
+  }
+
+  function hasTransientFocus(): boolean {
+    return (
+      paletteOpen ||
+      titleModal !== undefined ||
+      deleteModal !== undefined ||
+      confirmationModal !== undefined ||
+      contextMenu !== undefined ||
+      editingProjectTitle ||
+      editingSidebarItemId.length > 0
+    );
   }
 
   function focusSidebar(): void {
@@ -512,25 +800,31 @@
       sidebarOpen = true;
     }
     focusedSidebarItemId = activePath || sidebarItems[0]?.id || "";
-    void tick().then(() => sidebarNav?.focus());
+    void tick().then(() => {
+      sidebarNav?.focus();
+      rememberSidebarFocus();
+    });
   }
 
   function togglePalette(): void {
-    paletteOpen = !paletteOpen;
-    if (paletteOpen) {
+    if (!paletteOpen) {
+      paletteReturnFocus = paletteReturnFocus ?? captureWorkspaceFocus();
+      paletteOpen = true;
       commandQuery = "";
       selectedCommandIndex = 0;
-    } else if (projectIsOpen) {
-      editor?.focus();
+      return;
     }
+    closePalette();
   }
 
   function closePalette(): void {
+    const returnFocus = paletteReturnFocus;
     paletteOpen = false;
     commandQuery = "";
     selectedCommandIndex = 0;
+    paletteReturnFocus = undefined;
     if (projectIsOpen) {
-      editor?.focus();
+      void restoreWorkspaceFocus(returnFocus);
     }
   }
 
@@ -541,16 +835,19 @@
     sidebarOpen = !sidebarOpen;
     if (sidebarOpen) {
       focusedSidebarItemId = activePath || sidebarItems[0]?.id || "";
-      void tick().then(() => sidebarNav?.focus());
+      void tick().then(() => {
+        sidebarNav?.focus();
+        rememberSidebarFocus();
+      });
     } else {
-      editor?.focus();
+      focusEditorPreservingSidebar();
     }
   }
 
   function closeSidebar(): void {
     sidebarOpen = false;
     if (projectIsOpen) {
-      editor?.focus();
+      focusEditorPreservingSidebar();
     }
   }
 
@@ -569,14 +866,18 @@
     paletteOpen = false;
     commandQuery = "";
     selectedCommandIndex = 0;
+    paletteReturnFocus = undefined;
 
     if (command.focusAfter === "sidebar" && projectIsOpen) {
-      void tick().then(() => sidebarNav?.focus());
+      void tick().then(() => {
+        sidebarNav?.focus();
+        rememberSidebarFocus();
+      });
       return;
     }
 
     if (command.focusAfter !== "none" && projectIsOpen) {
-      void tick().then(() => editor?.focus());
+      void tick().then(() => focusEditorPreservingSidebar());
     }
   }
 
@@ -620,231 +921,6 @@
     selectedCommandIndex = 0;
   }
 
-  function buildPaletteCommands(
-    currentTheme: ClarosThemeId,
-    currentVimMode: boolean,
-    currentProjectIsOpen: boolean,
-    localProjectSupported: boolean
-  ): PaletteCommand[] {
-    const projectCommandDisabled = !currentProjectIsOpen;
-    return [
-      {
-        label: "Toggle Sidebar",
-        active: sidebarOpen,
-        disabled: projectCommandDisabled,
-        focusAfter: "none",
-        run: toggleSidebar,
-      },
-      {
-        label: "Open Project: Local Folder",
-        disabled: !localProjectSupported,
-        focusAfter: "editor",
-        run: () => void openProjectWithBackend("file-picker"),
-      },
-      {
-        label: "New Project: Local Folder",
-        disabled: !localProjectSupported,
-        focusAfter: "editor",
-        run: () => void createProjectWithBackend("file-picker"),
-      },
-      {
-        label: "Open Project: Local Companion",
-        focusAfter: "editor",
-        run: () => void openProjectWithBackend("local-companion"),
-      },
-      {
-        label: "New Project: Local Companion",
-        focusAfter: "editor",
-        run: () => void createProjectWithBackend("local-companion"),
-      },
-      {
-        label: "Save Document",
-        disabled: projectCommandDisabled,
-        focusAfter: "editor",
-        run: flushSaveWithoutWaiting,
-      },
-      {
-        label: currentVimMode ? "Disable Vim" : "Enable Vim",
-        active: currentVimMode,
-        disabled: projectCommandDisabled,
-        focusAfter: "editor",
-        run: toggleVimMode,
-      },
-      ...CLAROS_THEMES.map((theme) => ({
-        label: `Theme: ${theme.label}`,
-        active: theme.id === currentTheme,
-        focusAfter: "editor" as const,
-        run: () => setTheme(theme.id),
-      })),
-      {
-        label: "Focus Editor",
-        disabled: projectCommandDisabled,
-        focusAfter: "editor",
-        run: () => undefined,
-      },
-    ];
-  }
-
-  function filterCommands(commands: PaletteCommand[], query: string): PaletteCommand[] {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return commands;
-    }
-
-    return commands.filter((command) => command.label.toLowerCase().includes(normalizedQuery));
-  }
-
-  function clampCommandIndex(index: number, commandCount: number): number {
-    if (commandCount === 0) {
-      return 0;
-    }
-
-    return Math.min(index, commandCount - 1);
-  }
-
-  function buildStorageBackendOptions(localProjectSupported: boolean): StorageBackendOption[] {
-    return [
-      {
-        id: "file-picker",
-        label: "Local Folder",
-        icon: FolderOpen,
-        available: localProjectSupported,
-        unavailableReason: localProjectSupported ? undefined : "Not supported by this browser",
-      },
-      {
-        id: "local-companion",
-        label: "Local Companion",
-        icon: TerminalWindow,
-        available: true,
-      },
-    ];
-  }
-
-  function buildSidebarItems(
-    chapterList: WorkspaceChapter[],
-    noteList: WorkspaceNote[],
-    collapsed: Set<string>
-  ): SidebarItem[] {
-    const items: SidebarItem[] = [
-      {
-        id: "manuscript",
-        kind: "section",
-        label: "Manuscript",
-        depth: 0,
-        collapsible: true,
-        collapsed: collapsed.has("manuscript"),
-      },
-    ];
-
-    if (!collapsed.has("manuscript")) {
-      for (const chapter of chapterList) {
-        const chapterId = `chapter:${chapter.id}`;
-        items.push({
-          id: chapterId,
-          kind: "chapter",
-          label: chapter.title || `Chapter ${chapter.sequence}`,
-          depth: 1,
-          collapsible: true,
-          collapsed: collapsed.has(chapterId),
-        });
-
-        if (!collapsed.has(chapterId)) {
-          for (const scene of chapter.scenes) {
-            items.push({
-              id: scene.path,
-              kind: "scene",
-              label: scene.title || `Scene ${scene.sequence}`,
-              depth: 2,
-              collapsible: false,
-              collapsed: false,
-              path: scene.path,
-            });
-          }
-        }
-      }
-    }
-
-    items.push({
-      id: "notes",
-      kind: "section",
-      label: "Notes",
-      depth: 0,
-      collapsible: true,
-      collapsed: collapsed.has("notes"),
-    });
-
-    if (!collapsed.has("notes")) {
-      appendNoteItems(items, noteList, [], 1, collapsed);
-    }
-
-    return items;
-  }
-
-  function appendNoteItems(
-    items: SidebarItem[],
-    noteList: WorkspaceNote[],
-    folderPath: string[],
-    depth: number,
-    collapsed: Set<string>
-  ): void {
-    const childFolderNames = Array.from(
-      new Set(
-        noteList
-          .filter((note) => startsWithPath(note.folderPath, folderPath))
-          .map((note) => note.folderPath[folderPath.length])
-          .filter((folderName): folderName is string => folderName !== undefined)
-      )
-    ).sort((left, right) => left.localeCompare(right));
-
-    for (const folderName of childFolderNames) {
-      const nextFolderPath = [...folderPath, folderName];
-      const folderId = `folder:${nextFolderPath.join("/")}`;
-      items.push({
-        id: folderId,
-        kind: "folder",
-        label: titleFromSlug(folderName),
-        depth,
-        collapsible: true,
-        collapsed: collapsed.has(folderId),
-      });
-
-      if (!collapsed.has(folderId)) {
-        appendNoteItems(items, noteList, nextFolderPath, depth + 1, collapsed);
-      }
-    }
-
-    noteList
-      .filter((note) => pathsEqual(note.folderPath, folderPath))
-      .sort((left, right) => left.title.localeCompare(right.title))
-      .forEach((note) => {
-        items.push({
-          id: note.path,
-          kind: "note",
-          label: note.title,
-          depth,
-          collapsible: false,
-          collapsed: false,
-          path: note.path,
-        });
-      });
-  }
-
-  function startsWithPath(path: string[], prefix: string[]): boolean {
-    return prefix.every((part, index) => path[index] === part);
-  }
-
-  function pathsEqual(left: string[], right: string[]): boolean {
-    return left.length === right.length && startsWithPath(left, right);
-  }
-
-  function titleFromSlug(slug: string): string {
-    return slug
-      .split("-")
-      .filter((part) => part.length > 0)
-      .map((part) => part[0].toUpperCase() + part.slice(1))
-      .join(" ");
-  }
-
   function toggleCollapsed(itemId: string): void {
     const next = new Set(collapsedItems);
     if (next.has(itemId)) {
@@ -855,8 +931,35 @@
     collapsedItems = next;
   }
 
+  function handleSidebarItemClick(item: SidebarItem): void {
+    if (item.kind === "add-chapter") {
+      openAppendChapterModal();
+      return;
+    }
+    if (item.kind === "add-scene") {
+      openAppendSceneModal();
+      return;
+    }
+    if (item.path !== undefined) {
+      void openDocument(item.path);
+      return;
+    }
+    if (item.collapsible) {
+      toggleCollapsed(item.id);
+    }
+  }
+
   function handleSidebarKeydown(event: KeyboardEvent): void {
+    if (
+      editingSidebarItemId.length > 0 ||
+      !(event.target instanceof Node) ||
+      !sidebarNav?.contains(event.target)
+    ) {
+      return;
+    }
+
     const currentIndex = sidebarItems.findIndex((item) => item.id === focusedSidebarItemId);
+    const intent = directionalIntentFromKeydown(event);
 
     if ((event.metaKey || event.ctrlKey) && event.key === "ArrowLeft") {
       event.preventDefault();
@@ -870,31 +973,33 @@
       return;
     }
 
-    if (event.key === "ArrowDown") {
+    if (intent === "down") {
       event.preventDefault();
       focusSidebarIndex(Math.min(currentIndex + 1, sidebarItems.length - 1));
       return;
     }
 
-    if (event.key === "ArrowUp") {
+    if (intent === "up") {
       event.preventDefault();
       focusSidebarIndex(Math.max(currentIndex - 1, 0));
       return;
     }
 
-    if (event.key === "ArrowRight") {
+    if (intent === "right") {
       event.preventDefault();
-      expandFocusedItem();
+      if (!openFocusedSidebarContextMenu()) {
+        expandFocusedItem();
+      }
       return;
     }
 
-    if (event.key === "ArrowLeft") {
+    if (intent === "left") {
       event.preventDefault();
       collapseFocusedItem();
       return;
     }
 
-    if (event.key === "Enter") {
+    if (intent === "activate") {
       event.preventDefault();
       activateFocusedItem();
       return;
@@ -923,6 +1028,18 @@
     }
   }
 
+  function openFocusedSidebarContextMenu(): boolean {
+    const item = sidebarItems.find((candidate) => candidate.id === focusedSidebarItemId);
+    if (item === undefined || !hasSidebarContextMenu(item)) {
+      return false;
+    }
+
+    const anchor = sidebarItemElement(item.id);
+    const rect = anchor?.getBoundingClientRect();
+    openSidebarContextMenuAt(rect === undefined ? 0 : rect.right + 6, rect?.top ?? 0, item);
+    return true;
+  }
+
   function collapseFocusedItem(): void {
     const item = sidebarItems.find((candidate) => candidate.id === focusedSidebarItemId);
     if (item?.collapsible && !item.collapsed) {
@@ -932,6 +1049,14 @@
 
   function activateFocusedItem(): void {
     const item = sidebarItems.find((candidate) => candidate.id === focusedSidebarItemId);
+    if (item?.kind === "add-chapter") {
+      openAppendChapterModal();
+      return;
+    }
+    if (item?.kind === "add-scene") {
+      openAppendSceneModal();
+      return;
+    }
     if (item?.path !== undefined) {
       void openDocument(item.path);
       return;
@@ -948,18 +1073,725 @@
     }
   }
 
-  function saveStateLabel(state: SaveState): string {
-    if (state === "dirty") {
-      return "Unsaved";
-    }
-    if (state === "saving") {
-      return "Saving";
-    }
-    if (state === "error") {
-      return "Save failed";
-    }
-    return "Saved";
+  function sidebarItemElement(itemId: string): HTMLElement | undefined {
+    return Array.from(sidebarNav?.querySelectorAll<HTMLElement>("[data-sidebar-item-id]") ?? []).find(
+      (element) => element.dataset.sidebarItemId === itemId
+    );
   }
+
+  function openTitleModal(state: TitleModalState): void {
+    const returnFocus = state.returnFocus ?? paletteReturnFocus ?? captureWorkspaceFocus();
+    paletteOpen = false;
+    contextMenu = undefined;
+    titleModal = { ...state, returnFocus };
+  }
+
+  function openProjectTitleModal(): void {
+    openTitleModal({
+      target: "project",
+      heading: "Project Title",
+      value: displayProjectTitle,
+      placeholder: "Untitled Project",
+    });
+  }
+
+  function openAppendChapterModal(): void {
+    openChapterCreationModal("append");
+  }
+
+  function openInsertChapterModal(
+    placement: "before" | "after",
+    chapter: WorkspaceChapter | undefined
+  ): void {
+    if (chapter === undefined) {
+      return;
+    }
+    openChapterCreationModal(placement, chapter.id);
+  }
+
+  function openChapterCreationModal(
+    placement: ManuscriptInsertionPlacement,
+    targetChapterId?: string
+  ): void {
+    openTitleModal({
+      target: "new-chapter",
+      heading: "New Chapter",
+      value: "",
+      placeholder: `Chapter ${chapterCreationSequence(placement, targetChapterId)}`,
+      createPlacement: placement,
+      targetChapterId,
+    });
+  }
+
+  function openAppendSceneModal(): void {
+    openSceneCreationModal("append");
+  }
+
+  function openInsertSceneModal(
+    placement: "before" | "after",
+    scene: WorkspaceScene | undefined
+  ): void {
+    if (scene === undefined) {
+      return;
+    }
+    openSceneCreationModal(placement, scene.path);
+  }
+
+  function openSceneCreationModal(
+    placement: ManuscriptInsertionPlacement,
+    targetScenePath?: string
+  ): void {
+    openTitleModal({
+      target: "new-scene",
+      heading: "New Scene",
+      value: "",
+      placeholder: `Scene ${sceneCreationSequence(placement, targetScenePath)}`,
+      createPlacement: placement,
+      targetScenePath,
+    });
+  }
+
+  function chapterCreationSequence(
+    placement: ManuscriptInsertionPlacement,
+    targetChapterId?: string
+  ): number {
+    if (placement === "append" || targetChapterId === undefined) {
+      return chapters.length + 1;
+    }
+    const targetIndex = chapters.findIndex((chapter) => chapter.id === targetChapterId);
+    if (targetIndex === -1) {
+      return chapters.length + 1;
+    }
+    return placement === "before" ? targetIndex + 1 : targetIndex + 2;
+  }
+
+  function sceneCreationSequence(
+    placement: ManuscriptInsertionPlacement,
+    targetScenePath?: string
+  ): number {
+    if (placement === "append" || targetScenePath === undefined) {
+      return scenes.length + 1;
+    }
+    const targetIndex = scenes.findIndex((scene) => scene.path === targetScenePath);
+    if (targetIndex === -1) {
+      return scenes.length + 1;
+    }
+    return placement === "before" ? targetIndex + 1 : targetIndex + 2;
+  }
+
+  function firstSceneSequenceForChapterCreation(
+    placement: ManuscriptInsertionPlacement | undefined,
+    targetChapterId?: string
+  ): number {
+    if (placement === undefined || placement === "append" || targetChapterId === undefined) {
+      return scenes.length + 1;
+    }
+    const targetIndex = chapters.findIndex((chapter) => chapter.id === targetChapterId);
+    if (targetIndex === -1) {
+      return scenes.length + 1;
+    }
+    return (
+      scenes.filter((scene) => {
+        const chapterIndex = chapters.findIndex((chapter) => chapter.id === scene.chapterId);
+        return placement === "before" ? chapterIndex < targetIndex : chapterIndex <= targetIndex;
+      }).length + 1
+    );
+  }
+
+  function openCurrentChapterTitleModal(): void {
+    if (activeChapter === undefined) {
+      return;
+    }
+    openTitleModal({
+      target: "chapter",
+      heading: "Chapter Title",
+      value: activeChapter.title,
+      placeholder: `Chapter ${activeChapter.sequence}`,
+      chapterId: activeChapter.id,
+    });
+  }
+
+  function openCurrentSceneTitleModal(): void {
+    if (activeScene === undefined) {
+      return;
+    }
+    openTitleModal({
+      target: "scene",
+      heading: "Scene Title",
+      value: activeScene.title,
+      placeholder: `Scene ${activeScene.sequence}`,
+      scenePath: activeScene.path,
+    });
+  }
+
+  function openCurrentChapterDeleteModal(): void {
+    if (activeChapter !== undefined && canDeleteChapter(activeChapter)) {
+      openDeleteChapterModal(activeChapter);
+    }
+  }
+
+  function openCurrentSceneDeleteModal(): void {
+    if (activeScene !== undefined && canDeleteScene()) {
+      openDeleteSceneModal(activeScene);
+    }
+  }
+
+  function openDeleteChapterModal(chapter: WorkspaceChapter): void {
+    contextMenu = undefined;
+    deleteModal = {
+      target: "chapter",
+      heading: "Delete Chapter",
+      label: chapter.title,
+      chapterId: chapter.id,
+      confirmation: "",
+    };
+  }
+
+  function openDeleteSceneModal(scene: WorkspaceScene): void {
+    contextMenu = undefined;
+    deleteModal = {
+      target: "scene",
+      heading: "Delete Scene",
+      label: scene.title,
+      scenePath: scene.path,
+      confirmation: "",
+    };
+  }
+
+  async function submitTitleModal(): Promise<void> {
+    if (titleModal === undefined) {
+      return;
+    }
+    const modal = titleModal;
+    titleModal = undefined;
+    await flushSave();
+    if (modal.target === "new-project" && modal.storageBackendId !== undefined) {
+      await createProjectWithBackendTitle(modal.storageBackendId, modal.value);
+      return;
+    }
+    if (project === undefined) {
+      return;
+    }
+    if (modal.target === "project") {
+      await setProjectTitleFromInput(modal.value);
+      await restoreWorkspaceFocus(modal.returnFocus);
+      return;
+    }
+    if (modal.target === "new-chapter") {
+      openTitleModal({
+        target: "new-chapter-scene",
+        heading: "New Scene",
+        value: "",
+        placeholder: `Scene ${firstSceneSequenceForChapterCreation(
+          modal.createPlacement,
+          modal.targetChapterId
+        )}`,
+        chapterTitle: modal.value,
+        createPlacement: modal.createPlacement,
+        targetChapterId: modal.targetChapterId,
+        returnFocus: modal.returnFocus,
+      });
+      return;
+    }
+    if (modal.target === "new-chapter-scene") {
+      const scene = await project.createChapter(modal.chapterTitle ?? "", modal.value, {
+        placement: modal.createPlacement,
+        targetChapterId: modal.targetChapterId,
+      });
+      refreshProjectView();
+      await openDocument(scene.path);
+      return;
+    }
+    if (modal.target === "new-scene") {
+      const scene = await project.createScene(modal.value, {
+        placement: modal.createPlacement,
+        targetScenePath: modal.targetScenePath,
+      });
+      refreshProjectView();
+      await openDocument(scene.path);
+      return;
+    }
+    if (modal.target === "chapter" && modal.chapterId !== undefined) {
+      await setChapterTitleFromInput(modal.chapterId, modal.value);
+      await restoreWorkspaceFocus(modal.returnFocus);
+      return;
+    }
+    if (modal.target === "scene" && modal.scenePath !== undefined) {
+      await setSceneTitleFromInput(modal.scenePath, modal.value);
+      if (modal.scenePath === activePath) {
+        await loadDocument(activePath);
+      }
+      await restoreWorkspaceFocus(modal.returnFocus);
+    }
+  }
+
+  async function submitDeleteModal(): Promise<void> {
+    if (deleteModal === undefined || project === undefined || deleteModal.confirmation !== "delete") {
+      return;
+    }
+    const modal = deleteModal;
+    deleteModal = undefined;
+    await flushSave();
+    if (modal.target === "chapter" && modal.chapterId !== undefined) {
+      const nextPath = await project.deleteChapter(modal.chapterId);
+      refreshProjectView();
+      await openDocument(nextPath, { forceReload: true, skipSave: true });
+      return;
+    }
+    if (modal.target === "scene" && modal.scenePath !== undefined) {
+      const nextPath = await project.deleteScene(modal.scenePath);
+      refreshProjectView();
+      await openDocument(nextPath, { forceReload: true, skipSave: true });
+    }
+  }
+
+  function closeTitleModal(): void {
+    const returnFocus = titleModal?.returnFocus;
+    titleModal = undefined;
+    void restoreWorkspaceFocus(returnFocus);
+  }
+
+  function closeDeleteModal(): void {
+    deleteModal = undefined;
+    void restoreWorkspaceFocus();
+  }
+
+  function closeConfirmationModal(): void {
+    confirmationModal = undefined;
+    void restoreWorkspaceFocus();
+  }
+
+  function submitConfirmationModal(): void {
+    const modal = confirmationModal;
+    confirmationModal = undefined;
+    modal?.onConfirm();
+  }
+
+  function beginProjectTitleEdit(): void {
+    if (!projectIsOpen) {
+      return;
+    }
+    projectTitleReturnFocus = projectTitleReturnFocus ?? captureWorkspaceFocus();
+    projectTitleDraft = project?.manifest.title ?? "";
+    editingProjectTitle = true;
+    void tick().then(() => {
+      const input = document.querySelector<HTMLInputElement>(".project-title-input");
+      input?.focus();
+      input?.select();
+    });
+  }
+
+  async function commitProjectTitleEdit(): Promise<void> {
+    if (!project || !editingProjectTitle) {
+      return;
+    }
+    const returnFocus = projectTitleReturnFocus;
+    projectTitleReturnFocus = undefined;
+    editingProjectTitle = false;
+    await setProjectTitleFromInput(projectTitleDraft);
+    await restoreWorkspaceFocus(returnFocus);
+  }
+
+  async function setProjectTitleFromInput(title: string): Promise<void> {
+    if (project === undefined) {
+      return;
+    }
+    optimisticProjectTitle = normalizedProjectTitle(title);
+    try {
+      await project.setProjectTitle(title);
+    } finally {
+      optimisticProjectTitle = undefined;
+      refreshProjectView();
+    }
+  }
+
+  async function setChapterTitleFromInput(chapterId: string, title: string): Promise<void> {
+    if (project === undefined) {
+      return;
+    }
+    const nextTitle = normalizedChapterTitle(chapterId, title, chapters);
+    const activeSceneSequence =
+      activeChapter?.id === chapterId ? activeScene?.sequence : undefined;
+    optimisticChapterTitles = new Map(optimisticChapterTitles).set(chapterId, nextTitle);
+    try {
+      const updatedChapter = await project.setChapterTitle(chapterId, title);
+      const updatedActiveScene =
+        activeSceneSequence === undefined
+          ? undefined
+          : updatedChapter.scenes.find((scene) => scene.sequence === activeSceneSequence);
+      if (updatedActiveScene !== undefined) {
+        await loadDocument(updatedActiveScene.path);
+        setEditorMarkdown(currentMarkdown);
+      }
+    } finally {
+      const next = new Map(optimisticChapterTitles);
+      next.delete(chapterId);
+      optimisticChapterTitles = next;
+      refreshProjectView();
+    }
+  }
+
+  async function setSceneTitleFromInput(scenePath: string, title: string): Promise<void> {
+    if (project === undefined) {
+      return;
+    }
+    const nextTitle = normalizedSceneTitle(scenePath, title, scenes);
+    optimisticSceneTitles = new Map(optimisticSceneTitles).set(scenePath, nextTitle);
+    if (scenePath === activePath) {
+      activeTitle = nextTitle;
+    }
+    try {
+      const updatedScene = await project.setSceneTitle(scenePath, title);
+      if (scenePath === activePath) {
+        await loadDocument(updatedScene.path);
+        setEditorMarkdown(currentMarkdown);
+      }
+    } finally {
+      const next = new Map(optimisticSceneTitles);
+      next.delete(scenePath);
+      optimisticSceneTitles = next;
+      refreshProjectView();
+    }
+  }
+
+  function beginSidebarTitleEdit(item: SidebarItem): void {
+    sidebarTitleReturnFocus = captureWorkspaceFocus();
+    editingSidebarItemId = item.id;
+    sidebarTitleDraft = item.label;
+    contextMenu = undefined;
+    void tick().then(() => {
+      const input = document.querySelector<HTMLInputElement>(".sidebar-title-input");
+      input?.focus();
+      input?.select();
+    });
+  }
+
+  async function commitSidebarTitleEdit(item: SidebarItem): Promise<void> {
+    if (!project || editingSidebarItemId !== item.id) {
+      return;
+    }
+    const returnFocus = sidebarTitleReturnFocus;
+    sidebarTitleReturnFocus = undefined;
+    editingSidebarItemId = "";
+    if (item.kind === "chapter" && item.chapterId !== undefined) {
+      await setChapterTitleFromInput(item.chapterId, sidebarTitleDraft);
+    }
+    if (item.kind === "scene" && item.path !== undefined) {
+      await setSceneTitleFromInput(item.path, sidebarTitleDraft);
+      if (item.path === activePath) {
+        await loadDocument(activePath);
+      }
+    }
+    await restoreWorkspaceFocus(returnFocus);
+  }
+
+  function cancelInlineTitleEdit(): void {
+    const returnFocus = sidebarTitleReturnFocus ?? projectTitleReturnFocus;
+    editingProjectTitle = false;
+    editingSidebarItemId = "";
+    projectTitleReturnFocus = undefined;
+    sidebarTitleReturnFocus = undefined;
+    void restoreWorkspaceFocus(returnFocus);
+  }
+
+  function openSidebarContextMenu(event: MouseEvent, item: SidebarItem): void {
+    if (!hasSidebarContextMenu(item)) {
+      return;
+    }
+    event.preventDefault();
+    openSidebarContextMenuAt(event.clientX, event.clientY, item);
+  }
+
+  function openSidebarContextMenuAt(x: number, y: number, item: SidebarItem): void {
+    focusedSidebarItemId = item.id;
+    rememberSidebarFocus(item.id);
+    contextMenu = { x, y, item };
+  }
+
+  function closeSidebarContextMenu(): void {
+    const returnFocus =
+      contextMenu === undefined
+        ? undefined
+        : { region: "sidebar" as const, itemId: contextMenu.item.id };
+    contextMenu = undefined;
+    if (returnFocus !== undefined) {
+      void restoreWorkspaceFocus(returnFocus);
+    }
+  }
+
+  function hasSidebarContextMenu(item: SidebarItem): boolean {
+    return item.kind === "chapter" || item.kind === "scene";
+  }
+
+  function beginContextMenuTitleEdit(): void {
+    if (contextMenu !== undefined) {
+      beginSidebarTitleEdit(contextMenu.item);
+    }
+  }
+
+  function canDeleteChapter(chapter: WorkspaceChapter): boolean {
+    return chapters.length > 1 && scenes.some((scene) => scene.chapterId !== chapter.id);
+  }
+
+  function canDeleteScene(): boolean {
+    return scenes.length > 1;
+  }
+
+  function canMoveChapter(chapter: WorkspaceChapter, direction: "up" | "down"): boolean {
+    const index = chapters.findIndex((candidate) => candidate.id === chapter.id);
+    return direction === "up" ? index > 0 : index >= 0 && index < chapters.length - 1;
+  }
+
+  function canMoveScene(scene: WorkspaceScene, direction: "up" | "down"): boolean {
+    const index = scenes.findIndex((candidate) => candidate.path === scene.path);
+    return direction === "up" ? index > 0 : index >= 0 && index < scenes.length - 1;
+  }
+
+  async function moveCurrentChapter(direction: "up" | "down"): Promise<void> {
+    if (activeChapter !== undefined) {
+      await moveChapterByDirection(activeChapter, direction);
+    }
+  }
+
+  async function moveCurrentScene(direction: "up" | "down"): Promise<void> {
+    if (activeScene !== undefined) {
+      await moveSceneByDirection(activeScene, direction);
+    }
+  }
+
+  async function moveChapterByDirection(
+    chapter: WorkspaceChapter,
+    direction: "up" | "down"
+  ): Promise<void> {
+    const index = chapters.findIndex((candidate) => candidate.id === chapter.id);
+    const target = chapters[direction === "up" ? index - 1 : index + 1];
+    if (project === undefined || target === undefined) {
+      return;
+    }
+    await moveChapter(chapter.id, {
+      placement: direction === "up" ? "before" : "after",
+      targetChapterId: target.id,
+    });
+  }
+
+  async function moveSceneByDirection(
+    scene: WorkspaceScene,
+    direction: "up" | "down"
+  ): Promise<void> {
+    const index = scenes.findIndex((candidate) => candidate.path === scene.path);
+    const target = scenes[direction === "up" ? index - 1 : index + 1];
+    if (project === undefined || target === undefined) {
+      return;
+    }
+    await moveScene(scene.path, {
+      placement: direction === "up" ? "before" : "after",
+      targetScenePath: target.path,
+    });
+  }
+
+  async function moveChapter(
+    chapterId: string,
+    options: { placement: "before" | "after"; targetChapterId: string }
+  ): Promise<void> {
+    if (project === undefined) {
+      return;
+    }
+    contextMenu = undefined;
+    await flushSave();
+    const move = await project.moveChapter(chapterId, options);
+    await refreshAfterMove(move);
+  }
+
+  async function moveScene(
+    scenePath: string,
+    options: SceneMoveOptions,
+    moveOptions: { skipEmptyChapterConfirmation?: boolean } = {}
+  ): Promise<void> {
+    if (project === undefined) {
+      return;
+    }
+    contextMenu = undefined;
+    if (
+      !moveOptions.skipEmptyChapterConfirmation &&
+      shouldConfirmEmptyChapterDeletion(scenePath, options)
+    ) {
+      openEmptyChapterMoveConfirmation(scenePath, options);
+      return;
+    }
+    await flushSave();
+    const move = await project.moveScene(scenePath, options);
+    await refreshAfterMove(move);
+  }
+
+  function shouldConfirmEmptyChapterDeletion(scenePath: string, options: SceneMoveOptions): boolean {
+    const scene = scenes.find((candidate) => candidate.path === scenePath);
+    const targetChapterId = targetChapterIdForSceneMove(options);
+    return (
+      scene !== undefined &&
+      targetChapterId !== undefined &&
+      targetChapterId !== scene.chapterId &&
+      scenes.filter((candidate) => candidate.chapterId === scene.chapterId).length === 1
+    );
+  }
+
+  function targetChapterIdForSceneMove(options: SceneMoveOptions): string | undefined {
+    if (options.placement === "append") {
+      return options.targetChapterId;
+    }
+    return scenes.find((scene) => scene.path === options.targetScenePath)?.chapterId;
+  }
+
+  function openEmptyChapterMoveConfirmation(
+    scenePath: string,
+    options: SceneMoveOptions
+  ): void {
+    const scene = scenes.find((candidate) => candidate.path === scenePath);
+    const chapter =
+      scene === undefined
+        ? undefined
+        : chapters.find((candidate) => candidate.id === scene.chapterId);
+    const sceneLabel = scene?.title ?? "this scene";
+    const chapterLabel = chapter?.title ?? "its current chapter";
+    confirmationModal = {
+      heading: "Delete Empty Chapter?",
+      message: `Moving "${sceneLabel}" out of "${chapterLabel}" will delete the empty chapter.`,
+      confirmLabel: "Move and Delete Chapter",
+      cancelLabel: "Cancel",
+      onConfirm: () => {
+        void moveScene(scenePath, options, { skipEmptyChapterConfirmation: true });
+      },
+    };
+  }
+
+  async function refreshAfterMove(move: WorkspaceMoveResult): Promise<void> {
+    const nextActivePath = move.pathMap[activePath] ?? activePath;
+    refreshProjectView();
+    if (nextActivePath !== activePath || scenes.some((scene) => scene.path === nextActivePath)) {
+      await openDocument(nextActivePath, { forceReload: true, skipSave: true });
+    }
+  }
+
+  function chapterForItem(item: SidebarItem): WorkspaceChapter | undefined {
+    return item.chapterId === undefined
+      ? undefined
+      : chapters.find((chapter) => chapter.id === item.chapterId);
+  }
+
+  function sceneForItem(item: SidebarItem): WorkspaceScene | undefined {
+    return item.path === undefined ? undefined : scenes.find((scene) => scene.path === item.path);
+  }
+
+  function buildSidebarContextMenuItems(item: SidebarItem): ActionMenuItem[] {
+    const menuItems: ActionMenuItem[] = [
+      {
+        label: "Change title",
+        run: beginContextMenuTitleEdit,
+      },
+    ];
+
+    if (item.kind === "chapter") {
+      const chapter = chapterForItem(item);
+      menuItems.push({
+        label: "Add new chapter",
+        disabled: chapter === undefined,
+        submenu: [
+          {
+            label: "Before",
+            run: () => openInsertChapterModal("before", chapter),
+          },
+          {
+            label: "After",
+            run: () => openInsertChapterModal("after", chapter),
+          },
+        ],
+      });
+      menuItems.push({
+        label: "Move",
+        disabled: chapter === undefined,
+        submenu: [
+          {
+            label: "Up",
+            disabled: chapter === undefined || !canMoveChapter(chapter, "up"),
+            run: () => {
+              if (chapter !== undefined) {
+                void moveChapterByDirection(chapter, "up");
+              }
+            },
+          },
+          {
+            label: "Down",
+            disabled: chapter === undefined || !canMoveChapter(chapter, "down"),
+            run: () => {
+              if (chapter !== undefined) {
+                void moveChapterByDirection(chapter, "down");
+              }
+            },
+          },
+        ],
+      });
+      menuItems.push({
+        label: "Delete chapter",
+        disabled: chapter === undefined || !canDeleteChapter(chapter),
+        run: () => {
+          if (chapter !== undefined) {
+            openDeleteChapterModal(chapter);
+          }
+        },
+      });
+      return menuItems;
+    }
+
+    const scene = sceneForItem(item);
+    menuItems.push({
+      label: "Add new scene",
+      disabled: scene === undefined,
+      submenu: [
+        {
+          label: "Before",
+          run: () => openInsertSceneModal("before", scene),
+        },
+        {
+          label: "After",
+          run: () => openInsertSceneModal("after", scene),
+        },
+      ],
+    });
+    menuItems.push({
+      label: "Move",
+      disabled: scene === undefined,
+      submenu: [
+        {
+          label: "Up",
+          disabled: scene === undefined || !canMoveScene(scene, "up"),
+          run: () => {
+            if (scene !== undefined) {
+              void moveSceneByDirection(scene, "up");
+            }
+          },
+        },
+        {
+          label: "Down",
+          disabled: scene === undefined || !canMoveScene(scene, "down"),
+          run: () => {
+            if (scene !== undefined) {
+              void moveSceneByDirection(scene, "down");
+            }
+          },
+        },
+      ],
+    });
+    menuItems.push({
+      label: "Delete scene",
+      disabled: scene === undefined || !canDeleteScene(),
+      run: () => {
+        if (scene !== undefined) {
+          openDeleteSceneModal(scene);
+        }
+      },
+    });
+    return menuItems;
+  }
+
 </script>
 
 <svelte:head>
@@ -967,7 +1799,12 @@
 </svelte:head>
 
 <main bind:this={appShell} class={`app-shell ${projectIsOpen && sidebarOpen ? "sidebar-open" : ""}`}>
-  {#if projectIsOpen}
+  {#if !startupReady}
+    <section class="startup-screen" aria-label="Loading Claros">
+      <span class="startup-spinner" aria-hidden="true"></span>
+    </section>
+  {:else}
+    {#if projectIsOpen}
     {#if !sidebarOpen}
       <button
         type="button"
@@ -980,65 +1817,65 @@
       </button>
     {/if}
 
-    <aside class:open={sidebarOpen} class="sidebar" aria-label="Project sidebar">
-      <div class="sidebar-head">
-        <span>{project?.manifest.title ?? "Claros"}</span>
-        <button type="button" class="icon-button" aria-label="Close sidebar" on:click={closeSidebar}>
-          <CaretLeft size={18} weight="bold" />
-        </button>
-      </div>
-      <div
-        bind:this={sidebarNav}
-        class="sidebar-nav"
-        tabindex="-1"
-        role="tree"
-        aria-label="Project documents"
-        on:keydown={handleSidebarKeydown}
-      >
-        {#each sidebarItems as item}
-          <button
-            type="button"
-            class="sidebar-item"
-            class:active={item.path === activePath}
-            class:focused={item.id === focusedSidebarItemId}
-            class:branch={item.collapsible}
-            style={`--depth: ${item.depth}`}
-            role="treeitem"
-            aria-selected={item.path === activePath}
-            aria-current={item.path === activePath ? "page" : undefined}
-            aria-expanded={item.collapsible ? !item.collapsed : undefined}
-            on:focus={() => (focusedSidebarItemId = item.id)}
-            on:click={() => {
-              focusedSidebarItemId = item.id;
-              if (item.path !== undefined) {
-                void openDocument(item.path);
-              } else if (item.collapsible) {
-                toggleCollapsed(item.id);
-              }
-            }}
-          >
-            <span class="item-caret">{item.collapsible ? (item.collapsed ? "+" : "-") : ""}</span>
-            {#if item.id === "manuscript"}
-              <Book size={16} weight="regular" />
-            {:else if item.id === "notes"}
-              <Notebook size={16} weight="regular" />
-            {:else}
-              <span class="item-icon-spacer"></span>
-            {/if}
-            <span class="item-label">{item.label}</span>
-          </button>
-        {/each}
-      </div>
-    </aside>
-  {/if}
+    <WorkspaceSidebar
+      bind:sidebarNav
+      bind:focusedItemId={focusedSidebarItemId}
+      bind:titleDraft={sidebarTitleDraft}
+      activePath={activePath}
+      close={closeSidebar}
+      commitTitle={(item) => void commitSidebarTitleEdit(item)}
+      cancelTitleEdit={cancelInlineTitleEdit}
+      dragging={$manuscriptDrag !== undefined}
+      draggingItemId={$manuscriptDrag?.itemId ?? ""}
+      ghostChapterId={$manuscriptDrag?.kind === "chapter" ? $manuscriptDrag.chapterId : ""}
+      dropIndicatorItemId={chapterDropIndicatorItemId}
+      dropIndicatorPlacement={$manuscriptDrag?.kind === "chapter" ? $manuscriptDrag.placement : undefined}
+      editingItemId={editingSidebarItemId}
+      handleContextMenu={openSidebarContextMenu}
+      handleDragPointerDown={(event, item) => manuscriptDragController.handlePointerDown(event, item)}
+      handleItemClick={handleSidebarItemClick}
+      handleKeydown={handleSidebarKeydown}
+      items={sidebarItems}
+      open={sidebarOpen}
+      rememberFocus={rememberSidebarFocus}
+    />
+    <ManuscriptDragPreview drag={$manuscriptDrag} />
+    {/if}
 
-  <section class="workspace">
+    <section class="workspace">
     <header class="topbar" aria-label="Workspace">
       <div class="identity">
-        <span class="product">{project?.manifest.title ?? "Claros"}</span>
+        {#if projectIsOpen && editingProjectTitle}
+          <input
+            class="project-title-input"
+            bind:value={projectTitleDraft}
+            aria-label="Project title"
+            on:keydown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void commitProjectTitleEdit();
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelInlineTitleEdit();
+              }
+            }}
+            on:blur={() => void commitProjectTitleEdit()}
+          />
+        {:else if projectIsOpen}
+          <button
+            type="button"
+            class="product title-button"
+            on:mousedown={() => (projectTitleReturnFocus = captureWorkspaceFocus())}
+            on:click={beginProjectTitleEdit}
+          >
+            {displayProjectTitle}
+          </button>
+        {:else}
+          <span class="product static-title">{displayProjectTitle}</span>
+        {/if}
         {#if projectIsOpen}
           <span class="draft-name">{activeTitle}</span>
-          <span class="document-kind">{activeKind}</span>
           <span
             class={`save-state status-${saveState}`}
             aria-label={`${openStorageBackend.label}: ${saveStateLabel(saveState)}`}
@@ -1055,6 +1892,7 @@
           class="icon-button"
           aria-label="Open command palette"
           aria-expanded={paletteOpen}
+          on:mousedown={() => (paletteReturnFocus = captureWorkspaceFocus())}
           on:click={togglePalette}
         >
           <Command size={19} weight="regular" />
@@ -1063,7 +1901,7 @@
     </header>
 
     {#if projectIsOpen}
-      <section class="editor-frame" aria-label="Markdown editor">
+      <section class="editor-frame" aria-label="Markdown editor" on:focusin={rememberEditorFocus}>
         <div bind:this={editorHost} class="editor-host"></div>
       </section>
     {:else}
@@ -1080,651 +1918,71 @@
                 ? projectError || "Unable to open project."
                 : "Choose how Claros should access the project folder."}
         </span>
-        <div
-          class="project-launcher"
-          class:menu-open={storageBackendMenuOpen}
-        >
-          <div class="backend-select">
-            <button
-              type="button"
-              class="backend-trigger"
-              aria-label={`Storage backend: ${selectedStorageBackend.label}`}
-              aria-haspopup="menu"
-              aria-expanded={storageBackendMenuOpen}
-              on:click={() => (storageBackendMenuOpen = !storageBackendMenuOpen)}
-            >
-              <svelte:component this={selectedStorageBackend.icon} size={19} weight="regular" />
-              <CaretDown size={13} weight="bold" />
-            </button>
-            {#if storageBackendMenuOpen}
-              <div class="backend-menu" role="menu" aria-label="Storage backends">
-                {#each storageBackendOptions as backend}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    class:selected={backend.id === selectedStorageBackendId}
-                    disabled={!backend.available}
-                    on:click={() => selectStorageBackend(backend)}
-                  >
-                    <svelte:component this={backend.icon} size={18} weight="regular" />
-                    <span>{backend.label}</span>
-                    {#if !backend.available && backend.unavailableReason !== undefined}
-                      <small>{backend.unavailableReason}</small>
-                    {/if}
-                  </button>
-                {/each}
-              </div>
-            {/if}
-          </div>
-          <button
-            type="button"
-            class="project-launcher-main"
-            aria-label={`Open Project: ${selectedStorageBackend.label}`}
-            on:click={() => void openProjectWithBackend(selectedStorageBackend.id)}
-          >
-            {createProjectIntent ? "New Project" : "Open Project"}
-          </button>
-          <button
-            type="button"
-            class="project-launcher-create"
-            aria-label={`New Project: ${selectedStorageBackend.label}`}
-            on:mouseenter={() => (createProjectIntent = true)}
-            on:mouseleave={() => (createProjectIntent = false)}
-            on:focus={() => (createProjectIntent = true)}
-            on:blur={() => (createProjectIntent = false)}
-            on:click={() => void createProjectWithBackend(selectedStorageBackend.id)}
-          >
-            <Plus size={18} weight="bold" />
-          </button>
-        </div>
+        <ProjectLauncher
+          bind:createIntent={createProjectIntent}
+          bind:menuOpen={storageBackendMenuOpen}
+          createProject={(backend) => void createProjectWithBackend(backend.id)}
+          openProject={(backend) => void openProjectWithBackend(backend.id)}
+          options={storageBackendOptions}
+          selected={selectedStorageBackend}
+          selectedId={selectedStorageBackendId}
+          selectBackend={selectStorageBackend}
+        />
       </section>
     {/if}
-  </section>
+    </section>
 
-  {#if paletteOpen}
-    <div class="palette-layer">
-      <button
-        type="button"
-        class="palette-backdrop"
-        aria-label="Close command palette"
-        on:click={closePalette}
-      ></button>
-      <section class="palette" aria-label="Command palette">
-        <input
-          bind:this={commandInput}
-          bind:value={commandQuery}
-          placeholder="Command"
-          aria-label="Command"
-          role="combobox"
-          aria-controls="command-list"
-          aria-expanded="true"
-          aria-activedescendant={`command-${selectedCommandIndex}`}
-          on:input={handleCommandInput}
-          on:keydown={handleCommandInputKeydown}
-        />
-        <div id="command-list" role="listbox" class="command-list">
-          {#each filteredCommands as command, index}
-            <button
-              id={`command-${index}`}
-              type="button"
-              role="option"
-              class:active={command.active}
-              class:selected={index === selectedCommandIndex}
-              class:disabled={command.disabled}
-              disabled={command.disabled}
-              aria-selected={index === selectedCommandIndex}
-              on:mouseenter={() => (selectedCommandIndex = index)}
-              on:click={() => runCommand(command)}
-            >
-              {command.label}
-            </button>
-          {:else}
-            <p class="empty-command">No commands</p>
-          {/each}
-        </div>
-      </section>
-    </div>
+    {#if paletteOpen}
+    <CommandPalette
+      bind:commandInput
+      bind:query={commandQuery}
+      bind:selectedIndex={selectedCommandIndex}
+      commands={filteredCommands}
+      close={closePalette}
+      handleInput={handleCommandInput}
+      handleKeydown={handleCommandInputKeydown}
+      runCommand={runCommand}
+    />
+    {/if}
+
+    {#if contextMenu !== undefined}
+    <button
+      type="button"
+      class="context-backdrop"
+      aria-label="Close context menu"
+      on:click={closeSidebarContextMenu}
+    ></button>
+    <ActionMenu
+      ariaLabel={`${contextMenu.item.label} actions`}
+      close={closeSidebarContextMenu}
+      items={sidebarContextMenuItems}
+      x={contextMenu.x}
+      y={contextMenu.y}
+    />
+    {/if}
+
+    {#if titleModal !== undefined}
+    <TitleModal
+      state={titleModal}
+      close={closeTitleModal}
+      submit={() => void submitTitleModal()}
+    />
+    {/if}
+
+    {#if deleteModal !== undefined}
+    <DeleteModal
+      state={deleteModal}
+      close={closeDeleteModal}
+      submit={() => void submitDeleteModal()}
+    />
+    {/if}
+
+    {#if confirmationModal !== undefined}
+    <ConfirmationModal
+      state={confirmationModal}
+      close={closeConfirmationModal}
+      submit={submitConfirmationModal}
+    />
+    {/if}
   {/if}
 </main>
-
-<style>
-  :global(html) {
-    background: var(--claros-app-background, #f7f5f0);
-  }
-
-  :global(body) {
-    margin: 0;
-    min-width: 320px;
-    background: var(--claros-app-background, #f7f5f0);
-    color: var(--claros-prose-text, #27241f);
-  }
-
-  :global(button),
-  :global(input) {
-    font: inherit;
-  }
-
-  .app-shell {
-    --claros-app-background: #f7f5f0;
-    --claros-editor-background: #fffdf8;
-    --claros-prose-text: #27241f;
-    --claros-prose-muted: #7a746b;
-    --claros-prose-focus-ring: rgba(70, 95, 124, 0.26);
-    --claros-prose-widget-background: #f0ede5;
-    --claros-prose-widget-border: #d8d1c4;
-    --claros-status-okay: #4f7d4f;
-    --claros-status-warning: #b7791f;
-    --claros-status-error: #9d3d3d;
-    min-height: 100vh;
-    background: var(--claros-app-background);
-  }
-
-  .workspace {
-    min-height: 100vh;
-    transition: margin-left 180ms ease;
-  }
-
-  .sidebar-open .workspace {
-    margin-left: 16.5rem;
-  }
-
-  .sidebar-tab {
-    position: fixed;
-    z-index: 30;
-    top: 45vh;
-    left: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.25rem;
-    min-height: 2.25rem;
-    border: 1px solid var(--claros-prose-widget-border);
-    border-left: 0;
-    border-radius: 0 6px 6px 0;
-    padding: 0;
-    background: var(--claros-editor-background);
-    color: var(--claros-prose-muted);
-    box-shadow: 0 0.75rem 2rem color-mix(in srgb, var(--claros-prose-text) 8%, transparent);
-  }
-
-  .sidebar {
-    position: fixed;
-    z-index: 25;
-    inset: 0 auto 0 0;
-    display: grid;
-    grid-template-rows: auto 1fr;
-    width: 16.5rem;
-    border-right: 1px solid var(--claros-prose-widget-border);
-    background: color-mix(in srgb, var(--claros-editor-background) 94%, var(--claros-app-background));
-    box-shadow: 1rem 0 3rem color-mix(in srgb, var(--claros-prose-text) 10%, transparent);
-    transform: translateX(-100%);
-    transition: transform 180ms ease;
-  }
-
-  .sidebar.open {
-    transform: translateX(0);
-  }
-
-  .sidebar-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    min-height: 3.25rem;
-    padding: 0 0.75rem 0 1rem;
-    border-bottom: 1px solid var(--claros-prose-widget-border);
-    color: var(--claros-prose-text);
-    font: 600 0.86rem/1.2 system-ui, sans-serif;
-  }
-
-  .sidebar-head span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .sidebar-nav {
-    overflow: auto;
-    padding: 0.65rem 0.5rem 1rem;
-    outline: none;
-  }
-
-  .sidebar-item {
-    display: grid;
-    grid-template-columns: 1rem 1.25rem 1fr;
-    column-gap: 0.15rem;
-    align-items: center;
-    width: 100%;
-    min-height: 1.9rem;
-    border: 1px solid transparent;
-    border-radius: 5px;
-    padding: 0 0.45rem 0 calc(0.35rem + var(--depth) * 0.82rem);
-    background: transparent;
-    color: var(--claros-prose-muted);
-    cursor: pointer;
-    font: 0.82rem/1.2 system-ui, sans-serif;
-    text-align: left;
-  }
-
-  .sidebar-item .item-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .item-icon-spacer {
-    display: block;
-    width: 1.25rem;
-  }
-
-  .sidebar-item.branch {
-    color: var(--claros-prose-text);
-    font-weight: 600;
-  }
-
-  .item-caret {
-    color: var(--claros-prose-muted);
-    font: 0.8rem/1 var(--claros-prose-mono-font, monospace);
-  }
-
-  .sidebar-item.active {
-    background: var(--claros-prose-widget-background);
-    color: var(--claros-prose-text);
-  }
-
-  .sidebar-item:hover,
-  .sidebar-item:focus-visible,
-  .sidebar-item.focused {
-    border-color: var(--claros-prose-focus-ring);
-    background: transparent;
-    color: var(--claros-prose-text);
-    outline: none;
-  }
-
-  .sidebar-item.active:hover,
-  .sidebar-item.active:focus-visible,
-  .sidebar-item.active.focused {
-    border-color: var(--claros-prose-focus-ring);
-    background: var(--claros-prose-widget-background);
-  }
-
-  .topbar {
-    position: fixed;
-    z-index: 10;
-    top: 0;
-    left: 0;
-    right: 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    min-height: 3.25rem;
-    padding: 0 1rem 0 2.4rem;
-    color: var(--claros-prose-muted);
-    pointer-events: none;
-  }
-
-  .sidebar-open .topbar {
-    left: 16.5rem;
-  }
-
-  .identity,
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    min-width: 0;
-    pointer-events: auto;
-  }
-
-  .identity {
-    overflow: hidden;
-  }
-
-  .product {
-    color: var(--claros-prose-text);
-    font: 600 0.92rem/1.2 system-ui, sans-serif;
-  }
-
-  .draft-name {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--claros-prose-text);
-    font: 0.84rem/1.2 system-ui, sans-serif;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .document-kind,
-  .save-state {
-    color: var(--claros-prose-muted);
-    font: 0.72rem/1.2 system-ui, sans-serif;
-    text-transform: uppercase;
-  }
-
-  .save-state {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.35rem;
-    height: 1.35rem;
-    color: var(--claros-prose-muted);
-  }
-
-  .save-state-dot {
-    position: absolute;
-    top: 0.05rem;
-    right: 0.05rem;
-    width: 0.42rem;
-    height: 0.42rem;
-    border: 1px solid var(--claros-editor-background);
-    border-radius: 999px;
-    background: var(--claros-status-okay);
-  }
-
-  .save-state.status-dirty .save-state-dot,
-  .save-state.status-saving .save-state-dot {
-    background: var(--claros-status-warning);
-  }
-
-  .save-state.status-error .save-state-dot {
-    background: var(--claros-status-error);
-  }
-
-  .actions {
-    flex-shrink: 0;
-    opacity: 0.52;
-    transition: opacity 140ms ease;
-  }
-
-  .topbar:focus-within .actions,
-  .topbar:hover .actions {
-    opacity: 1;
-  }
-
-  button {
-    min-height: 2rem;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    padding: 0 0.65rem;
-    background: transparent;
-    color: var(--claros-prose-muted);
-    cursor: pointer;
-  }
-
-  button:hover,
-  button:focus-visible,
-  button.active,
-  button.selected {
-    border-color: var(--claros-prose-focus-ring);
-    background: var(--claros-prose-widget-background);
-    color: var(--claros-prose-text);
-    outline: none;
-  }
-
-  button:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-  }
-
-  .icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    padding: 0;
-  }
-
-  .editor-frame {
-    position: relative;
-    min-height: 100vh;
-    background: var(--claros-editor-background);
-  }
-
-  .editor-host {
-    min-height: 100vh;
-  }
-
-  .project-empty-state {
-    position: absolute;
-    z-index: 5;
-    top: 5rem;
-    left: 50%;
-    display: grid;
-    gap: 0.8rem;
-    width: min(24rem, calc(100vw - 2rem));
-    transform: translateX(-50%);
-    color: var(--claros-prose-muted);
-    font: 0.88rem/1.4 system-ui, sans-serif;
-    text-align: center;
-  }
-
-  .project-empty-state strong {
-    color: var(--claros-prose-text);
-    font: 600 1rem/1.2 system-ui, sans-serif;
-  }
-
-  .project-empty-state button {
-    border-color: var(--claros-prose-widget-border);
-    background: var(--claros-prose-widget-background);
-    color: var(--claros-prose-text);
-  }
-
-  .project-launcher {
-    position: relative;
-    display: inline-grid;
-    grid-template-columns: 3rem minmax(11rem, 14rem) 3rem;
-    justify-self: center;
-    min-height: 2.75rem;
-    border: 1px solid var(--claros-prose-widget-border);
-    border-radius: 8px;
-    background: var(--claros-prose-widget-background);
-    box-shadow: 0 0.75rem 2rem color-mix(in srgb, var(--claros-prose-text) 9%, transparent);
-  }
-
-  .project-launcher button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 2.75rem;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    color: var(--claros-prose-text);
-  }
-
-  .project-launcher button:hover,
-  .project-launcher button:focus-visible,
-  .project-launcher button.selected {
-    background: color-mix(in srgb, var(--claros-editor-background) 70%, var(--claros-prose-widget-background));
-  }
-
-  .backend-select {
-    position: relative;
-    min-width: 0;
-  }
-
-  .backend-trigger {
-    gap: 0.15rem;
-    width: 100%;
-    border-radius: 7px 0 0 7px !important;
-    border-right: 1px solid var(--claros-prose-widget-border) !important;
-    padding: 0;
-  }
-
-  .project-launcher-main {
-    min-width: 0;
-    border-right: 1px solid var(--claros-prose-widget-border) !important;
-    padding: 0 1rem;
-    font-weight: 600;
-  }
-
-  .project-launcher-create {
-    width: 100%;
-    border-radius: 0 7px 7px 0 !important;
-    padding: 0;
-  }
-
-  .backend-menu {
-    position: absolute;
-    z-index: 15;
-    top: calc(100% + 0.45rem);
-    left: 0;
-    display: grid;
-    gap: 0.25rem;
-    width: max-content;
-    min-width: 14rem;
-    border: 1px solid var(--claros-prose-widget-border);
-    border-radius: 8px;
-    padding: 0.35rem;
-    background: var(--claros-editor-background);
-    box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--claros-prose-text) 14%, transparent);
-  }
-
-  .backend-menu button {
-    display: grid;
-    grid-template-columns: 1.25rem 1fr;
-    column-gap: 0.55rem;
-    row-gap: 0.1rem;
-    justify-items: start;
-    min-height: 2.3rem;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    padding: 0.35rem 0.55rem;
-    color: var(--claros-prose-text);
-    text-align: left;
-  }
-
-  .backend-menu button small {
-    grid-column: 2;
-    color: var(--claros-prose-muted);
-    font: 0.72rem/1.2 system-ui, sans-serif;
-  }
-
-  .backend-menu button:disabled {
-    color: var(--claros-prose-muted);
-    opacity: 0.54;
-  }
-
-  .backend-menu button:disabled:hover {
-    background: transparent;
-  }
-
-  .palette-layer {
-    position: fixed;
-    z-index: 40;
-    inset: 0;
-    display: grid;
-    align-items: start;
-    justify-items: center;
-    padding-top: 12vh;
-  }
-
-  .palette-backdrop {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    min-height: 100%;
-    border: 0;
-    border-radius: 0;
-    padding: 0;
-    background: color-mix(in srgb, var(--claros-app-background) 60%, transparent);
-    cursor: default;
-  }
-
-  .palette-backdrop:hover,
-  .palette-backdrop:focus-visible {
-    border-color: transparent;
-    background: color-mix(in srgb, var(--claros-app-background) 60%, transparent);
-    outline: none;
-  }
-
-  .palette {
-    position: relative;
-    display: grid;
-    gap: 0.375rem;
-    width: min(34rem, calc(100vw - 2rem));
-    border: 1px solid var(--claros-prose-widget-border);
-    border-radius: 8px;
-    padding: 0.5rem;
-    background: var(--claros-editor-background);
-    box-shadow: 0 1.25rem 4rem color-mix(in srgb, var(--claros-prose-text) 16%, transparent);
-  }
-
-  .palette input {
-    min-height: 2.75rem;
-    border: 0;
-    border-bottom: 1px solid var(--claros-prose-widget-border);
-    background: transparent;
-    color: var(--claros-prose-text);
-    font: 1rem/1.3 system-ui, sans-serif;
-    outline: none;
-    padding: 0 0.5rem 0.35rem;
-  }
-
-  .command-list {
-    display: grid;
-    gap: 0.375rem;
-  }
-
-  .palette button {
-    justify-content: flex-start;
-    width: 100%;
-    text-align: left;
-  }
-
-  .palette button.active {
-    background: var(--claros-prose-widget-background);
-    color: var(--claros-prose-text);
-  }
-
-  .palette button:hover,
-  .palette button:focus-visible,
-  .palette button.selected {
-    border-color: var(--claros-prose-focus-ring);
-    background: transparent;
-    color: var(--claros-prose-text);
-    outline: none;
-  }
-
-  .palette button.active:hover,
-  .palette button.active:focus-visible,
-  .palette button.active.selected {
-    background: var(--claros-prose-widget-background);
-  }
-
-  .empty-command {
-    margin: 0;
-    padding: 0.65rem 0.5rem;
-    color: var(--claros-prose-muted);
-    font: 0.95rem/1.3 system-ui, sans-serif;
-  }
-
-  @media (max-width: 800px) {
-    .sidebar-open .workspace {
-      margin-left: 0;
-    }
-
-    .sidebar {
-      width: min(18rem, calc(100vw - 2.25rem));
-    }
-
-    .sidebar-open .topbar {
-      left: 0;
-    }
-
-    .topbar {
-      align-items: flex-start;
-      min-height: auto;
-      padding: 0.75rem 0.75rem 0.75rem 2.4rem;
-    }
-
-    .actions {
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-  }
-</style>

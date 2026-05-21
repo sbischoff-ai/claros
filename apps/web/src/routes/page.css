@@ -1,0 +1,1032 @@
+html {
+  height: 100%;
+  overflow: hidden;
+  background: var(--claros-app-background, #f7f5f0);
+}
+
+body {
+  margin: 0;
+  height: 100%;
+  min-width: 320px;
+  overflow: hidden;
+  background: var(--claros-app-background, #f7f5f0);
+  color: var(--claros-prose-text, #27241f);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app-shell {
+  height: 100vh;
+  overflow: hidden;
+  background: var(--claros-app-background);
+}
+
+.startup-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background: var(--claros-app-background);
+  color: var(--claros-prose-text);
+}
+
+.startup-spinner {
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 2px solid color-mix(in srgb, var(--claros-startup-spinner, currentColor) 24%, transparent);
+  border-top-color: var(--claros-startup-spinner, currentColor);
+  border-radius: 999px;
+  animation: startup-spin 760ms linear infinite;
+}
+
+@keyframes startup-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.workspace {
+  height: 100vh;
+  overflow: hidden;
+  transition: margin-left 180ms ease;
+}
+
+.sidebar-open .workspace {
+  margin-left: 16.5rem;
+}
+
+.sidebar-tab {
+  position: fixed;
+  z-index: 30;
+  top: 45vh;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  min-height: 2.25rem;
+  border: 1px solid var(--claros-prose-widget-border);
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  padding: 0;
+  background: var(--claros-editor-background);
+  color: var(--claros-prose-muted);
+  box-shadow: 0 0.75rem 2rem color-mix(in srgb, var(--claros-prose-text) 8%, transparent);
+}
+
+.sidebar {
+  position: fixed;
+  z-index: 25;
+  inset: 0 auto 0 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  width: 16.5rem;
+  border-right: 1px solid var(--claros-prose-widget-border);
+  background: color-mix(in srgb, var(--claros-editor-background) 94%, var(--claros-app-background));
+  box-shadow: 1rem 0 3rem color-mix(in srgb, var(--claros-prose-text) 10%, transparent);
+  transform: translateX(-100%);
+  transition: transform 180ms ease;
+}
+
+.sidebar.open {
+  transform: translateX(0);
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3.25rem;
+  padding: 0 0.75rem 0 1rem;
+  border-bottom: 1px solid var(--claros-prose-widget-border);
+  color: var(--claros-prose-text);
+  font:
+    600 0.86rem/1.2 system-ui,
+    sans-serif;
+}
+
+.sidebar-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-nav {
+  overflow: auto;
+  padding: 0.65rem 0.5rem 1rem;
+  outline: none;
+}
+
+.sidebar-nav,
+.command-list,
+.editor-host .cm-scroller {
+  scrollbar-color: color-mix(in srgb, var(--claros-prose-muted) 58%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+.sidebar-nav::-webkit-scrollbar,
+.command-list::-webkit-scrollbar,
+.editor-host .cm-scroller::-webkit-scrollbar {
+  width: 0.75rem;
+  height: 0.75rem;
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-track,
+.command-list::-webkit-scrollbar-track,
+.editor-host .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-track-piece,
+.command-list::-webkit-scrollbar-track-piece,
+.editor-host .cm-scroller::-webkit-scrollbar-track-piece {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb,
+.command-list::-webkit-scrollbar-thumb,
+.editor-host .cm-scroller::-webkit-scrollbar-thumb {
+  min-height: 2.5rem;
+  border: 0.25rem solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--claros-prose-muted) 58%, transparent);
+  background-clip: content-box;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover,
+.command-list::-webkit-scrollbar-thumb:hover,
+.editor-host .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--claros-prose-text) 64%, transparent);
+  background-clip: content-box;
+}
+
+.sidebar-nav::-webkit-scrollbar-button,
+.command-list::-webkit-scrollbar-button,
+.editor-host .cm-scroller::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.sidebar-nav::-webkit-scrollbar-corner,
+.command-list::-webkit-scrollbar-corner,
+.editor-host .cm-scroller::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.sidebar-row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  min-height: 1.9rem;
+  will-change: transform;
+}
+
+.drag-handle {
+  position: absolute;
+  z-index: 2;
+  left: 0.05rem;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.55rem;
+  color: var(--claros-prose-muted);
+  cursor: grab;
+  opacity: 0;
+  transform: translateY(-50%);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.sidebar-row:hover .drag-handle,
+.sidebar-row:focus-within .drag-handle {
+  opacity: 1;
+}
+
+.sidebar.dragging .drag-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-row.dragging-origin .sidebar-item {
+  border-color: var(--claros-prose-focus-ring);
+  background: var(--claros-prose-widget-background);
+  color: var(--claros-prose-text);
+  box-shadow: inset 0 0 0 1px var(--claros-prose-focus-ring);
+}
+
+.sidebar-row.chapter-ghost:not(.dragging-origin) {
+  opacity: 0.38;
+}
+
+.sidebar-row.drop-before::before,
+.sidebar-row.drop-after::after {
+  content: "";
+  position: absolute;
+  z-index: 4;
+  left: 0.45rem;
+  right: 0.45rem;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--claros-prose-focus-ring);
+}
+
+.sidebar-row.drop-before::before {
+  top: -1px;
+}
+
+.sidebar-row.drop-after::after {
+  bottom: -1px;
+}
+
+.drag-preview {
+  position: fixed;
+  z-index: 80;
+  display: grid;
+  grid-template-columns: 1.1rem 1fr;
+  column-gap: 0.25rem;
+  align-items: center;
+  min-height: 1.9rem;
+  border: 1px solid var(--claros-prose-focus-ring);
+  border-radius: 5px;
+  padding: 0 0.5rem;
+  background: var(--claros-prose-widget-background);
+  color: var(--claros-prose-text);
+  box-shadow: 0 0.75rem 1.8rem color-mix(in srgb, var(--claros-prose-text) 16%, transparent);
+  font:
+    600 0.82rem/1.2 system-ui,
+    sans-serif;
+  pointer-events: none;
+}
+
+.drag-preview span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-item {
+  display: grid;
+  grid-template-columns: 1rem 1.25rem 1fr;
+  column-gap: 0.15rem;
+  align-items: center;
+  width: 100%;
+  min-height: 1.9rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 0 0.45rem 0 calc(0.35rem + var(--depth) * 0.82rem);
+  background: transparent;
+  color: var(--claros-prose-muted);
+  cursor: pointer;
+  font:
+    0.82rem/1.2 system-ui,
+    sans-serif;
+  text-align: left;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
+}
+
+.sidebar-item .item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-icon-spacer {
+  display: block;
+  width: 1.25rem;
+}
+
+.sidebar-item.branch {
+  color: var(--claros-prose-text);
+  font-weight: 600;
+}
+
+.item-caret {
+  color: var(--claros-prose-muted);
+  font: 0.8rem/1 var(--claros-prose-mono-font, monospace);
+}
+
+.sidebar-item.active {
+  background: var(--claros-prose-widget-background);
+  color: var(--claros-prose-text);
+}
+
+.sidebar.dragging .sidebar-row:not(.dragging-origin) .sidebar-item.active {
+  background: transparent;
+  color: var(--claros-prose-muted);
+}
+
+.sidebar-item:hover,
+.sidebar-item:focus-visible,
+.sidebar-item.focused {
+  border-color: var(--claros-prose-focus-ring);
+  background: transparent;
+  color: var(--claros-prose-text);
+  outline: none;
+}
+
+.sidebar.dragging .sidebar-row:not(.dragging-origin) .sidebar-item:hover,
+.sidebar.dragging .sidebar-row:not(.dragging-origin) .sidebar-item:focus-visible,
+.sidebar.dragging .sidebar-row:not(.dragging-origin) .sidebar-item.focused,
+.sidebar.dragging .sidebar-row:not(.dragging-origin) .sidebar-item.active:hover,
+.sidebar.dragging .sidebar-row:not(.dragging-origin) .sidebar-item.active:focus-visible,
+.sidebar.dragging .sidebar-row:not(.dragging-origin) .sidebar-item.active.focused {
+  border-color: transparent;
+  background: transparent;
+  color: var(--claros-prose-muted);
+  outline: none;
+}
+
+.sidebar-item.active:hover,
+.sidebar-item.active:focus-visible,
+.sidebar-item.active.focused {
+  border-color: var(--claros-prose-focus-ring);
+  background: var(--claros-prose-widget-background);
+}
+
+.sidebar-item.add-line {
+  position: relative;
+  grid-template-columns: 1fr;
+  min-height: 1.55rem;
+  border-color: transparent;
+  padding-left: calc(0.35rem + var(--depth) * 0.82rem);
+  color: var(--claros-prose-muted);
+}
+
+.sidebar-item.add-line .item-label {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  max-width: max-content;
+  padding: 0 0.35rem;
+  transform: translate(-50%, -50%);
+  background: color-mix(in srgb, var(--claros-editor-background) 94%, var(--claros-app-background));
+  color: var(--claros-prose-text);
+  font-weight: 600;
+  visibility: hidden;
+}
+
+.sidebar-item.add-line .item-caret,
+.sidebar-item.add-line .item-icon-spacer {
+  display: none;
+}
+
+.sidebar-item.add-line::before {
+  content: "";
+  position: absolute;
+  left: calc(0.55rem + var(--depth) * 0.82rem);
+  right: 0.55rem;
+  top: 50%;
+  height: 1px;
+  background: var(--claros-prose-widget-border);
+}
+
+.sidebar-item.add-line::after {
+  content: "+";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  min-width: 1.2rem;
+  transform: translate(-50%, -50%);
+  background: color-mix(in srgb, var(--claros-editor-background) 94%, var(--claros-app-background));
+  color: var(--claros-prose-muted);
+  font:
+    0.86rem/1 system-ui,
+    sans-serif;
+  text-align: center;
+}
+
+.sidebar-item.add-line.focused::before,
+.sidebar-item.add-line:hover::before,
+.sidebar-item.add-line:focus-visible::before {
+  height: 2px;
+  background: var(--claros-prose-focus-ring);
+}
+
+.sidebar-item.add-line.focused::after,
+.sidebar-item.add-line:hover::after,
+.sidebar-item.add-line:focus-visible::after {
+  content: "";
+}
+
+.sidebar-item.add-line.focused .item-label,
+.sidebar-item.add-line:hover .item-label,
+.sidebar-item.add-line:focus-visible .item-label {
+  visibility: visible;
+}
+
+.sidebar-title-input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--claros-prose-focus-ring);
+  background: transparent;
+  color: var(--claros-prose-text);
+  outline: none;
+  font: inherit;
+}
+
+.topbar {
+  position: fixed;
+  z-index: 10;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 3.25rem;
+  padding: 0 1rem 0 2.4rem;
+  color: var(--claros-prose-muted);
+  pointer-events: none;
+}
+
+.sidebar-open .topbar {
+  left: 16.5rem;
+}
+
+.identity,
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  pointer-events: auto;
+}
+
+.identity {
+  overflow: hidden;
+}
+
+.product {
+  color: var(--claros-prose-text);
+  font:
+    600 0.92rem/1.2 system-ui,
+    sans-serif;
+}
+
+.title-button {
+  min-height: 1.8rem;
+  padding: 0 0.25rem;
+  color: var(--claros-prose-text);
+}
+
+.title-button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.static-title {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.8rem;
+}
+
+.project-title-input {
+  width: min(18rem, 38vw);
+  min-height: 1.8rem;
+  border: 0;
+  border-bottom: 1px solid var(--claros-prose-focus-ring);
+  background: transparent;
+  color: var(--claros-prose-text);
+  outline: none;
+  font:
+    600 0.92rem/1.2 system-ui,
+    sans-serif;
+}
+
+.draft-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--claros-prose-text);
+  font:
+    0.84rem/1.2 system-ui,
+    sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-state {
+  color: var(--claros-prose-muted);
+  font:
+    0.72rem/1.2 system-ui,
+    sans-serif;
+  text-transform: uppercase;
+}
+
+.save-state {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  color: var(--claros-prose-muted);
+}
+
+.save-state-dot {
+  position: absolute;
+  top: 0.05rem;
+  right: 0.05rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border: 1px solid var(--claros-editor-background);
+  border-radius: 999px;
+  background: var(--claros-status-okay);
+}
+
+.save-state.status-dirty .save-state-dot,
+.save-state.status-saving .save-state-dot {
+  background: var(--claros-status-warning);
+}
+
+.save-state.status-error .save-state-dot {
+  background: var(--claros-status-error);
+}
+
+.actions {
+  flex-shrink: 0;
+  opacity: 0.52;
+  transition: opacity 140ms ease;
+}
+
+.topbar:focus-within .actions,
+.topbar:hover .actions {
+  opacity: 1;
+}
+
+button {
+  min-height: 2rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 0.65rem;
+  background: transparent;
+  color: var(--claros-prose-muted);
+  cursor: pointer;
+}
+
+button:hover,
+button:focus-visible,
+button.active,
+button.selected {
+  border-color: var(--claros-prose-focus-ring);
+  background: var(--claros-prose-widget-background);
+  color: var(--claros-prose-text);
+  outline: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  padding: 0;
+}
+
+.editor-frame {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--claros-editor-background);
+}
+
+.editor-host {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.editor-host .cm-editor {
+  height: 100%;
+}
+
+.project-empty-state {
+  position: absolute;
+  z-index: 5;
+  top: 5rem;
+  left: 50%;
+  display: grid;
+  gap: 0.8rem;
+  width: min(24rem, calc(100vw - 2rem));
+  transform: translateX(-50%);
+  color: var(--claros-prose-muted);
+  font:
+    0.88rem/1.4 system-ui,
+    sans-serif;
+  text-align: center;
+}
+
+.project-empty-state strong {
+  color: var(--claros-prose-text);
+  font:
+    600 1rem/1.2 system-ui,
+    sans-serif;
+}
+
+.project-empty-state button {
+  border-color: var(--claros-prose-widget-border);
+  background: var(--claros-prose-widget-background);
+  color: var(--claros-prose-text);
+}
+
+.project-launcher {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 3rem minmax(11rem, 14rem) 3rem;
+  justify-self: center;
+  min-height: 2.75rem;
+  border: 1px solid var(--claros-prose-widget-border);
+  border-radius: 8px;
+  background: var(--claros-prose-widget-background);
+  box-shadow: 0 0.75rem 2rem color-mix(in srgb, var(--claros-prose-text) 9%, transparent);
+}
+
+.project-launcher button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--claros-prose-text);
+}
+
+.project-launcher button:hover,
+.project-launcher button:focus-visible,
+.project-launcher button.selected {
+  background: color-mix(
+    in srgb,
+    var(--claros-editor-background) 70%,
+    var(--claros-prose-widget-background)
+  );
+}
+
+.backend-select {
+  position: relative;
+  min-width: 0;
+}
+
+.backend-trigger {
+  gap: 0.15rem;
+  width: 100%;
+  border-radius: 7px 0 0 7px !important;
+  border-right: 1px solid var(--claros-prose-widget-border) !important;
+  padding: 0;
+}
+
+.project-launcher-main {
+  min-width: 0;
+  border-right: 1px solid var(--claros-prose-widget-border) !important;
+  padding: 0 1rem;
+  font-weight: 600;
+}
+
+.project-launcher-create {
+  width: 100%;
+  border-radius: 0 7px 7px 0 !important;
+  padding: 0;
+}
+
+.backend-menu {
+  position: absolute;
+  z-index: 15;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  display: grid;
+  gap: 0.25rem;
+  width: max-content;
+  min-width: 14rem;
+  border: 1px solid var(--claros-prose-widget-border);
+  border-radius: 8px;
+  padding: 0.35rem;
+  background: var(--claros-editor-background);
+  box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--claros-prose-text) 14%, transparent);
+}
+
+.backend-menu button {
+  display: grid;
+  grid-template-columns: 1.25rem 1fr;
+  column-gap: 0.55rem;
+  row-gap: 0.1rem;
+  justify-items: start;
+  min-height: 2.3rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.35rem 0.55rem;
+  color: var(--claros-prose-text);
+  text-align: left;
+}
+
+.backend-menu button small {
+  grid-column: 2;
+  color: var(--claros-prose-muted);
+  font:
+    0.72rem/1.2 system-ui,
+    sans-serif;
+}
+
+.backend-menu button:disabled {
+  color: var(--claros-prose-muted);
+  opacity: 0.54;
+}
+
+.backend-menu button:disabled:hover {
+  background: transparent;
+}
+
+.palette-layer {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  padding: 1rem;
+}
+
+.palette-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: color-mix(in srgb, var(--claros-app-background) 60%, transparent);
+  cursor: default;
+}
+
+.palette-backdrop:hover,
+.palette-backdrop:focus-visible {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--claros-app-background) 60%, transparent);
+  outline: none;
+}
+
+.palette {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.375rem;
+  width: min(34rem, calc(100vw - 2rem));
+  min-height: min(18rem, calc(100vh - 2rem));
+  max-height: min(38rem, calc(100vh - 2rem));
+  border: 1px solid var(--claros-prose-widget-border);
+  border-radius: 8px;
+  padding: 0.5rem;
+  background: var(--claros-editor-background);
+  box-shadow: 0 1.25rem 4rem color-mix(in srgb, var(--claros-prose-text) 16%, transparent);
+  overflow: hidden;
+}
+
+.palette input {
+  min-height: 2.75rem;
+  border: 0;
+  border-bottom: 1px solid var(--claros-prose-widget-border);
+  background: transparent;
+  color: var(--claros-prose-text);
+  font:
+    1rem/1.3 system-ui,
+    sans-serif;
+  outline: none;
+  padding: 0 0.5rem 0.35rem;
+}
+
+.command-list {
+  display: grid;
+  align-content: start;
+  gap: 0.375rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.palette button {
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+}
+
+.palette button.active {
+  background: var(--claros-prose-widget-background);
+  color: var(--claros-prose-text);
+}
+
+.palette button:hover,
+.palette button:focus-visible,
+.palette button.selected {
+  border-color: var(--claros-prose-focus-ring);
+  background: transparent;
+  color: var(--claros-prose-text);
+  outline: none;
+}
+
+.palette button.active:hover,
+.palette button.active:focus-visible,
+.palette button.active.selected {
+  background: var(--claros-prose-widget-background);
+}
+
+.empty-command {
+  margin: 0;
+  padding: 0.65rem 0.5rem;
+  color: var(--claros-prose-muted);
+  font:
+    0.95rem/1.3 system-ui,
+    sans-serif;
+}
+
+.context-backdrop,
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  width: 100%;
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.context-backdrop:hover,
+.context-backdrop:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  outline: none;
+}
+
+.modal-backdrop:hover,
+.modal-backdrop:focus-visible {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--claros-app-background) 62%, transparent);
+  outline: none;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  gap: 0.2rem;
+  min-width: 11rem;
+  border: 1px solid var(--claros-prose-widget-border);
+  border-radius: 8px;
+  padding: 0.35rem;
+  background: var(--claros-editor-background);
+  box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--claros-prose-text) 14%, transparent);
+}
+
+.context-submenu {
+  position: absolute;
+  left: calc(100% + 0.35rem);
+  top: 0.35rem;
+  display: grid;
+  gap: 0.2rem;
+  min-width: 8rem;
+  border: 1px solid var(--claros-prose-widget-border);
+  border-radius: 8px;
+  padding: 0.35rem;
+  background: var(--claros-editor-background);
+  box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--claros-prose-text) 14%, transparent);
+}
+
+.context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+}
+
+.submenu-caret {
+  margin-left: auto;
+}
+
+.context-menu button:hover,
+.context-menu button:focus-visible,
+.context-menu button.selected {
+  border-color: var(--claros-prose-focus-ring);
+  background: transparent;
+  color: var(--claros-prose-text);
+  outline: none;
+}
+
+.modal-layer {
+  position: fixed;
+  z-index: 55;
+  inset: 0;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  padding-top: 16vh;
+}
+
+.modal-backdrop {
+  background: color-mix(in srgb, var(--claros-app-background) 62%, transparent);
+}
+
+.modal {
+  position: relative;
+  z-index: 56;
+  display: grid;
+  gap: 0.8rem;
+  width: min(24rem, calc(100vw - 2rem));
+  border: 1px solid var(--claros-prose-widget-border);
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--claros-editor-background);
+  box-shadow: 0 1.25rem 4rem color-mix(in srgb, var(--claros-prose-text) 16%, transparent);
+}
+
+.modal h2,
+.modal p {
+  margin: 0;
+}
+
+.modal h2 {
+  color: var(--claros-prose-text);
+  font:
+    600 0.98rem/1.2 system-ui,
+    sans-serif;
+}
+
+.modal p {
+  color: var(--claros-prose-muted);
+  font:
+    0.84rem/1.4 system-ui,
+    sans-serif;
+}
+
+.modal form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.modal input {
+  min-height: 2.5rem;
+  border: 0;
+  border-bottom: 1px solid var(--claros-prose-widget-border);
+  background: transparent;
+  color: var(--claros-prose-text);
+  outline: none;
+}
+
+.modal input:focus {
+  border-bottom-color: var(--claros-prose-focus-ring);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+@media (max-width: 800px) {
+  .sidebar-open .workspace {
+    margin-left: 0;
+  }
+
+  .sidebar {
+    width: min(18rem, calc(100vw - 2.25rem));
+  }
+
+  .sidebar-open .topbar {
+    left: 0;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    min-height: auto;
+    padding: 0.75rem 0.75rem 0.75rem 2.4rem;
+  }
+
+  .actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}

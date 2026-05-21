@@ -8,6 +8,7 @@ import {
   findMarkdownMarkerRanges,
   getClarosTheme,
   isClarosThemeId,
+  resolveMarkdownCursorPosition,
 } from "../src/index";
 
 describe("editor-core", () => {
@@ -47,6 +48,15 @@ describe("editor-core", () => {
     expect(isClarosThemeId("gruvbox-dark")).toBe(true);
     expect(isClarosThemeId("unknown")).toBe(false);
     expect(getClarosTheme("catppuccin-dark").label).toBe("Catppuccin Dark");
+  });
+
+  it("resolves requested editor cursor positions", () => {
+    expect(resolveMarkdownCursorPosition(12, "start")).toBe(0);
+    expect(resolveMarkdownCursorPosition(12, "end")).toBe(12);
+    expect(resolveMarkdownCursorPosition(12, 5)).toBe(5);
+    expect(resolveMarkdownCursorPosition(12, -4)).toBe(0);
+    expect(resolveMarkdownCursorPosition(12, 30)).toBe(12);
+    expect(resolveMarkdownCursorPosition(12, 4.8)).toBe(4);
   });
 
   it("finds markdown markers that should be visually de-emphasized", () => {

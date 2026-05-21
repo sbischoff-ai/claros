@@ -40,10 +40,21 @@ export interface MarkdownEditorOptions {
   onChange?: (markdown: string) => void;
 }
 
+export type MarkdownEditorCursor = "start" | "end" | number;
+
+export interface MarkdownEditorFocusOptions {
+  cursor?: MarkdownEditorCursor;
+}
+
+export interface MarkdownEditorSetMarkdownOptions {
+  cursor?: MarkdownEditorCursor;
+}
+
 export interface ClarosMarkdownEditor {
-  focus(): void;
+  focus(options?: MarkdownEditorFocusOptions): void;
+  getCursorPosition(): number;
   getMarkdown(): string;
-  setMarkdown(markdown: string): void;
+  setMarkdown(markdown: string, options?: MarkdownEditorSetMarkdownOptions): void;
   setVimMode(enabled: boolean): void;
   setTheme(theme: ClarosThemeId | Partial<ClarosThemeTokens>): void;
   destroy(): void;
@@ -72,19 +83,33 @@ export function createMarkdownEditor(options: MarkdownEditorOptions): ClarosMark
   });
 
   return {
-    focus(): void {
+    focus(focusOptions?: MarkdownEditorFocusOptions): void {
+      const cursor = focusOptions?.cursor;
+      if (cursor !== undefined) {
+        view.dispatch({
+          selection: { anchor: resolveMarkdownCursorPosition(view.state.doc.length, cursor) },
+        });
+      }
       view.focus();
+    },
+    getCursorPosition(): number {
+      return view.state.selection.main.head;
     },
     getMarkdown(): string {
       return view.state.doc.toString();
     },
-    setMarkdown(markdownText: string): void {
+    setMarkdown(markdownText: string, setOptions?: MarkdownEditorSetMarkdownOptions): void {
+      const cursor =
+        setOptions?.cursor === undefined
+          ? undefined
+          : resolveMarkdownCursorPosition(markdownText.length, setOptions.cursor);
       view.dispatch({
         changes: {
           from: 0,
           to: view.state.doc.length,
           insert: markdownText,
         },
+        selection: cursor === undefined ? undefined : { anchor: cursor },
       });
     },
     setVimMode(enabled: boolean): void {
@@ -99,6 +124,19 @@ export function createMarkdownEditor(options: MarkdownEditorOptions): ClarosMark
       view.destroy();
     },
   };
+}
+
+export function resolveMarkdownCursorPosition(
+  documentLength: number,
+  cursor: MarkdownEditorCursor
+): number {
+  if (cursor === "start") {
+    return 0;
+  }
+  if (cursor === "end") {
+    return documentLength;
+  }
+  return Math.min(Math.max(Math.trunc(cursor), 0), documentLength);
 }
 
 function baseExtensions(): Extension[] {

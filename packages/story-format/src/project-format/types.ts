@@ -20,6 +20,7 @@ export interface ProjectFileWriter {
   writeFileAtomic(path: string, content: string): Promise<void>;
   mkdir(path: string, recursive?: boolean): Promise<void>;
   renameFile(fromPath: string, toPath: string): Promise<void>;
+  /** Removes a file or directory. Directory removal must be recursive. */
   removeFile(path: string): Promise<void>;
 }
 

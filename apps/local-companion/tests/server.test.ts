@@ -22,12 +22,12 @@ describe("local companion server", () => {
 
     const project = (await fetchJson(baseUrl, token, "/api/project")) as ProjectResponse;
     expect(project.project.manifest.title).toBe("Companion Workspace");
-    expect(project.project.chapters[0].scenes[0].path).toBe("manuscript/01-start/01-opening.md");
+    expect(project.project.chapters[0].scenes[0].path).toBe("manuscript/001-start/001-opening.md");
 
     const document = (await fetchJson(
       baseUrl,
       token,
-      "/api/document?path=manuscript/01-start/01-opening.md"
+      "/api/document?path=manuscript/001-start/001-opening.md"
     )) as DocumentResponse;
     expect(document.document.body).toBe("\nStart.");
   });
@@ -85,8 +85,91 @@ describe("local companion server", () => {
     expect(response.status).toBe(201);
     expect(await fs.readFile(path.join(root, "claros.yaml"), "utf8")).toContain("Untitled Project");
     expect(
-      await fs.readFile(path.join(root, "manuscript/01-draft/01-opening.md"), "utf8")
+      await fs.readFile(path.join(root, "manuscript/001-draft/001-opening.md"), "utf8")
     ).toContain("## Opening");
+  });
+
+  it("mutates project titles and manuscript structure", async () => {
+    const root = await createProjectRoot();
+    const { baseUrl, token } = await start(root);
+
+    const renamed = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "set-project-title",
+      title: "Renamed Companion",
+    })) as ProjectResponse;
+    expect(renamed.project.manifest.title).toBe("Renamed Companion");
+
+    const chapter = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "append-chapter",
+      title: "Second Act",
+    })) as MutationResponse;
+    expect(chapter.scene?.path).toBe("manuscript/002-second-act/002-scene-2.md");
+
+    const retitledChapter = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "set-chapter-title",
+      chapterId: "002-second-act",
+      title: "THE GREAT WALRUS!",
+    })) as MutationResponse;
+    expect(retitledChapter.chapter?.id).toBe("002-the-great-walrus");
+
+    const retitledScene = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "set-scene-title",
+      path: "manuscript/002-the-great-walrus/002-scene-2.md",
+      title: "tHe ulTimATUm...",
+    })) as MutationResponse;
+    expect(retitledScene.scene?.path).toBe("manuscript/002-the-great-walrus/002-the-ultimatum.md");
+
+    const insertedChapter = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "create-chapter",
+      title: "Middle Act",
+      sceneTitle: "Bridge",
+      placement: "before",
+      targetChapterId: "002-the-great-walrus",
+    })) as MutationResponse;
+    expect(insertedChapter.scene?.path).toBe("manuscript/002-middle-act/002-bridge.md");
+
+    const insertedScene = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "create-scene",
+      title: "Interlude",
+      placement: "after",
+      targetScenePath: "manuscript/001-start/001-opening.md",
+    })) as MutationResponse;
+    expect(insertedScene.scene?.path).toBe("manuscript/001-start/002-interlude.md");
+
+    const deleted = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "delete-scene",
+      path: "manuscript/001-start/001-opening.md",
+    })) as MutationResponse;
+    expect(deleted.nextPath).toBe("manuscript/001-start/001-interlude.md");
+    expect(deleted.project.chapters.map((entry) => entry.scenes[0].path)).toEqual([
+      "manuscript/001-start/001-interlude.md",
+      "manuscript/002-middle-act/002-bridge.md",
+      "manuscript/003-the-great-walrus/003-the-ultimatum.md",
+    ]);
+
+    const movedChapter = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "move-chapter",
+      chapterId: "003-the-great-walrus",
+      placement: "before",
+      targetChapterId: "001-start",
+    })) as MutationResponse;
+    expect(movedChapter.chapter?.id).toBe("001-the-great-walrus");
+    expect(movedChapter.chapterIdMap?.["003-the-great-walrus"]).toBe("001-the-great-walrus");
+
+    const movedScene = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "move-scene",
+      path: "manuscript/001-the-great-walrus/001-the-ultimatum.md",
+      placement: "after",
+      targetScenePath: "manuscript/003-middle-act/003-bridge.md",
+    })) as MutationResponse;
+    expect(movedScene.scene?.path).toBe("manuscript/002-middle-act/003-the-ultimatum.md");
+    expect(movedScene.pathMap?.["manuscript/001-the-great-walrus/001-the-ultimatum.md"]).toBe(
+      "manuscript/002-middle-act/003-the-ultimatum.md"
+    );
+    expect(movedScene.project.chapters.map((entry) => entry.id)).toEqual([
+      "001-start",
+      "002-middle-act",
+    ]);
   });
 });
 
@@ -115,11 +198,37 @@ async function fetchJson(baseUrl: string, token: string, path: string): Promise<
   return response.json();
 }
 
+async function postJson(
+  baseUrl: string,
+  token: string,
+  path: string,
+  body: Record<string, unknown>
+): Promise<unknown> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+}
+
 interface ProjectResponse {
   project: {
     manifest: { title: string };
     chapters: Array<{ scenes: Array<{ path: string }> }>;
   };
+}
+
+interface MutationResponse extends ProjectResponse {
+  chapter?: { id: string };
+  scene?: { path: string };
+  nextPath?: string;
+  pathMap?: Record<string, string>;
+  chapterIdMap?: Record<string, string>;
 }
 
 interface DocumentResponse {
@@ -131,10 +240,10 @@ interface DocumentResponse {
 async function createProjectRoot(): Promise<string> {
   const root = await makeTempDir();
   await writeProjectFile(root, "claros.yaml", "claros: 1\ntitle: Companion Workspace\n");
-  await writeProjectFile(root, "manuscript/01-start/chapter.yaml", "title: Start\n");
+  await writeProjectFile(root, "manuscript/001-start/chapter.yaml", "title: Start\n");
   await writeProjectFile(
     root,
-    "manuscript/01-start/01-opening.md",
+    "manuscript/001-start/001-opening.md",
     "---\ntitle: Opening\n---\n\nStart."
   );
   await writeProjectFile(

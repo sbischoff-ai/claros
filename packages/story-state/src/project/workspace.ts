@@ -55,6 +55,7 @@ import {
   toAbsoluteProjectPath,
   toRelativeProjectPath,
 } from "./files.js";
+import { ProjectMutationEngine, StructuralMutationError } from "./mutations.js";
 
 export type DocumentRef = SceneRef | NoteRef | { path: string };
 export type LinkResolution = WikilinkResolution;
@@ -72,6 +73,11 @@ export type MutationKind =
 export interface MutationResult {
   kind: MutationKind;
   changedPaths: string[];
+  affectedPaths?: string[];
+  pathMap?: Record<string, string>;
+  chapterIdMap?: Record<string, string>;
+  warnings?: MutationWarning[];
+  linkRewrite?: LinkRewritePlan;
   /** True only when the call updated an owned in-memory project index. */
   indexUpdated: boolean;
 }
@@ -92,6 +98,35 @@ export interface RenameNoteOptions {
 export interface RenameSceneOptions {
   rewriteLinks?: boolean;
   dryRun?: boolean;
+}
+
+export type ManuscriptInsertionPlacement = "append" | "before" | "after";
+
+export interface CreateSceneOptions {
+  placement?: ManuscriptInsertionPlacement;
+  targetScene?: SceneRef | string;
+}
+
+export interface CreateChapterOptions {
+  placement?: ManuscriptInsertionPlacement;
+  targetChapter?: ChapterRef | string;
+}
+
+export interface MoveChapterOptions {
+  placement: Exclude<ManuscriptInsertionPlacement, "append">;
+  targetChapter: ChapterRef | string;
+}
+
+export interface MoveSceneOptions {
+  placement: ManuscriptInsertionPlacement;
+  targetScene?: SceneRef | string;
+  targetChapter?: ChapterRef | string;
+}
+
+export interface ManuscriptMoveResult {
+  result: MutationResult;
+  pathMap: Record<string, string>;
+  chapterIdMap: Record<string, string>;
 }
 
 export interface StructuralMutationPlan {
@@ -124,22 +159,7 @@ export interface LinkRewrite {
   to: string;
 }
 
-export class StructuralMutationError extends Error {
-  constructor(
-    message: string,
-    public readonly completedPaths: string[],
-    public readonly pendingPaths: string[],
-    options?: { cause?: unknown }
-  ) {
-    super(message);
-    this.name = "StructuralMutationError";
-    if (options?.cause !== undefined) {
-      this.cause = options.cause;
-    }
-  }
-
-  declare cause?: unknown;
-}
+export { StructuralMutationError };
 
 export interface CheckpointStatus {
   dirty: boolean;
@@ -229,6 +249,33 @@ export interface ClarosProject {
     metadataPath: string,
     value: unknown
   ): Promise<MutationResult>;
+  setProjectTitle(title: string): Promise<MutationResult>;
+  setChapterTitle(chapterId: string, title: string): Promise<MutationResult>;
+  setSceneTitle(scene: SceneRef | string, title: string): Promise<MutationResult>;
+  appendChapter(
+    chapterTitle: string,
+    sceneTitle?: string
+  ): Promise<{ result: MutationResult; scene: SceneRef }>;
+  appendScene(title: string): Promise<{ result: MutationResult; scene: SceneRef }>;
+  createChapter(
+    chapterTitle: string,
+    sceneTitle?: string,
+    options?: CreateChapterOptions
+  ): Promise<{ result: MutationResult; scene: SceneRef }>;
+  createScene(
+    title: string,
+    options?: CreateSceneOptions
+  ): Promise<{ result: MutationResult; scene: SceneRef }>;
+  deleteChapter(chapterId: string): Promise<{ result: MutationResult; nextScene?: SceneRef }>;
+  deleteScene(scene: SceneRef | string): Promise<{ result: MutationResult; nextScene?: SceneRef }>;
+  moveChapter(
+    chapter: ChapterRef | string,
+    options: MoveChapterOptions
+  ): Promise<ManuscriptMoveResult & { chapter: ChapterRef }>;
+  moveScene(
+    scene: SceneRef | string,
+    options: MoveSceneOptions
+  ): Promise<ManuscriptMoveResult & { scene: SceneRef }>;
 
   planRenameNote(
     note: NoteRef | string,
@@ -463,6 +510,119 @@ export async function setChapterMetadataPath(
   return { kind: "metadata", changedPaths: [changedPath], indexUpdated: false };
 }
 
+export async function setProjectTitle(
+  projectRoot: string,
+  title: string,
+  options?: OpenProjectOptions
+): Promise<MutationResult> {
+  return setProjectMetadataPath(projectRoot, "title", normalizedProjectTitle(title), options);
+}
+
+export async function setChapterTitle(
+  projectRoot: string,
+  chapterId: string,
+  title: string,
+  options?: OpenProjectOptions
+): Promise<MutationResult> {
+  const normalizedRoot = normalizeProjectRoot(projectRoot);
+  const changedPath = normalizeProjectRelativePath(`manuscript/${chapterId}/chapter.yaml`);
+  await updateYamlObject(
+    normalizedRoot,
+    changedPath,
+    (metadata) => withOptionalTitle(metadata, title),
+    options
+  );
+  return { kind: "metadata", changedPaths: [changedPath], indexUpdated: false };
+}
+
+export async function setSceneTitle(
+  projectRoot: string,
+  scene: SceneRef | string,
+  title: string,
+  options?: OpenProjectOptions
+): Promise<MutationResult> {
+  const project = await openProject(projectRoot, options);
+  return project.setSceneTitle(scene, title);
+}
+
+export async function appendChapter(
+  projectRoot: string,
+  chapterTitle: string,
+  sceneTitle?: string,
+  options?: OpenProjectOptions
+): Promise<{ result: MutationResult; scene: SceneRef }> {
+  const project = await openProject(projectRoot, options);
+  return project.appendChapter(chapterTitle, sceneTitle);
+}
+
+export async function appendScene(
+  projectRoot: string,
+  title: string,
+  options?: OpenProjectOptions
+): Promise<{ result: MutationResult; scene: SceneRef }> {
+  const project = await openProject(projectRoot, options);
+  return project.appendScene(title);
+}
+
+export async function createChapter(
+  projectRoot: string,
+  chapterTitle: string,
+  sceneTitle?: string,
+  createOptions?: CreateChapterOptions,
+  options?: OpenProjectOptions
+): Promise<{ result: MutationResult; scene: SceneRef }> {
+  const project = await openProject(projectRoot, options);
+  return project.createChapter(chapterTitle, sceneTitle, createOptions);
+}
+
+export async function createScene(
+  projectRoot: string,
+  title: string,
+  createOptions?: CreateSceneOptions,
+  options?: OpenProjectOptions
+): Promise<{ result: MutationResult; scene: SceneRef }> {
+  const project = await openProject(projectRoot, options);
+  return project.createScene(title, createOptions);
+}
+
+export async function deleteChapter(
+  projectRoot: string,
+  chapterId: string,
+  options?: OpenProjectOptions
+): Promise<{ result: MutationResult; nextScene?: SceneRef }> {
+  const project = await openProject(projectRoot, options);
+  return project.deleteChapter(chapterId);
+}
+
+export async function deleteScene(
+  projectRoot: string,
+  scene: SceneRef | string,
+  options?: OpenProjectOptions
+): Promise<{ result: MutationResult; nextScene?: SceneRef }> {
+  const project = await openProject(projectRoot, options);
+  return project.deleteScene(scene);
+}
+
+export async function moveChapter(
+  projectRoot: string,
+  chapter: ChapterRef | string,
+  moveOptions: MoveChapterOptions,
+  options?: OpenProjectOptions
+): Promise<ManuscriptMoveResult & { chapter: ChapterRef }> {
+  const project = await openProject(projectRoot, options);
+  return project.moveChapter(chapter, moveOptions);
+}
+
+export async function moveScene(
+  projectRoot: string,
+  scene: SceneRef | string,
+  moveOptions: MoveSceneOptions,
+  options?: OpenProjectOptions
+): Promise<ManuscriptMoveResult & { scene: SceneRef }> {
+  const project = await openProject(projectRoot, options);
+  return project.moveScene(scene, moveOptions);
+}
+
 export async function resolveWikilink(
   projectRoot: string,
   link: string,
@@ -554,6 +714,7 @@ export async function restoreCheckpoint(
 
 class ClarosProjectImpl implements ClarosProject {
   private readonly stateAdapter: FileStateAdapter;
+  private readonly mutations: ProjectMutationEngine;
   private registryPromise: Promise<ReturnType<typeof createRegistry>> | undefined;
 
   constructor(
@@ -564,6 +725,13 @@ class ClarosProjectImpl implements ClarosProject {
     private readonly index: ProjectIndex
   ) {
     this.stateAdapter = new FileStateAdapter({ projectRoot: root });
+    this.mutations = new ProjectMutationEngine({
+      fileReader,
+      fileWriter,
+      index,
+      toStoragePath: (relativePath) => toAbsoluteProjectPath(this.root, relativePath),
+      rebuildIndex: () => this.rebuildIndex(),
+    });
   }
 
   listChapters(): ChapterRef[] {
@@ -670,6 +838,7 @@ class ClarosProjectImpl implements ClarosProject {
   async setProjectMetadataPath(metadataPath: string, value: unknown): Promise<MutationResult> {
     const changedPath = "claros.yaml";
     await setYamlPath(this.root, changedPath, metadataPath, value, this.fileOptions());
+    await this.rebuildIndex();
     return { kind: "metadata", changedPaths: [changedPath], indexUpdated: true };
   }
 
@@ -680,7 +849,82 @@ class ClarosProjectImpl implements ClarosProject {
   ): Promise<MutationResult> {
     const changedPath = normalizeProjectRelativePath(`manuscript/${chapterId}/chapter.yaml`);
     await setYamlPath(this.root, changedPath, metadataPath, value, this.fileOptions());
+    await this.rebuildIndex();
     return { kind: "metadata", changedPaths: [changedPath], indexUpdated: true };
+  }
+
+  async setProjectTitle(title: string): Promise<MutationResult> {
+    await updateYamlObject(
+      this.root,
+      "claros.yaml",
+      (metadata) => ({
+        ...metadata,
+        title: normalizedProjectTitle(title),
+      }),
+      this.fileOptions()
+    );
+    await this.rebuildIndex();
+    return { kind: "metadata", changedPaths: ["claros.yaml"], indexUpdated: true };
+  }
+
+  async setChapterTitle(chapterId: string, title: string): Promise<MutationResult> {
+    return (await this.mutations.setChapterTitle(chapterId, title)).result;
+  }
+
+  async setSceneTitle(scene: SceneRef | string, title: string): Promise<MutationResult> {
+    return (await this.mutations.setSceneTitle(scene, title)).result;
+  }
+
+  async appendChapter(
+    chapterTitle: string,
+    sceneTitle = ""
+  ): Promise<{ result: MutationResult; scene: SceneRef }> {
+    return this.mutations.appendChapter(chapterTitle, sceneTitle);
+  }
+
+  async appendScene(title: string): Promise<{ result: MutationResult; scene: SceneRef }> {
+    return this.mutations.appendScene(title);
+  }
+
+  async createChapter(
+    chapterTitle: string,
+    sceneTitle = "",
+    options: CreateChapterOptions = {}
+  ): Promise<{ result: MutationResult; scene: SceneRef }> {
+    return this.mutations.createChapter(chapterTitle, sceneTitle, options);
+  }
+
+  async createScene(
+    title: string,
+    options: CreateSceneOptions = {}
+  ): Promise<{ result: MutationResult; scene: SceneRef }> {
+    return this.mutations.createScene(title, options);
+  }
+
+  async deleteChapter(
+    chapterId: string
+  ): Promise<{ result: MutationResult; nextScene?: SceneRef }> {
+    return this.mutations.deleteChapter(chapterId);
+  }
+
+  async deleteScene(
+    scene: SceneRef | string
+  ): Promise<{ result: MutationResult; nextScene?: SceneRef }> {
+    return this.mutations.deleteScene(scene);
+  }
+
+  async moveChapter(
+    chapter: ChapterRef | string,
+    options: MoveChapterOptions
+  ): Promise<ManuscriptMoveResult & { chapter: ChapterRef }> {
+    return this.mutations.moveChapter(chapter, options);
+  }
+
+  async moveScene(
+    scene: SceneRef | string,
+    options: MoveSceneOptions
+  ): Promise<ManuscriptMoveResult & { scene: SceneRef }> {
+    return this.mutations.moveScene(scene, options);
   }
 
   async planRenameNote(
@@ -688,11 +932,7 @@ class ClarosProjectImpl implements ClarosProject {
     nextPath: string,
     options?: RenameNoteOptions
   ): Promise<StructuralMutationPlan> {
-    const current = this.resolveNoteForMutation(note);
-    const targetPath = normalizeNoteTargetPath(nextPath);
-    return this.buildStructuralPlan("rename-note", current.path, targetPath, {
-      rewriteLinks: options?.rewriteLinks ?? false,
-    });
+    return this.mutations.planRenameNote(note, nextPath, options?.rewriteLinks ?? false);
   }
 
   async renameNote(
@@ -704,7 +944,7 @@ class ClarosProjectImpl implements ClarosProject {
     if (options?.dryRun ?? false) {
       return { kind: "structural", changedPaths: [], indexUpdated: false };
     }
-    return this.applyRenamePlan(plan);
+    return this.mutations.applyRenamePlan(plan);
   }
 
   async planRenameScene(
@@ -712,11 +952,7 @@ class ClarosProjectImpl implements ClarosProject {
     nextSlug: string,
     options?: RenameSceneOptions
   ): Promise<StructuralMutationPlan> {
-    const current = this.resolveSceneForMutation(scene);
-    const targetPath = renameScenePath(current.path, nextSlug);
-    return this.buildStructuralPlan("rename-scene", current.path, targetPath, {
-      rewriteLinks: options?.rewriteLinks ?? false,
-    });
+    return this.mutations.planRenameScene(scene, nextSlug, options?.rewriteLinks ?? false);
   }
 
   async renameScene(
@@ -728,7 +964,7 @@ class ClarosProjectImpl implements ClarosProject {
     if (options?.dryRun ?? false) {
       return { kind: "structural", changedPaths: [], indexUpdated: false };
     }
-    return this.applyRenamePlan(plan);
+    return this.mutations.applyRenamePlan(plan);
   }
 
   resolveWikilink(link: string, from?: DocumentRef): LinkResolution {
@@ -807,161 +1043,6 @@ class ClarosProjectImpl implements ClarosProject {
     return restoreCheckpoint(this.root, id, options);
   }
 
-  private resolveNoteForMutation(note: NoteRef | string): NoteRef {
-    if (typeof note !== "string") {
-      return note;
-    }
-
-    const normalized = normalizeProjectRelativePath(note);
-    const normalizedWithMarkdown = normalized.toLowerCase().endsWith(".md")
-      ? normalized
-      : `${normalized}.md`;
-    const basename = path.basename(normalized, path.extname(normalized)).toLowerCase();
-    const match = this.listNotes().find((candidate) => {
-      const candidateBasename = path
-        .basename(candidate.path, path.extname(candidate.path))
-        .toLowerCase();
-      return (
-        candidate.path === normalized ||
-        candidate.path === normalizedWithMarkdown ||
-        candidate.path === `notes/${normalizedWithMarkdown}` ||
-        candidateBasename === basename
-      );
-    });
-
-    if (match === undefined) {
-      throw new Error(`Note not found: ${note}`);
-    }
-    return match;
-  }
-
-  private resolveSceneForMutation(scene: SceneRef | string): SceneRef {
-    if (typeof scene !== "string") {
-      return scene;
-    }
-
-    const normalized = normalizeProjectRelativePath(scene);
-    const match = this.listScenes().find(
-      (candidate) => candidate.id === normalized || candidate.path === normalized
-    );
-    if (match === undefined) {
-      throw new Error(`Scene not found: ${scene}`);
-    }
-    return match;
-  }
-
-  private async buildStructuralPlan(
-    operation: StructuralMutationPlan["operation"],
-    currentPath: string,
-    targetPath: string,
-    options: { rewriteLinks: boolean }
-  ): Promise<StructuralMutationPlan> {
-    const affectedPaths = new Set<string>([currentPath, targetPath]);
-    const warnings: MutationWarning[] = [];
-    const targetStat = await this.fileReader.stat(toAbsoluteProjectPath(this.root, targetPath));
-    if (targetStat.exists) {
-      warnings.push({
-        code: "target-exists",
-        message: `Target path already exists: ${targetPath}`,
-        path: targetPath,
-      });
-    }
-
-    const linkRewrite = options.rewriteLinks
-      ? this.planLinkRewrites(currentPath, targetPath)
-      : undefined;
-    for (const rewrite of linkRewrite?.rewrites ?? []) {
-      affectedPaths.add(rewrite.path);
-    }
-
-    return {
-      operation,
-      affectedPaths: [...affectedPaths].sort(),
-      currentPath,
-      targetPath,
-      linkRewrite,
-      warnings,
-    };
-  }
-
-  private planLinkRewrites(currentPath: string, targetPath: string): LinkRewritePlan {
-    const rewrites: LinkRewrite[] = [];
-    const ambiguousLinks: LinkRef[] = [];
-    const unresolvedLinks: LinkRef[] = [];
-    const documents = [...this.listScenes(), ...this.listNotes()];
-
-    for (const document of documents) {
-      for (const link of this.index.getOutgoingLinks({ path: document.path })) {
-        const resolution = this.index.resolveWikilink(link.target, { path: link.fromPath });
-        if (resolution.status === "resolved" && resolution.path === currentPath) {
-          rewrites.push({
-            path: link.fromPath,
-            range: link.range,
-            from: link.raw,
-            to: renderPathQualifiedWikilink(targetPath, link.alias ?? link.target),
-          });
-        } else if (resolution.status === "ambiguous") {
-          ambiguousLinks.push(link);
-        } else if (resolution.status === "unresolved") {
-          unresolvedLinks.push(link);
-        }
-      }
-    }
-
-    return { rewrites, ambiguousLinks, unresolvedLinks };
-  }
-
-  private async applyRenamePlan(plan: StructuralMutationPlan): Promise<MutationResult> {
-    const [currentPath, targetPath] = inferRenamePaths(plan);
-    const blockingWarning = plan.warnings.find((warning) => warning.code === "target-exists");
-    if (blockingWarning !== undefined) {
-      throw new Error(blockingWarning.message);
-    }
-    const completedPaths: string[] = [];
-    const pendingPaths = new Set(plan.affectedPaths);
-
-    try {
-      await this.fileWriter.renameFile(
-        toAbsoluteProjectPath(this.root, currentPath),
-        toAbsoluteProjectPath(this.root, targetPath)
-      );
-      completedPaths.push(currentPath, targetPath);
-      pendingPaths.delete(currentPath);
-      pendingPaths.delete(targetPath);
-
-      const rewritesByPath = groupLinkRewritesByPath(plan.linkRewrite?.rewrites ?? []);
-      for (const [rewritePath, rewrites] of rewritesByPath.entries()) {
-        const readPath = rewritePath === currentPath ? targetPath : rewritePath;
-        const absolutePath = toAbsoluteProjectPath(this.root, readPath);
-        const raw = await this.fileReader.readFile(absolutePath);
-        const nextRaw = applyLinkRewrites(raw, rewrites);
-        await this.fileWriter.writeFileAtomic(absolutePath, nextRaw);
-        completedPaths.push(readPath);
-        pendingPaths.delete(rewritePath);
-        pendingPaths.delete(readPath);
-      }
-    } catch (error) {
-      throw new StructuralMutationError(
-        `Structural mutation failed for ${plan.operation}`,
-        [...new Set(completedPaths)],
-        [...pendingPaths],
-        { cause: error }
-      );
-    }
-
-    await this.index.removeDocument(currentPath);
-    await this.refreshDocument(targetPath);
-    for (const rewritePath of groupLinkRewritesByPath(plan.linkRewrite?.rewrites ?? []).keys()) {
-      await this.refreshDocument(rewritePath === currentPath ? targetPath : rewritePath);
-    }
-
-    return {
-      kind: "structural",
-      changedPaths: [...new Set(completedPaths)].sort(),
-      indexUpdated: true,
-    };
-  }
-
   private async refreshDocument(ref: DocumentRef | string): Promise<void> {
     const document = await this.readDocument(typeof ref === "string" ? { path: ref } : ref);
     await this.index.updateDocument(document.path, document.raw);
@@ -969,6 +1050,12 @@ class ClarosProjectImpl implements ClarosProject {
 
   private async refreshRuns(): Promise<void> {
     await this.index.updateRuns(await listMacroRunsFromLedger(this.root));
+  }
+
+  private async rebuildIndex(): Promise<void> {
+    const snapshot = await scanProjectFormat(this.root, this.fileReader);
+    const runs = await listMacroRunsFromLedger(this.root);
+    await this.index.build(snapshot, runs);
   }
 
   private async getRegistry(): Promise<ReturnType<typeof createRegistry>> {
@@ -1071,72 +1158,43 @@ async function setYamlPath(
   await writer.writeFileAtomic(absolutePath, serializeStateFile({ data: next }));
 }
 
+async function updateYamlObject(
+  projectRoot: string,
+  relativePath: string,
+  update: (current: Record<string, unknown>) => Record<string, unknown>,
+  options?: OpenProjectOptions
+): Promise<void> {
+  const reader = options?.fileReader ?? new NodeProjectFileReader();
+  const writer = options?.fileWriter ?? new NodeProjectFileWriter();
+  const absolutePath = toAbsoluteProjectPath(projectRoot, relativePath);
+  const stat = await reader.stat(absolutePath);
+  const current = stat.exists ? parseStateFile(await reader.readFile(absolutePath)).data : {};
+  const next = update(current);
+  await ensureParentDirectory(absolutePath, writer);
+  await writer.writeFileAtomic(absolutePath, serializeStateFile({ data: next }));
+}
+
+function normalizedProjectTitle(title: string): string {
+  const normalized = title.trim();
+  return normalized.length > 0 ? normalized : "Untitled Project";
+}
+
+function withOptionalTitle(
+  metadata: Record<string, unknown>,
+  title: string
+): Record<string, unknown> {
+  const next = { ...metadata };
+  const normalized = title.trim();
+  if (normalized.length > 0) {
+    next.title = normalized;
+  } else {
+    delete next.title;
+  }
+  return next;
+}
+
 function normalizeProjectRelativePath(candidatePath: string): string {
   return path.normalize(candidatePath).replace(/\\/g, "/").replace(/^\/+/, "");
-}
-
-function normalizeNoteTargetPath(candidatePath: string): string {
-  const normalized = normalizeProjectRelativePath(candidatePath);
-  const withDirectory = normalized.startsWith("notes/") ? normalized : `notes/${normalized}`;
-  return withDirectory.toLowerCase().endsWith(".md") ? withDirectory : `${withDirectory}.md`;
-}
-
-function renameScenePath(currentPath: string, nextSlug: string): string {
-  const normalizedSlug = slugifyPathComponent(nextSlug);
-  const directory = path.posix.dirname(normalizeProjectRelativePath(currentPath));
-  const basename = path.posix.basename(currentPath, ".md");
-  const sequencePrefix = basename.match(/^(\d+)-/)?.[1];
-  if (sequencePrefix === undefined) {
-    throw new Error(`Scene path does not have a sequence-prefixed filename: ${currentPath}`);
-  }
-  return `${directory}/${sequencePrefix}-${normalizedSlug}.md`;
-}
-
-function slugifyPathComponent(value: string): string {
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-  if (slug.length === 0) {
-    throw new Error("Slug must not be empty");
-  }
-  return slug;
-}
-
-function renderPathQualifiedWikilink(targetPath: string, displayText: string): string {
-  const display = displayText.trim();
-  return display.length === 0 ? `[[${targetPath}]]` : `[[${targetPath}|${display}]]`;
-}
-
-function groupLinkRewritesByPath(rewrites: LinkRewrite[]): Map<string, LinkRewrite[]> {
-  const grouped = new Map<string, LinkRewrite[]>();
-  for (const rewrite of rewrites) {
-    const current = grouped.get(rewrite.path) ?? [];
-    current.push(rewrite);
-    grouped.set(rewrite.path, current);
-  }
-  return grouped;
-}
-
-function applyLinkRewrites(raw: string, rewrites: LinkRewrite[]): string {
-  return [...rewrites]
-    .sort((left, right) => right.range.start.offset - left.range.start.offset)
-    .reduce(
-      (current, rewrite) =>
-        `${current.slice(0, rewrite.range.start.offset)}${rewrite.to}${current.slice(
-          rewrite.range.end.offset
-        )}`,
-      raw
-    );
-}
-
-function inferRenamePaths(plan: StructuralMutationPlan): [string, string] {
-  if (plan.currentPath !== undefined && plan.targetPath !== undefined) {
-    return [plan.currentPath, plan.targetPath];
-  }
-  throw new Error(`Structural plan is missing rename paths for ${plan.operation}`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

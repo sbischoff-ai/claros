@@ -15,6 +15,7 @@ export interface DirectoryHandle {
   values(): AsyncIterable<FileHandle | DirectoryHandle>;
   getFileHandle(name: string, options?: { create?: boolean }): Promise<FileHandle>;
   getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<DirectoryHandle>;
+  removeEntry(name: string, options?: { recursive?: boolean }): Promise<void>;
 }
 
 interface FileHandle {
@@ -92,8 +93,9 @@ export class BrowserProjectFileSystem implements ProjectFileReader, ProjectFileW
     throw new Error("Renaming files is not available in the browser file adapter yet");
   }
 
-  async removeFile(_path: string): Promise<void> {
-    throw new Error("Removing files is not available in the browser file adapter yet");
+  async removeFile(path: string): Promise<void> {
+    const { directory, filename } = await this.getParentDirectory(path, false);
+    await directory.removeEntry(filename, { recursive: true });
   }
 
   private async getFileHandle(path: string): Promise<FileHandle> {

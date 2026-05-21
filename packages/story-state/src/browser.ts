@@ -23,19 +23,26 @@ import type {
   CheckpointRef,
   CheckpointStatus,
   ClarosProject,
+  CreateChapterOptions,
+  CreateSceneOptions,
   DocumentRef,
   HistoryOptions,
   LinkRef,
   LinkResolution,
+  ManuscriptMoveResult,
   MutationResult,
+  MoveChapterOptions,
+  MoveSceneOptions,
   ProjectExecuteMacroInDocumentOptions,
   RestoreCheckpointOptions,
   SearchOptions,
   SearchResult,
   SetFrontmatterPathOptions,
+  StructuralMutationPlan,
   TimelineRef,
   WriteDocumentOptions,
 } from "./project/workspace.js";
+import { ProjectMutationEngine } from "./project/mutations.js";
 import type {
   ExecuteMacroInDocumentResult,
   MacroRunDisplay,
@@ -72,13 +79,23 @@ export async function openProject(
 }
 
 class BrowserClarosProject implements ClarosProject {
+  private readonly mutations: ProjectMutationEngine;
+
   constructor(
     public readonly root: string,
     public readonly manifest: ProjectManifest,
     private readonly fileReader: ProjectFileReader,
     private readonly fileWriter: ProjectFileWriter,
     private readonly index: ProjectIndex
-  ) {}
+  ) {
+    this.mutations = new ProjectMutationEngine({
+      fileReader,
+      fileWriter,
+      index,
+      toStoragePath: toRootPath,
+      rebuildIndex: () => this.rebuildIndex(),
+    });
+  }
 
   listChapters(): ChapterRef[] {
     return this.index.listChapters();
@@ -169,6 +186,7 @@ class BrowserClarosProject implements ClarosProject {
     const current = await this.readYamlObject("claros.yaml");
     const next = setAtPath(current, metadataPath, value);
     await this.fileWriter.writeFileAtomic(toRootPath("claros.yaml"), dump(next, { lineWidth: -1 }));
+    await this.rebuildIndex();
     return { kind: "metadata", changedPaths: ["claros.yaml"], indexUpdated: true };
   }
 
@@ -181,23 +199,118 @@ class BrowserClarosProject implements ClarosProject {
     const current = await this.readYamlObject(path);
     const next = setAtPath(current, metadataPath, value);
     await this.fileWriter.writeFileAtomic(toRootPath(path), dump(next, { lineWidth: -1 }));
+    await this.rebuildIndex();
     return { kind: "metadata", changedPaths: [path], indexUpdated: true };
   }
 
-  planRenameNote(): Promise<never> {
-    return Promise.reject(browserUnavailable("planRenameNote"));
+  async setProjectTitle(title: string): Promise<MutationResult> {
+    const current = await this.readYamlObject("claros.yaml");
+    await this.fileWriter.writeFileAtomic(
+      toRootPath("claros.yaml"),
+      dump({ ...current, title: normalizedProjectTitle(title) }, { lineWidth: -1 })
+    );
+    await this.rebuildIndex();
+    return { kind: "metadata", changedPaths: ["claros.yaml"], indexUpdated: true };
   }
 
-  renameNote(): Promise<never> {
-    return Promise.reject(browserUnavailable("renameNote"));
+  async setChapterTitle(chapterId: string, title: string): Promise<MutationResult> {
+    return (await this.mutations.setChapterTitle(chapterId, title)).result;
   }
 
-  planRenameScene(): Promise<never> {
-    return Promise.reject(browserUnavailable("planRenameScene"));
+  async setSceneTitle(scene: SceneRef | string, title: string): Promise<MutationResult> {
+    return (await this.mutations.setSceneTitle(scene, title)).result;
   }
 
-  renameScene(): Promise<never> {
-    return Promise.reject(browserUnavailable("renameScene"));
+  async appendChapter(
+    chapterTitle: string,
+    sceneTitle = ""
+  ): Promise<{ result: MutationResult; scene: SceneRef }> {
+    return this.mutations.appendChapter(chapterTitle, sceneTitle);
+  }
+
+  async appendScene(title: string): Promise<{ result: MutationResult; scene: SceneRef }> {
+    return this.mutations.appendScene(title);
+  }
+
+  async createChapter(
+    chapterTitle: string,
+    sceneTitle = "",
+    options: CreateChapterOptions = {}
+  ): Promise<{ result: MutationResult; scene: SceneRef }> {
+    return this.mutations.createChapter(chapterTitle, sceneTitle, options);
+  }
+
+  async createScene(
+    title: string,
+    options: CreateSceneOptions = {}
+  ): Promise<{ result: MutationResult; scene: SceneRef }> {
+    return this.mutations.createScene(title, options);
+  }
+
+  async deleteChapter(
+    chapterId: string
+  ): Promise<{ result: MutationResult; nextScene?: SceneRef }> {
+    return this.mutations.deleteChapter(chapterId);
+  }
+
+  async deleteScene(
+    scene: SceneRef | string
+  ): Promise<{ result: MutationResult; nextScene?: SceneRef }> {
+    return this.mutations.deleteScene(scene);
+  }
+
+  async moveChapter(
+    chapter: ChapterRef | string,
+    options: MoveChapterOptions
+  ): Promise<ManuscriptMoveResult & { chapter: ChapterRef }> {
+    return this.mutations.moveChapter(chapter, options);
+  }
+
+  async moveScene(
+    scene: SceneRef | string,
+    options: MoveSceneOptions
+  ): Promise<ManuscriptMoveResult & { scene: SceneRef }> {
+    return this.mutations.moveScene(scene, options);
+  }
+
+  planRenameNote(
+    note: NoteRef | string,
+    nextPath: string,
+    options?: { rewriteLinks?: boolean }
+  ): Promise<StructuralMutationPlan> {
+    return this.mutations.planRenameNote(note, nextPath, options?.rewriteLinks ?? false);
+  }
+
+  async renameNote(
+    note: NoteRef | string,
+    nextPath: string,
+    options?: { rewriteLinks?: boolean; dryRun?: boolean }
+  ): Promise<MutationResult> {
+    const plan = await this.planRenameNote(note, nextPath, options);
+    if (options?.dryRun ?? false) {
+      return { kind: "structural", changedPaths: [], indexUpdated: false };
+    }
+    return this.mutations.applyRenamePlan(plan);
+  }
+
+  planRenameScene(
+    scene: SceneRef | string,
+    nextSlug: string,
+    options?: { rewriteLinks?: boolean }
+  ): Promise<StructuralMutationPlan> {
+    return this.mutations.planRenameScene(scene, nextSlug, options?.rewriteLinks ?? false);
+  }
+
+  async renameScene(
+    scene: SceneRef | string,
+    nextSlug: string,
+    options?: { rewriteLinks?: boolean; dryRun?: boolean }
+  ): Promise<MutationResult> {
+    const plan = await this.planRenameScene(scene, nextSlug, options);
+    if (options?.dryRun ?? false) {
+      return { kind: "structural", changedPaths: [], indexUpdated: false };
+    }
+    return this.mutations.applyRenamePlan(plan);
   }
 
   resolveWikilink(link: string, from?: DocumentRef): LinkResolution {
@@ -285,6 +398,11 @@ class BrowserClarosProject implements ClarosProject {
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : {};
+  }
+
+  private async rebuildIndex(): Promise<void> {
+    const snapshot = await scanProjectFormat(ROOT, this.fileReader);
+    await this.index.build(snapshot, await readMacroRuns(this.fileReader));
   }
 }
 
@@ -410,6 +528,11 @@ function toRootPath(path: string): string {
 
 function normalizeRelativePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
+}
+
+function normalizedProjectTitle(title: string): string {
+  const normalized = title.trim();
+  return normalized.length > 0 ? normalized : "Untitled Project";
 }
 
 function browserUnavailable(action: string): Error {

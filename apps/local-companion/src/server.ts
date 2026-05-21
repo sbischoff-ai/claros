@@ -156,9 +156,45 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
       }
 
       if (request.method === "POST" && url.pathname === "/api/project/new") {
-        await initializeProject(projectRoot);
+        const body = await readJsonBody(request);
+        await initializeProject(projectRoot, titleFromBody(body));
         project = await openProject(projectRoot);
         writeJson(response, 201, { ok: true, project: summarizeProject(project) });
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/project/mutation") {
+        const current = await ensureProject();
+        const body = await readJsonBody(request);
+        if (!isRecord(body) || typeof body.action !== "string") {
+          writeJson(response, 400, {
+            ok: false,
+            error: { code: "BAD_REQUEST", message: "Expected JSON body with action" },
+          });
+          return;
+        }
+
+        const mutation = await applyProjectMutation(current, body);
+        project = await openProject(projectRoot);
+        writeJson(response, 200, {
+          ok: true,
+          project: summarizeProject(project),
+          ...(mutation.chapter === undefined
+            ? {}
+            : {
+                chapter: toWorkspaceChapter(
+                  mutation.chapter,
+                  project
+                    .listScenes()
+                    .filter((scene) => scene.chapterId === mutation.chapter?.id)
+                    .map(toWorkspaceScene)
+                ),
+              }),
+          ...(mutation.scene === undefined ? {} : { scene: toWorkspaceScene(mutation.scene) }),
+          ...(mutation.nextPath === undefined ? {} : { nextPath: mutation.nextPath }),
+          ...(mutation.pathMap === undefined ? {} : { pathMap: mutation.pathMap }),
+          ...(mutation.chapterIdMap === undefined ? {} : { chapterIdMap: mutation.chapterIdMap }),
+        });
         return;
       }
 
@@ -215,24 +251,28 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
   };
 }
 
-async function initializeProject(projectRoot: string): Promise<void> {
+async function initializeProject(projectRoot: string, title = "Untitled Project"): Promise<void> {
   if (await exists(path.join(projectRoot, "claros.yaml"))) {
     throw new CompanionError(409, "PROJECT_EXISTS", "claros.yaml already exists");
   }
 
-  await mkdir(path.join(projectRoot, "manuscript", "01-draft"), { recursive: true });
+  await mkdir(path.join(projectRoot, "manuscript", "001-draft"), { recursive: true });
   await mkdir(path.join(projectRoot, "notes"), { recursive: true });
-  await writeFile(path.join(projectRoot, "claros.yaml"), "claros: 1\ntitle: Untitled Project\n", {
-    encoding: "utf8",
-    flag: "wx",
-  });
   await writeFile(
-    path.join(projectRoot, "manuscript", "01-draft", "chapter.yaml"),
+    path.join(projectRoot, "claros.yaml"),
+    `claros: 1\ntitle: ${JSON.stringify(normalizedProjectTitle(title))}\n`,
+    {
+      encoding: "utf8",
+      flag: "wx",
+    }
+  );
+  await writeFile(
+    path.join(projectRoot, "manuscript", "001-draft", "chapter.yaml"),
     "title: Draft\n",
     { encoding: "utf8", flag: "wx" }
   );
   await writeFile(
-    path.join(projectRoot, "manuscript", "01-draft", "01-opening.md"),
+    path.join(projectRoot, "manuscript", "001-draft", "001-opening.md"),
     "---\ntitle: Opening\n---\n\n# Draft\n\n## Opening\n\n",
     { encoding: "utf8", flag: "wx" }
   );
@@ -266,6 +306,134 @@ function summarizeProject(project: ClarosProject): ProjectSummary {
       .map((chapter) => toWorkspaceChapter(chapter, scenesByChapter.get(chapter.id) ?? [])),
     notes: project.listNotes().map(toWorkspaceNote),
   };
+}
+
+async function applyProjectMutation(
+  project: ClarosProject,
+  body: Record<string, unknown>
+): Promise<{
+  chapter?: ChapterRef;
+  scene?: SceneRef;
+  nextPath?: string;
+  pathMap?: Record<string, string>;
+  chapterIdMap?: Record<string, string>;
+}> {
+  const title = typeof body.title === "string" ? body.title : "";
+  switch (body.action) {
+    case "set-project-title":
+      await project.setProjectTitle(title);
+      return {};
+    case "append-chapter": {
+      const sceneTitle = typeof body.sceneTitle === "string" ? body.sceneTitle : "";
+      const { scene } = await project.appendChapter(title, sceneTitle);
+      return { scene };
+    }
+    case "append-scene": {
+      const { scene } = await project.appendScene(title);
+      return { scene };
+    }
+    case "create-chapter": {
+      const sceneTitle = typeof body.sceneTitle === "string" ? body.sceneTitle : "";
+      const { scene } = await project.createChapter(title, sceneTitle, {
+        placement: insertionPlacement(body.placement),
+        targetChapter: stringValue(body.targetChapterId),
+      });
+      return { scene };
+    }
+    case "create-scene": {
+      const { scene } = await project.createScene(title, {
+        placement: insertionPlacement(body.placement),
+        targetScene: stringValue(body.targetScenePath),
+      });
+      return { scene };
+    }
+    case "set-chapter-title":
+      if (typeof body.chapterId !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected chapterId");
+      }
+      const currentChapter = project
+        .listChapters()
+        .find((chapter) => chapter.id === body.chapterId);
+      await project.setChapterTitle(body.chapterId, title);
+      return {
+        chapter: project
+          .listChapters()
+          .find((chapter) => chapter.sequence === currentChapter?.sequence),
+      };
+    case "set-scene-title":
+      if (typeof body.path !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected path");
+      }
+      const currentScene = project.listScenes().find((scene) => scene.path === body.path);
+      await project.setSceneTitle(body.path, title);
+      return {
+        scene: project.listScenes().find((scene) => scene.sequence === currentScene?.sequence),
+      };
+    case "delete-chapter": {
+      if (typeof body.chapterId !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected chapterId");
+      }
+      const { nextScene } = await project.deleteChapter(body.chapterId);
+      return { nextPath: nextScene?.path };
+    }
+    case "delete-scene": {
+      if (typeof body.path !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected path");
+      }
+      const { nextScene } = await project.deleteScene(body.path);
+      return { nextPath: nextScene?.path };
+    }
+    case "move-chapter": {
+      if (typeof body.chapterId !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected chapterId");
+      }
+      if (typeof body.targetChapterId !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected targetChapterId");
+      }
+      const { chapter, pathMap, chapterIdMap } = await project.moveChapter(body.chapterId, {
+        placement: movePlacement(body.placement),
+        targetChapter: body.targetChapterId,
+      });
+      return { chapter, pathMap, chapterIdMap };
+    }
+    case "move-scene": {
+      if (typeof body.path !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected path");
+      }
+      const { scene, pathMap, chapterIdMap } = await project.moveScene(body.path, {
+        placement: insertionPlacement(body.placement) ?? "append",
+        targetScene: stringValue(body.targetScenePath),
+        targetChapter: stringValue(body.targetChapterId),
+      });
+      return { scene, pathMap, chapterIdMap };
+    }
+    default:
+      throw new CompanionError(400, "BAD_REQUEST", `Unknown project mutation: ${body.action}`);
+  }
+}
+
+function titleFromBody(body: unknown): string {
+  return isRecord(body) && typeof body.title === "string" ? body.title : "Untitled Project";
+}
+
+function insertionPlacement(value: unknown): "append" | "before" | "after" | undefined {
+  return value === "append" || value === "before" || value === "after" ? value : undefined;
+}
+
+function movePlacement(value: unknown): "before" | "after" {
+  if (value !== "before" && value !== "after") {
+    throw new CompanionError(400, "BAD_REQUEST", "Expected before or after placement");
+  }
+  return value;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function normalizedProjectTitle(title: string): string {
+  const normalized = title.trim();
+  return normalized.length > 0 ? normalized : "Untitled Project";
 }
 
 function normalizeManifest(manifest: ProjectManifest): WorkspaceManifest {
