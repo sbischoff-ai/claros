@@ -49,6 +49,8 @@
         aria-selected={item.path === activePath}
         aria-current={item.path === activePath ? "page" : undefined}
         aria-expanded={item.collapsible ? !item.collapsed : undefined}
+        aria-haspopup={item.kind === "chapter" || item.kind === "scene" ? "menu" : undefined}
+        data-sidebar-item-id={item.id}
         on:focus={() => {
           focusedItemId = item.id;
           rememberFocus(item.id);

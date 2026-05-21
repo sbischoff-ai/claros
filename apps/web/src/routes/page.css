@@ -788,6 +788,15 @@ button:disabled {
   text-align: left;
 }
 
+.context-menu button:hover,
+.context-menu button:focus-visible,
+.context-menu button.selected {
+  border-color: var(--claros-prose-focus-ring);
+  background: transparent;
+  color: var(--claros-prose-text);
+  outline: none;
+}
+
 .modal-layer {
   position: fixed;
   z-index: 55;

@@ -32,6 +32,12 @@ export interface PaletteCommand {
   run(): void;
 }
 
+export interface ActionMenuItem {
+  label: string;
+  disabled?: boolean;
+  run(): void;
+}
+
 export interface SidebarItem {
   id: string;
   kind: SidebarItemKind;

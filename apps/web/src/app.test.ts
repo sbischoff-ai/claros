@@ -18,8 +18,10 @@ const pageSource = readFileSync(
 );
 const workspaceSource = [
   "./routes/+page.svelte",
+  "./lib/ActionMenu.svelte",
   "./lib/CommandPalette.svelte",
   "./lib/DeleteModal.svelte",
+  "./lib/directional-navigation.ts",
   "./lib/ProjectLauncher.svelte",
   "./lib/TitleModal.svelte",
   "./lib/WorkspaceSidebar.svelte",
@@ -275,6 +277,13 @@ describe("workspace command surface", () => {
     expect(pageSource).not.toContain("Connect Local Companion");
     expect(pageSource).toContain('event.key === "ArrowLeft"');
     expect(pageSource).toContain('event.key === "ArrowRight"');
+    expect(workspaceSource).toContain("directionalIntentFromKeydown");
+    expect(workspaceSource).toContain('case "j"');
+    expect(workspaceSource).toContain('case "k"');
+    expect(workspaceSource).toContain('case "h"');
+    expect(workspaceSource).toContain('case "l"');
+    expect(workspaceSource).toContain("isTextEditingTarget(event.target)");
+    expect(workspaceSource).toContain("<ActionMenu");
   });
 
   it("uses shared Phosphor icon metadata for workspace controls", () => {

@@ -227,7 +227,10 @@ class BrowserClarosProject implements ClarosProject {
       toRootPath(`manuscript/${chapterId}/chapter.yaml`),
       serializeTitleYaml(chapterTitle)
     );
-    await this.fileWriter.writeFileAtomic(toRootPath(scenePath), serializeSceneMarkdown(sceneTitle));
+    await this.fileWriter.writeFileAtomic(
+      toRootPath(scenePath),
+      serializeSceneMarkdown(sceneTitle)
+    );
     await this.rebuildIndex();
     return {
       result: {

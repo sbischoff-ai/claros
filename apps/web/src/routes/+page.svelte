@@ -26,8 +26,10 @@
     type WorkspaceScene,
   } from "$lib/project-session";
   import type { BrowserDirectoryPicker } from "$lib/browser-file-system";
+  import ActionMenu from "$lib/ActionMenu.svelte";
   import CommandPalette from "$lib/CommandPalette.svelte";
   import DeleteModal from "$lib/DeleteModal.svelte";
+  import { directionalIntentFromKeydown } from "$lib/directional-navigation";
   import ProjectLauncher from "$lib/ProjectLauncher.svelte";
   import { buildSidebarItems } from "$lib/sidebar-model";
   import { buildStorageBackendOptions, type StorageBackendOption } from "$lib/storage-backends";
@@ -49,6 +51,7 @@
     saveStateLabel,
   } from "$lib/workspace-view-model";
   import type {
+    ActionMenuItem,
     ActiveDocumentKind,
     ContextMenuState,
     DeleteModalState,
@@ -139,6 +142,8 @@
   $: paletteCommands = buildPaletteCommands(activeTheme, vimMode, projectIsOpen, canOpenLocalProject);
   $: filteredCommands = filterCommands(paletteCommands, commandQuery);
   $: selectedCommandIndex = clampCommandIndex(selectedCommandIndex, filteredCommands.length);
+  $: sidebarContextMenuItems =
+    contextMenu === undefined ? [] : buildSidebarContextMenuItems(contextMenu.item);
 
   $: if (paletteOpen) {
     selectedCommandIndex = 0;
@@ -212,7 +217,7 @@
           return;
         }
         if (contextMenu !== undefined) {
-          contextMenu = undefined;
+          closeSidebarContextMenu();
           return;
         }
         if (editingProjectTitle || editingSidebarItemId.length > 0) {
@@ -675,6 +680,7 @@
       paletteOpen ||
       titleModal !== undefined ||
       deleteModal !== undefined ||
+      contextMenu !== undefined ||
       editingProjectTitle ||
       editingSidebarItemId.length > 0
     );
@@ -948,11 +954,16 @@
   }
 
   function handleSidebarKeydown(event: KeyboardEvent): void {
-    if (editingSidebarItemId.length > 0 || event.target !== sidebarNav) {
+    if (
+      editingSidebarItemId.length > 0 ||
+      !(event.target instanceof Node) ||
+      !sidebarNav?.contains(event.target)
+    ) {
       return;
     }
 
     const currentIndex = sidebarItems.findIndex((item) => item.id === focusedSidebarItemId);
+    const intent = directionalIntentFromKeydown(event);
 
     if ((event.metaKey || event.ctrlKey) && event.key === "ArrowLeft") {
       event.preventDefault();
@@ -966,31 +977,33 @@
       return;
     }
 
-    if (event.key === "ArrowDown") {
+    if (intent === "down") {
       event.preventDefault();
       focusSidebarIndex(Math.min(currentIndex + 1, sidebarItems.length - 1));
       return;
     }
 
-    if (event.key === "ArrowUp") {
+    if (intent === "up") {
       event.preventDefault();
       focusSidebarIndex(Math.max(currentIndex - 1, 0));
       return;
     }
 
-    if (event.key === "ArrowRight") {
+    if (intent === "right") {
       event.preventDefault();
-      expandFocusedItem();
+      if (!openFocusedSidebarContextMenu()) {
+        expandFocusedItem();
+      }
       return;
     }
 
-    if (event.key === "ArrowLeft") {
+    if (intent === "left") {
       event.preventDefault();
       collapseFocusedItem();
       return;
     }
 
-    if (event.key === "Enter") {
+    if (intent === "activate") {
       event.preventDefault();
       activateFocusedItem();
       return;
@@ -1017,6 +1030,18 @@
     if (item?.collapsible && item.collapsed) {
       toggleCollapsed(item.id);
     }
+  }
+
+  function openFocusedSidebarContextMenu(): boolean {
+    const item = sidebarItems.find((candidate) => candidate.id === focusedSidebarItemId);
+    if (item === undefined || !hasSidebarContextMenu(item)) {
+      return false;
+    }
+
+    const anchor = sidebarItemElement(item.id);
+    const rect = anchor?.getBoundingClientRect();
+    openSidebarContextMenuAt(rect === undefined ? 0 : rect.right + 6, rect?.top ?? 0, item);
+    return true;
   }
 
   function collapseFocusedItem(): void {
@@ -1050,6 +1075,12 @@
     if (item !== undefined) {
       focusedSidebarItemId = item.id;
     }
+  }
+
+  function sidebarItemElement(itemId: string): HTMLElement | undefined {
+    return Array.from(sidebarNav?.querySelectorAll<HTMLElement>("[data-sidebar-item-id]") ?? []).find(
+      (element) => element.dataset.sidebarItemId === itemId
+    );
   }
 
   function openTitleModal(state: TitleModalState): void {
@@ -1347,12 +1378,32 @@
   }
 
   function openSidebarContextMenu(event: MouseEvent, item: SidebarItem): void {
-    if (item.kind !== "chapter" && item.kind !== "scene") {
+    if (!hasSidebarContextMenu(item)) {
       return;
     }
     event.preventDefault();
+    openSidebarContextMenuAt(event.clientX, event.clientY, item);
+  }
+
+  function openSidebarContextMenuAt(x: number, y: number, item: SidebarItem): void {
     focusedSidebarItemId = item.id;
-    contextMenu = { x: event.clientX, y: event.clientY, item };
+    rememberSidebarFocus(item.id);
+    contextMenu = { x, y, item };
+  }
+
+  function closeSidebarContextMenu(): void {
+    const returnFocus =
+      contextMenu === undefined
+        ? undefined
+        : { region: "sidebar" as const, itemId: contextMenu.item.id };
+    contextMenu = undefined;
+    if (returnFocus !== undefined) {
+      void restoreWorkspaceFocus(returnFocus);
+    }
+  }
+
+  function hasSidebarContextMenu(item: SidebarItem): boolean {
+    return item.kind === "chapter" || item.kind === "scene";
   }
 
   function beginContextMenuTitleEdit(): void {
@@ -1377,6 +1428,41 @@
 
   function sceneForItem(item: SidebarItem): WorkspaceScene | undefined {
     return item.path === undefined ? undefined : scenes.find((scene) => scene.path === item.path);
+  }
+
+  function buildSidebarContextMenuItems(item: SidebarItem): ActionMenuItem[] {
+    const menuItems: ActionMenuItem[] = [
+      {
+        label: "Change title",
+        run: beginContextMenuTitleEdit,
+      },
+    ];
+
+    if (item.kind === "chapter") {
+      const chapter = chapterForItem(item);
+      menuItems.push({
+        label: "Delete chapter",
+        disabled: chapter === undefined || !canDeleteChapter(chapter),
+        run: () => {
+          if (chapter !== undefined) {
+            openDeleteChapterModal(chapter);
+          }
+        },
+      });
+      return menuItems;
+    }
+
+    const scene = sceneForItem(item);
+    menuItems.push({
+      label: "Delete scene",
+      disabled: scene === undefined || !canDeleteScene(),
+      run: () => {
+        if (scene !== undefined) {
+          openDeleteSceneModal(scene);
+        }
+      },
+    });
+    return menuItems;
   }
 
 </script>
@@ -1530,38 +1616,15 @@
       type="button"
       class="context-backdrop"
       aria-label="Close context menu"
-      on:click={() => (contextMenu = undefined)}
+      on:click={closeSidebarContextMenu}
     ></button>
-    <div
-      class="context-menu"
-      style={`left: ${contextMenu.x}px; top: ${contextMenu.y}px`}
-      role="menu"
-    >
-      <button type="button" role="menuitem" on:click={beginContextMenuTitleEdit}>
-        Change title
-      </button>
-      {#if contextMenu.item.kind === "chapter"}
-        {@const chapter = chapterForItem(contextMenu.item)}
-        <button
-          type="button"
-          role="menuitem"
-          disabled={chapter === undefined || !canDeleteChapter(chapter)}
-          on:click={() => chapter !== undefined && openDeleteChapterModal(chapter)}
-        >
-          Delete chapter
-        </button>
-      {:else}
-        {@const scene = sceneForItem(contextMenu.item)}
-        <button
-          type="button"
-          role="menuitem"
-          disabled={scene === undefined || !canDeleteScene()}
-          on:click={() => scene !== undefined && openDeleteSceneModal(scene)}
-        >
-          Delete scene
-        </button>
-      {/if}
-    </div>
+    <ActionMenu
+      ariaLabel={`${contextMenu.item.label} actions`}
+      close={closeSidebarContextMenu}
+      items={sidebarContextMenuItems}
+      x={contextMenu.x}
+      y={contextMenu.y}
+    />
     {/if}
 
     {#if titleModal !== undefined}
