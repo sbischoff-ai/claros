@@ -184,6 +184,110 @@ class BrowserClarosProject implements ClarosProject {
     return { kind: "metadata", changedPaths: [path], indexUpdated: true };
   }
 
+  async setProjectTitle(title: string): Promise<MutationResult> {
+    const current = await this.readYamlObject("claros.yaml");
+    await this.fileWriter.writeFileAtomic(
+      toRootPath("claros.yaml"),
+      dump({ ...current, title: normalizedProjectTitle(title) }, { lineWidth: -1 })
+    );
+    await this.rebuildIndex();
+    return { kind: "metadata", changedPaths: ["claros.yaml"], indexUpdated: true };
+  }
+
+  async setChapterTitle(chapterId: string, title: string): Promise<MutationResult> {
+    const path = `manuscript/${chapterId}/chapter.yaml`;
+    const current = await this.readYamlObject(path);
+    await this.fileWriter.writeFileAtomic(
+      toRootPath(path),
+      dump(withOptionalTitle(current, title), { lineWidth: -1 })
+    );
+    await this.rebuildIndex();
+    return { kind: "metadata", changedPaths: [path], indexUpdated: true };
+  }
+
+  async setSceneTitle(scene: SceneRef | string, title: string): Promise<MutationResult> {
+    const current = this.resolveScene(scene);
+    const raw = await this.fileReader.readFile(toRootPath(current.path));
+    const nextRaw = setMarkdownTitle(raw, title);
+    await this.fileWriter.writeFileAtomic(toRootPath(current.path), nextRaw);
+    await this.index.updateDocument(current.path, nextRaw);
+    return { kind: "frontmatter-path", changedPaths: [current.path], indexUpdated: true };
+  }
+
+  async appendChapter(
+    chapterTitle: string,
+    sceneTitle = ""
+  ): Promise<{ result: MutationResult; scene: SceneRef }> {
+    const chapterSequence = nextSequence(this.listChapters().map((chapter) => chapter.sequence));
+    const sceneSequence = nextSequence(this.listScenes().map((scene) => scene.sequence));
+    const chapterId = this.uniqueChapterId(chapterSequence, chapterTitle);
+    const scenePath = this.uniqueScenePath(chapterId, sceneSequence, sceneTitle);
+    await this.fileWriter.mkdir(toRootPath(`manuscript/${chapterId}`), true);
+    await this.fileWriter.writeFileAtomic(
+      toRootPath(`manuscript/${chapterId}/chapter.yaml`),
+      serializeTitleYaml(chapterTitle)
+    );
+    await this.fileWriter.writeFileAtomic(toRootPath(scenePath), serializeSceneMarkdown(sceneTitle));
+    await this.rebuildIndex();
+    return {
+      result: {
+        kind: "structural",
+        changedPaths: [
+          `manuscript/${chapterId}`,
+          `manuscript/${chapterId}/chapter.yaml`,
+          scenePath,
+        ],
+        indexUpdated: true,
+      },
+      scene: this.sceneByPath(scenePath),
+    };
+  }
+
+  async appendScene(title: string): Promise<{ result: MutationResult; scene: SceneRef }> {
+    const lastChapter = this.listChapters().at(-1);
+    if (lastChapter === undefined) {
+      return this.appendChapter("", title);
+    }
+    const sceneSequence = nextSequence(this.listScenes().map((scene) => scene.sequence));
+    const scenePath = this.uniqueScenePath(lastChapter.id, sceneSequence, title);
+    await this.fileWriter.writeFileAtomic(toRootPath(scenePath), serializeSceneMarkdown(title));
+    await this.rebuildIndex();
+    return {
+      result: { kind: "structural", changedPaths: [scenePath], indexUpdated: true },
+      scene: this.sceneByPath(scenePath),
+    };
+  }
+
+  async deleteChapter(
+    chapterId: string
+  ): Promise<{ result: MutationResult; nextScene?: SceneRef }> {
+    const scenes = this.listScenes();
+    if (this.listChapters().length <= 1 || scenes.every((scene) => scene.chapterId === chapterId)) {
+      throw new Error("Cannot delete the final remaining chapter");
+    }
+    const index = scenes.findIndex((scene) => scene.chapterId === chapterId);
+    const result = await this.rebuildManuscript((chapter) => chapter.id !== chapterId);
+    return { result, nextScene: sceneAtNearestIndex(this.listScenes(), index) };
+  }
+
+  async deleteScene(
+    scene: SceneRef | string
+  ): Promise<{ result: MutationResult; nextScene?: SceneRef }> {
+    const current = this.resolveScene(scene);
+    const scenes = this.listScenes();
+    if (scenes.length <= 1) {
+      throw new Error("Cannot delete the final remaining scene");
+    }
+    const index = scenes.findIndex((candidate) => candidate.path === current.path);
+    const removeChapter =
+      scenes.filter((candidate) => candidate.chapterId === current.chapterId).length === 1;
+    const result = await this.rebuildManuscript(
+      (chapter) => !removeChapter || chapter.id !== current.chapterId,
+      (candidate) => candidate.path !== current.path
+    );
+    return { result, nextScene: sceneAtNearestIndex(this.listScenes(), index) };
+  }
+
   planRenameNote(): Promise<never> {
     return Promise.reject(browserUnavailable("planRenameNote"));
   }
@@ -285,6 +389,120 @@ class BrowserClarosProject implements ClarosProject {
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : {};
+  }
+
+  private async rebuildIndex(): Promise<void> {
+    const snapshot = await scanProjectFormat(ROOT, this.fileReader);
+    await this.index.build(snapshot, await readMacroRuns(this.fileReader));
+  }
+
+  private resolveScene(scene: SceneRef | string): SceneRef {
+    if (typeof scene !== "string") {
+      return scene;
+    }
+    const normalized = normalizeRelativePath(scene);
+    const match = this.listScenes().find(
+      (candidate) => candidate.id === normalized || candidate.path === normalized
+    );
+    if (match === undefined) {
+      throw new Error(`Scene not found: ${scene}`);
+    }
+    return match;
+  }
+
+  private sceneByPath(path: string): SceneRef {
+    const scene = this.listScenes().find((candidate) => candidate.path === path);
+    if (scene === undefined) {
+      throw new Error(`Scene not found after manuscript mutation: ${path}`);
+    }
+    return scene;
+  }
+
+  private uniqueChapterId(sequence: number, title: string): string {
+    const prefix = sequencePrefix(sequence);
+    const slug = title.trim().length > 0 ? slugifyPathComponent(title) : `chapter-${sequence}`;
+    return uniqueSequenceName(
+      prefix,
+      slug,
+      new Set(this.listChapters().map((chapter) => chapter.id))
+    );
+  }
+
+  private uniqueScenePath(chapterId: string, sequence: number, title: string): string {
+    const prefix = sequencePrefix(sequence);
+    const slug = title.trim().length > 0 ? slugifyPathComponent(title) : `scene-${sequence}`;
+    const existing = new Set(
+      this.listScenes().map((scene) => basenameWithoutExtension(scene.path))
+    );
+    return `manuscript/${chapterId}/${uniqueSequenceName(prefix, slug, existing)}.md`;
+  }
+
+  private async rebuildManuscript(
+    keepChapter: (chapter: ChapterRef) => boolean,
+    keepScene: (scene: SceneRef) => boolean = () => true
+  ): Promise<MutationResult> {
+    const scenesByChapter = new Map<string, SceneRef[]>();
+    for (const scene of this.listScenes().filter(keepScene)) {
+      const scenes = scenesByChapter.get(scene.chapterId) ?? [];
+      scenes.push(scene);
+      scenesByChapter.set(scene.chapterId, scenes);
+    }
+
+    const rebuilt: RebuiltChapter[] = [];
+    let chapterSequence = 1;
+    let sceneSequence = 1;
+    for (const chapter of this.listChapters()) {
+      if (!keepChapter(chapter)) {
+        continue;
+      }
+      const scenes = scenesByChapter.get(chapter.id) ?? [];
+      if (scenes.length === 0) {
+        continue;
+      }
+      const nextChapterSlug = resequenceDefaultSlug(chapter.slug, "chapter", chapterSequence);
+      const nextChapterId = `${sequencePrefix(chapterSequence)}-${nextChapterSlug}`;
+      const chapterRaw = await this.readOptionalFile(`${chapter.path}/chapter.yaml`);
+      const rebuiltScenes: RebuiltScene[] = [];
+      for (const scene of scenes) {
+        rebuiltScenes.push({
+          path: `manuscript/${nextChapterId}/${sequencePrefix(sceneSequence)}-${resequenceDefaultSlug(
+            scene.slug,
+            "scene",
+            sceneSequence
+          )}.md`,
+          raw: await this.fileReader.readFile(toRootPath(scene.path)),
+        });
+        sceneSequence += 1;
+      }
+      rebuilt.push({ path: `manuscript/${nextChapterId}`, chapterRaw, scenes: rebuiltScenes });
+      chapterSequence += 1;
+    }
+
+    await this.fileWriter.removeFile(toRootPath("manuscript"));
+    await this.fileWriter.mkdir(toRootPath("manuscript"), true);
+    const changedPaths = new Set<string>(["manuscript"]);
+    for (const chapter of rebuilt) {
+      await this.fileWriter.mkdir(toRootPath(chapter.path), true);
+      changedPaths.add(chapter.path);
+      if (chapter.chapterRaw !== undefined) {
+        const chapterMetadataPath = `${chapter.path}/chapter.yaml`;
+        await this.fileWriter.writeFileAtomic(toRootPath(chapterMetadataPath), chapter.chapterRaw);
+        changedPaths.add(chapterMetadataPath);
+      }
+      for (const scene of chapter.scenes) {
+        await this.fileWriter.writeFileAtomic(toRootPath(scene.path), scene.raw);
+        changedPaths.add(scene.path);
+      }
+    }
+    await this.rebuildIndex();
+    return { kind: "structural", changedPaths: [...changedPaths].sort(), indexUpdated: true };
+  }
+
+  private async readOptionalFile(path: string): Promise<string | undefined> {
+    const stat = await this.fileReader.stat(toRootPath(path));
+    return stat.exists && !stat.isDirectory
+      ? this.fileReader.readFile(toRootPath(path))
+      : undefined;
   }
 }
 
@@ -410,6 +628,101 @@ function toRootPath(path: string): string {
 
 function normalizeRelativePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
+}
+
+interface RebuiltScene {
+  path: string;
+  raw: string;
+}
+
+interface RebuiltChapter {
+  path: string;
+  chapterRaw?: string;
+  scenes: RebuiltScene[];
+}
+
+function normalizedProjectTitle(title: string): string {
+  const normalized = title.trim();
+  return normalized.length > 0 ? normalized : "Untitled Project";
+}
+
+function withOptionalTitle(
+  metadata: Record<string, unknown>,
+  title: string
+): Record<string, unknown> {
+  const next = { ...metadata };
+  const normalized = title.trim();
+  if (normalized.length > 0) {
+    next.title = normalized;
+  } else {
+    delete next.title;
+  }
+  return next;
+}
+
+function setMarkdownTitle(raw: string, title: string): string {
+  const parsed = parseNoteFrontmatter(raw);
+  const frontmatter = withOptionalTitle(parsed.frontmatter, title);
+  return Object.keys(frontmatter).length === 0
+    ? parsed.body
+    : serializeNoteFrontmatter(frontmatter, parsed.body);
+}
+
+function serializeTitleYaml(title: string): string {
+  const metadata = withOptionalTitle({}, title);
+  return Object.keys(metadata).length === 0 ? "" : dump(metadata, { lineWidth: -1 });
+}
+
+function serializeSceneMarkdown(title: string): string {
+  const metadata = withOptionalTitle({}, title);
+  return Object.keys(metadata).length === 0 ? "" : serializeNoteFrontmatter(metadata, "");
+}
+
+function nextSequence(sequences: number[]): number {
+  return sequences.length === 0 ? 1 : Math.max(...sequences) + 1;
+}
+
+function sequencePrefix(sequence: number): string {
+  return String(sequence).padStart(2, "0");
+}
+
+function slugifyPathComponent(value: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+  if (slug.length === 0) {
+    throw new Error("Slug must not be empty");
+  }
+  return slug;
+}
+
+function uniqueSequenceName(prefix: string, slug: string, existing: Set<string>): string {
+  let candidate = `${prefix}-${slug}`;
+  let suffix = 2;
+  while (existing.has(candidate)) {
+    candidate = `${prefix}-${slug}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function resequenceDefaultSlug(slug: string, kind: "chapter" | "scene", sequence: number): string {
+  return new RegExp(`^${kind}-\\d+$`).test(slug) ? `${kind}-${sequence}` : slug;
+}
+
+function basenameWithoutExtension(path: string): string {
+  const basename = path.split("/").at(-1) ?? path;
+  return basename.toLowerCase().endsWith(".md") ? basename.slice(0, -3) : basename;
+}
+
+function sceneAtNearestIndex(scenes: SceneRef[], index: number): SceneRef | undefined {
+  if (scenes.length === 0) {
+    return undefined;
+  }
+  return scenes[Math.min(Math.max(index, 0), scenes.length - 1)];
 }
 
 function browserUnavailable(action: string): Error {

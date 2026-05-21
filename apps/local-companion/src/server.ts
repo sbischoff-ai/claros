@@ -156,9 +156,32 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
       }
 
       if (request.method === "POST" && url.pathname === "/api/project/new") {
-        await initializeProject(projectRoot);
+        const body = await readJsonBody(request);
+        await initializeProject(projectRoot, titleFromBody(body));
         project = await openProject(projectRoot);
         writeJson(response, 201, { ok: true, project: summarizeProject(project) });
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/project/mutation") {
+        const current = await ensureProject();
+        const body = await readJsonBody(request);
+        if (!isRecord(body) || typeof body.action !== "string") {
+          writeJson(response, 400, {
+            ok: false,
+            error: { code: "BAD_REQUEST", message: "Expected JSON body with action" },
+          });
+          return;
+        }
+
+        const mutation = await applyProjectMutation(current, body);
+        project = await openProject(projectRoot);
+        writeJson(response, 200, {
+          ok: true,
+          project: summarizeProject(project),
+          ...(mutation.scene === undefined ? {} : { scene: toWorkspaceScene(mutation.scene) }),
+          ...(mutation.nextPath === undefined ? {} : { nextPath: mutation.nextPath }),
+        });
         return;
       }
 
@@ -215,17 +238,21 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
   };
 }
 
-async function initializeProject(projectRoot: string): Promise<void> {
+async function initializeProject(projectRoot: string, title = "Untitled Project"): Promise<void> {
   if (await exists(path.join(projectRoot, "claros.yaml"))) {
     throw new CompanionError(409, "PROJECT_EXISTS", "claros.yaml already exists");
   }
 
   await mkdir(path.join(projectRoot, "manuscript", "01-draft"), { recursive: true });
   await mkdir(path.join(projectRoot, "notes"), { recursive: true });
-  await writeFile(path.join(projectRoot, "claros.yaml"), "claros: 1\ntitle: Untitled Project\n", {
-    encoding: "utf8",
-    flag: "wx",
-  });
+  await writeFile(
+    path.join(projectRoot, "claros.yaml"),
+    `claros: 1\ntitle: ${JSON.stringify(normalizedProjectTitle(title))}\n`,
+    {
+      encoding: "utf8",
+      flag: "wx",
+    }
+  );
   await writeFile(
     path.join(projectRoot, "manuscript", "01-draft", "chapter.yaml"),
     "title: Draft\n",
@@ -266,6 +293,64 @@ function summarizeProject(project: ClarosProject): ProjectSummary {
       .map((chapter) => toWorkspaceChapter(chapter, scenesByChapter.get(chapter.id) ?? [])),
     notes: project.listNotes().map(toWorkspaceNote),
   };
+}
+
+async function applyProjectMutation(
+  project: ClarosProject,
+  body: Record<string, unknown>
+): Promise<{ scene?: SceneRef; nextPath?: string }> {
+  const title = typeof body.title === "string" ? body.title : "";
+  switch (body.action) {
+    case "set-project-title":
+      await project.setProjectTitle(title);
+      return {};
+    case "append-chapter": {
+      const sceneTitle = typeof body.sceneTitle === "string" ? body.sceneTitle : "";
+      const { scene } = await project.appendChapter(title, sceneTitle);
+      return { scene };
+    }
+    case "append-scene": {
+      const { scene } = await project.appendScene(title);
+      return { scene };
+    }
+    case "set-chapter-title":
+      if (typeof body.chapterId !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected chapterId");
+      }
+      await project.setChapterTitle(body.chapterId, title);
+      return {};
+    case "set-scene-title":
+      if (typeof body.path !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected path");
+      }
+      await project.setSceneTitle(body.path, title);
+      return {};
+    case "delete-chapter": {
+      if (typeof body.chapterId !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected chapterId");
+      }
+      const { nextScene } = await project.deleteChapter(body.chapterId);
+      return { nextPath: nextScene?.path };
+    }
+    case "delete-scene": {
+      if (typeof body.path !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected path");
+      }
+      const { nextScene } = await project.deleteScene(body.path);
+      return { nextPath: nextScene?.path };
+    }
+    default:
+      throw new CompanionError(400, "BAD_REQUEST", `Unknown project mutation: ${body.action}`);
+  }
+}
+
+function titleFromBody(body: unknown): string {
+  return isRecord(body) && typeof body.title === "string" ? body.title : "Untitled Project";
+}
+
+function normalizedProjectTitle(title: string): string {
+  const normalized = title.trim();
+  return normalized.length > 0 ? normalized : "Untitled Project";
 }
 
 function normalizeManifest(manifest: ProjectManifest): WorkspaceManifest {

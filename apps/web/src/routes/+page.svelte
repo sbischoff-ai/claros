@@ -29,6 +29,7 @@
     type ProjectSession,
     type WorkspaceChapter,
     type WorkspaceNote,
+    type WorkspaceScene,
   } from "$lib/project-session";
   import type { BrowserDirectoryPicker } from "$lib/browser-file-system";
   import { loadTheme, saveTheme } from "$lib/theme";
@@ -36,7 +37,16 @@
   type SaveState = "saved" | "dirty" | "saving" | "error";
   type ProjectOpenState = "idle" | "opening" | "creating" | "connecting" | "open" | "error";
   type StorageBackendId = "file-picker" | "local-companion";
-  type SidebarItemKind = "section" | "chapter" | "folder" | "scene" | "note";
+  type SidebarItemKind = "section" | "chapter" | "folder" | "scene" | "note" | "add-chapter" | "add-scene";
+  type TitleModalTarget =
+    | "new-project"
+    | "project"
+    | "new-chapter"
+    | "new-chapter-scene"
+    | "new-scene"
+    | "chapter"
+    | "scene";
+  type DeleteModalTarget = "chapter" | "scene";
 
   interface PaletteCommand {
     label: string;
@@ -54,6 +64,33 @@
     collapsible: boolean;
     collapsed: boolean;
     path?: string;
+    chapterId?: string;
+  }
+
+  interface TitleModalState {
+    target: TitleModalTarget;
+    heading: string;
+    value: string;
+    placeholder: string;
+    storageBackendId?: StorageBackendId;
+    chapterTitle?: string;
+    chapterId?: string;
+    scenePath?: string;
+  }
+
+  interface DeleteModalState {
+    target: DeleteModalTarget;
+    heading: string;
+    label: string;
+    chapterId?: string;
+    scenePath?: string;
+    confirmation: string;
+  }
+
+  interface ContextMenuState {
+    x: number;
+    y: number;
+    item: SidebarItem;
   }
 
   interface StorageBackendOption {
@@ -70,6 +107,7 @@
   let commandInput: HTMLInputElement;
   let sidebarNav: HTMLElement;
   let project: ProjectSession | undefined;
+  let projectRevision = 0;
   let activePath = "";
   let activeTitle = "Draft";
   let activeKind: "scene" | "note" = "scene";
@@ -91,11 +129,42 @@
   let createProjectIntent = false;
   let companionConnection: CompanionConnection | undefined;
   let collapsedItems = new Set<string>(["notes"]);
+  let titleModal: TitleModalState | undefined;
+  let deleteModal: DeleteModalState | undefined;
+  let titleModalInput: HTMLInputElement;
+  let deleteModalInput: HTMLInputElement;
+  let contextMenu: ContextMenuState | undefined;
+  let editingProjectTitle = false;
+  let projectTitleDraft = "";
+  let optimisticProjectTitle: string | undefined;
+  let displayProjectTitle = "Claros";
+  let optimisticChapterTitles = new Map<string, string>();
+  let optimisticSceneTitles = new Map<string, string>();
+  let editingSidebarItemId = "";
+  let sidebarTitleDraft = "";
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
-  $: chapters = project?.listChapters() ?? [];
-  $: notes = project?.listNotes() ?? [];
-  $: sidebarItems = buildSidebarItems(chapters, notes, collapsedItems);
+  $: chapters = listProjectChapters(projectRevision, project);
+  $: scenes = listProjectScenes(projectRevision, project);
+  $: notes = listProjectNotes(projectRevision, project);
+  $: displayProjectTitle = projectTitleForDisplay(projectRevision, project, optimisticProjectTitle);
+  $: sidebarItems = buildSidebarItems(
+    chapters,
+    notes,
+    collapsedItems,
+    optimisticChapterTitles,
+    optimisticSceneTitles
+  );
+  $: activeScene = scenes.find((scene) => scene.path === activePath);
+  $: activeChapter = activeScene
+    ? chapters.find((chapter) => chapter.id === activeScene.chapterId)
+    : undefined;
+  $: canDeleteCurrentScene = projectIsOpen && activeScene !== undefined && scenes.length > 1;
+  $: canDeleteCurrentChapter =
+    projectIsOpen &&
+    activeChapter !== undefined &&
+    chapters.length > 1 &&
+    scenes.some((scene) => scene.chapterId !== activeChapter.id);
   $: storageBackendOptions = buildStorageBackendOptions(canOpenLocalProject);
   $: selectedStorageBackend =
     storageBackendOptions.find((backend) => backend.id === selectedStorageBackendId) ??
@@ -111,6 +180,14 @@
   $: if (paletteOpen) {
     selectedCommandIndex = 0;
     void tick().then(() => commandInput?.focus());
+  }
+
+  $: if (titleModal !== undefined) {
+    void tick().then(() => titleModalInput?.focus());
+  }
+
+  $: if (deleteModal !== undefined) {
+    void tick().then(() => deleteModalInput?.focus());
   }
 
   onMount(() => {
@@ -173,6 +250,22 @@
       if (event.key === "Escape") {
         if (storageBackendMenuOpen) {
           storageBackendMenuOpen = false;
+          return;
+        }
+        if (contextMenu !== undefined) {
+          contextMenu = undefined;
+          return;
+        }
+        if (editingProjectTitle || editingSidebarItemId.length > 0) {
+          cancelInlineTitleEdit();
+          return;
+        }
+        if (titleModal !== undefined) {
+          titleModal = undefined;
+          return;
+        }
+        if (deleteModal !== undefined) {
+          deleteModal = undefined;
           return;
         }
         if (paletteOpen) {
@@ -241,7 +334,7 @@
     }
   }
 
-  async function createNewProject(): Promise<void> {
+  async function createNewProject(title = "Untitled Project"): Promise<void> {
     if (!canOpenLocalProject) {
       projectOpenState = "error";
       projectError = "Local folder access is not supported in this browser.";
@@ -263,7 +356,7 @@
     projectError = "";
     try {
       const handle = await picker.showDirectoryPicker({ mode: "readwrite" });
-      project = await createNewLocalProjectSession(handle);
+      project = await createNewLocalProjectSession(handle, title);
       activePath = firstDocumentPath(project);
       await loadDocument(activePath);
       projectOpenState = "open";
@@ -293,11 +386,24 @@
 
   async function createProjectWithBackend(backendId: StorageBackendId): Promise<void> {
     storageBackendMenuOpen = false;
+    openTitleModal({
+      target: "new-project",
+      heading: "New Project",
+      value: "",
+      placeholder: "Untitled Project",
+      storageBackendId: backendId,
+    });
+  }
+
+  async function createProjectWithBackendTitle(
+    backendId: StorageBackendId,
+    title: string
+  ): Promise<void> {
     if (backendId === "file-picker") {
-      await createNewProject();
+      await createNewProject(title);
       return;
     }
-    await createNewCompanionProject();
+    await createNewCompanionProject(title);
   }
 
   function selectStorageBackend(backend: StorageBackendOption): void {
@@ -349,7 +455,7 @@
     }
   }
 
-  async function createNewCompanionProject(): Promise<void> {
+  async function createNewCompanionProject(title = "Untitled Project"): Promise<void> {
     let connection = companionConnection;
     if (connection === undefined) {
       const url = window.prompt("Local companion URL", "http://127.0.0.1:3000");
@@ -372,7 +478,7 @@
     projectError = "";
     try {
       companionConnection = connection;
-      project = await createNewCompanionProjectSession(connection);
+      project = await createNewCompanionProjectSession(connection, title);
       activePath = firstDocumentPath(project);
       await loadDocument(activePath);
       projectOpenState = "open";
@@ -447,6 +553,10 @@
     void flushSave();
   }
 
+  function refreshProjectView(): void {
+    projectRevision += 1;
+  }
+
   async function loadDocument(path: string): Promise<void> {
     if (!project) {
       return;
@@ -462,12 +572,19 @@
 
   async function openDocument(path: string): Promise<void> {
     if (path === activePath) {
+      await focusEditorAfterOpen();
       return;
     }
 
     await flushSave();
     await loadDocument(path);
     editor?.setMarkdown(currentMarkdown);
+    await focusEditorAfterOpen();
+  }
+
+  async function focusEditorAfterOpen(): Promise<void> {
+    await tick();
+    editor?.focus();
   }
 
   function toggleVimMode(): void {
@@ -664,6 +781,48 @@
         run: flushSaveWithoutWaiting,
       },
       {
+        label: "Change Title: Project",
+        disabled: projectCommandDisabled,
+        focusAfter: "none",
+        run: openProjectTitleModal,
+      },
+      {
+        label: "Append: New Chapter",
+        disabled: projectCommandDisabled,
+        focusAfter: "none",
+        run: openAppendChapterModal,
+      },
+      {
+        label: "Change Title: Current Chapter",
+        disabled: projectCommandDisabled || activeChapter === undefined,
+        focusAfter: "none",
+        run: openCurrentChapterTitleModal,
+      },
+      {
+        label: "Delete: Current Chapter",
+        disabled: !canDeleteCurrentChapter,
+        focusAfter: "none",
+        run: openCurrentChapterDeleteModal,
+      },
+      {
+        label: "Append: New Scene",
+        disabled: projectCommandDisabled,
+        focusAfter: "none",
+        run: openAppendSceneModal,
+      },
+      {
+        label: "Change Title: Current Scene",
+        disabled: projectCommandDisabled || activeScene === undefined,
+        focusAfter: "none",
+        run: openCurrentSceneTitleModal,
+      },
+      {
+        label: "Delete: Current Scene",
+        disabled: !canDeleteCurrentScene,
+        focusAfter: "none",
+        run: openCurrentSceneDeleteModal,
+      },
+      {
         label: currentVimMode ? "Disable Vim" : "Enable Vim",
         active: currentVimMode,
         disabled: projectCommandDisabled,
@@ -720,10 +879,44 @@
     ];
   }
 
+  function listProjectChapters(
+    revision: number,
+    session: ProjectSession | undefined
+  ): WorkspaceChapter[] {
+    return revision < 0 ? [] : (session?.listChapters() ?? []);
+  }
+
+  function listProjectScenes(
+    revision: number,
+    session: ProjectSession | undefined
+  ): WorkspaceScene[] {
+    return revision < 0 ? [] : (session?.listScenes() ?? []);
+  }
+
+  function listProjectNotes(
+    revision: number,
+    session: ProjectSession | undefined
+  ): WorkspaceNote[] {
+    return revision < 0 ? [] : (session?.listNotes() ?? []);
+  }
+
+  function projectTitleForDisplay(
+    revision: number,
+    session: ProjectSession | undefined,
+    optimisticTitle: string | undefined
+  ): string {
+    if (optimisticTitle !== undefined) {
+      return optimisticTitle;
+    }
+    return revision < 0 ? "Claros" : (session?.manifest.title ?? "Claros");
+  }
+
   function buildSidebarItems(
     chapterList: WorkspaceChapter[],
     noteList: WorkspaceNote[],
-    collapsed: Set<string>
+    collapsed: Set<string>,
+    optimisticChapters: Map<string, string>,
+    optimisticScenes: Map<string, string>
   ): SidebarItem[] {
     const items: SidebarItem[] = [
       {
@@ -742,10 +935,11 @@
         items.push({
           id: chapterId,
           kind: "chapter",
-          label: chapter.title || `Chapter ${chapter.sequence}`,
+          label: optimisticChapters.get(chapter.id) ?? chapter.title ?? `Chapter ${chapter.sequence}`,
           depth: 1,
           collapsible: true,
           collapsed: collapsed.has(chapterId),
+          chapterId: chapter.id,
         });
 
         if (!collapsed.has(chapterId)) {
@@ -753,15 +947,37 @@
             items.push({
               id: scene.path,
               kind: "scene",
-              label: scene.title || `Scene ${scene.sequence}`,
+              label: optimisticScenes.get(scene.path) ?? scene.title ?? `Scene ${scene.sequence}`,
               depth: 2,
               collapsible: false,
               collapsed: false,
               path: scene.path,
+              chapterId: chapter.id,
+            });
+          }
+
+          if (chapter.id === chapterList.at(-1)?.id) {
+            items.push({
+              id: "action:add-scene:append",
+              kind: "add-scene",
+              label: "Add Scene",
+              depth: 2,
+              collapsible: false,
+              collapsed: false,
+              chapterId: chapter.id,
             });
           }
         }
       }
+
+      items.push({
+        id: "action:add-chapter:append",
+        kind: "add-chapter",
+        label: "Add Chapter",
+        depth: 1,
+        collapsible: false,
+        collapsed: false,
+      });
     }
 
     items.push({
@@ -856,6 +1072,10 @@
   }
 
   function handleSidebarKeydown(event: KeyboardEvent): void {
+    if (editingSidebarItemId.length > 0 || event.target !== sidebarNav) {
+      return;
+    }
+
     const currentIndex = sidebarItems.findIndex((item) => item.id === focusedSidebarItemId);
 
     if ((event.metaKey || event.ctrlKey) && event.key === "ArrowLeft") {
@@ -932,6 +1152,14 @@
 
   function activateFocusedItem(): void {
     const item = sidebarItems.find((candidate) => candidate.id === focusedSidebarItemId);
+    if (item?.kind === "add-chapter") {
+      openAppendChapterModal();
+      return;
+    }
+    if (item?.kind === "add-scene") {
+      openAppendSceneModal();
+      return;
+    }
     if (item?.path !== undefined) {
       void openDocument(item.path);
       return;
@@ -946,6 +1174,328 @@
     if (item !== undefined) {
       focusedSidebarItemId = item.id;
     }
+  }
+
+  function openTitleModal(state: TitleModalState): void {
+    paletteOpen = false;
+    contextMenu = undefined;
+    titleModal = state;
+  }
+
+  function openProjectTitleModal(): void {
+    openTitleModal({
+      target: "project",
+      heading: "Project Title",
+      value: displayProjectTitle,
+      placeholder: "Untitled Project",
+    });
+  }
+
+  function openAppendChapterModal(): void {
+    openTitleModal({
+      target: "new-chapter",
+      heading: "New Chapter",
+      value: "",
+      placeholder: `Chapter ${chapters.length + 1}`,
+    });
+  }
+
+  function openAppendSceneModal(): void {
+    openTitleModal({
+      target: "new-scene",
+      heading: "New Scene",
+      value: "",
+      placeholder: `Scene ${scenes.length + 1}`,
+    });
+  }
+
+  function openCurrentChapterTitleModal(): void {
+    if (activeChapter === undefined) {
+      return;
+    }
+    openTitleModal({
+      target: "chapter",
+      heading: "Chapter Title",
+      value: activeChapter.title,
+      placeholder: `Chapter ${activeChapter.sequence}`,
+      chapterId: activeChapter.id,
+    });
+  }
+
+  function openCurrentSceneTitleModal(): void {
+    if (activeScene === undefined) {
+      return;
+    }
+    openTitleModal({
+      target: "scene",
+      heading: "Scene Title",
+      value: activeScene.title,
+      placeholder: `Scene ${activeScene.sequence}`,
+      scenePath: activeScene.path,
+    });
+  }
+
+  function openCurrentChapterDeleteModal(): void {
+    if (activeChapter !== undefined && canDeleteChapter(activeChapter)) {
+      openDeleteChapterModal(activeChapter);
+    }
+  }
+
+  function openCurrentSceneDeleteModal(): void {
+    if (activeScene !== undefined && canDeleteScene()) {
+      openDeleteSceneModal(activeScene);
+    }
+  }
+
+  function openDeleteChapterModal(chapter: WorkspaceChapter): void {
+    contextMenu = undefined;
+    deleteModal = {
+      target: "chapter",
+      heading: "Delete Chapter",
+      label: chapter.title,
+      chapterId: chapter.id,
+      confirmation: "",
+    };
+  }
+
+  function openDeleteSceneModal(scene: WorkspaceScene): void {
+    contextMenu = undefined;
+    deleteModal = {
+      target: "scene",
+      heading: "Delete Scene",
+      label: scene.title,
+      scenePath: scene.path,
+      confirmation: "",
+    };
+  }
+
+  async function submitTitleModal(): Promise<void> {
+    if (titleModal === undefined) {
+      return;
+    }
+    const modal = titleModal;
+    titleModal = undefined;
+    await flushSave();
+    if (modal.target === "new-project" && modal.storageBackendId !== undefined) {
+      await createProjectWithBackendTitle(modal.storageBackendId, modal.value);
+      return;
+    }
+    if (project === undefined) {
+      return;
+    }
+    if (modal.target === "project") {
+      await setProjectTitleFromInput(modal.value);
+      return;
+    }
+    if (modal.target === "new-chapter") {
+      openTitleModal({
+        target: "new-chapter-scene",
+        heading: "New Scene",
+        value: "",
+        placeholder: `Scene ${scenes.length + 1}`,
+        chapterTitle: modal.value,
+      });
+      return;
+    }
+    if (modal.target === "new-chapter-scene") {
+      const scene = await project.appendChapter(modal.chapterTitle ?? "", modal.value);
+      refreshProjectView();
+      await openDocument(scene.path);
+      return;
+    }
+    if (modal.target === "new-scene") {
+      const scene = await project.appendScene(modal.value);
+      refreshProjectView();
+      await openDocument(scene.path);
+      return;
+    }
+    if (modal.target === "chapter" && modal.chapterId !== undefined) {
+      await setChapterTitleFromInput(modal.chapterId, modal.value);
+      return;
+    }
+    if (modal.target === "scene" && modal.scenePath !== undefined) {
+      await setSceneTitleFromInput(modal.scenePath, modal.value);
+      if (modal.scenePath === activePath) {
+        await loadDocument(activePath);
+      }
+    }
+  }
+
+  async function submitDeleteModal(): Promise<void> {
+    if (deleteModal === undefined || project === undefined || deleteModal.confirmation !== "delete") {
+      return;
+    }
+    const modal = deleteModal;
+    deleteModal = undefined;
+    await flushSave();
+    if (modal.target === "chapter" && modal.chapterId !== undefined) {
+      const nextPath = await project.deleteChapter(modal.chapterId);
+      refreshProjectView();
+      await openDocument(nextPath);
+      return;
+    }
+    if (modal.target === "scene" && modal.scenePath !== undefined) {
+      const nextPath = await project.deleteScene(modal.scenePath);
+      refreshProjectView();
+      await openDocument(nextPath);
+    }
+  }
+
+  function beginProjectTitleEdit(): void {
+    if (!projectIsOpen) {
+      return;
+    }
+    projectTitleDraft = project?.manifest.title ?? "";
+    editingProjectTitle = true;
+    void tick().then(() => {
+      const input = document.querySelector<HTMLInputElement>(".project-title-input");
+      input?.focus();
+      input?.select();
+    });
+  }
+
+  async function commitProjectTitleEdit(): Promise<void> {
+    if (!project || !editingProjectTitle) {
+      return;
+    }
+    editingProjectTitle = false;
+    await setProjectTitleFromInput(projectTitleDraft);
+  }
+
+  async function setProjectTitleFromInput(title: string): Promise<void> {
+    if (project === undefined) {
+      return;
+    }
+    optimisticProjectTitle = normalizedProjectTitle(title);
+    try {
+      await project.setProjectTitle(title);
+    } finally {
+      optimisticProjectTitle = undefined;
+      refreshProjectView();
+    }
+  }
+
+  async function setChapterTitleFromInput(chapterId: string, title: string): Promise<void> {
+    if (project === undefined) {
+      return;
+    }
+    const nextTitle = normalizedChapterTitle(chapterId, title);
+    optimisticChapterTitles = new Map(optimisticChapterTitles).set(chapterId, nextTitle);
+    try {
+      await project.setChapterTitle(chapterId, title);
+    } finally {
+      const next = new Map(optimisticChapterTitles);
+      next.delete(chapterId);
+      optimisticChapterTitles = next;
+      refreshProjectView();
+    }
+  }
+
+  async function setSceneTitleFromInput(scenePath: string, title: string): Promise<void> {
+    if (project === undefined) {
+      return;
+    }
+    const nextTitle = normalizedSceneTitle(scenePath, title);
+    optimisticSceneTitles = new Map(optimisticSceneTitles).set(scenePath, nextTitle);
+    if (scenePath === activePath) {
+      activeTitle = nextTitle;
+    }
+    try {
+      await project.setSceneTitle(scenePath, title);
+    } finally {
+      const next = new Map(optimisticSceneTitles);
+      next.delete(scenePath);
+      optimisticSceneTitles = next;
+      refreshProjectView();
+    }
+  }
+
+  function beginSidebarTitleEdit(item: SidebarItem): void {
+    editingSidebarItemId = item.id;
+    sidebarTitleDraft = item.label;
+    contextMenu = undefined;
+    void tick().then(() => {
+      const input = document.querySelector<HTMLInputElement>(".sidebar-title-input");
+      input?.focus();
+      input?.select();
+    });
+  }
+
+  async function commitSidebarTitleEdit(item: SidebarItem): Promise<void> {
+    if (!project || editingSidebarItemId !== item.id) {
+      return;
+    }
+    editingSidebarItemId = "";
+    if (item.kind === "chapter" && item.chapterId !== undefined) {
+      await setChapterTitleFromInput(item.chapterId, sidebarTitleDraft);
+    }
+    if (item.kind === "scene" && item.path !== undefined) {
+      await setSceneTitleFromInput(item.path, sidebarTitleDraft);
+      if (item.path === activePath) {
+        await loadDocument(activePath);
+      }
+    }
+  }
+
+  function cancelInlineTitleEdit(): void {
+    editingProjectTitle = false;
+    editingSidebarItemId = "";
+  }
+
+  function openSidebarContextMenu(event: MouseEvent, item: SidebarItem): void {
+    if (item.kind !== "chapter" && item.kind !== "scene") {
+      return;
+    }
+    event.preventDefault();
+    focusedSidebarItemId = item.id;
+    contextMenu = { x: event.clientX, y: event.clientY, item };
+  }
+
+  function beginContextMenuTitleEdit(): void {
+    if (contextMenu !== undefined) {
+      beginSidebarTitleEdit(contextMenu.item);
+    }
+  }
+
+  function canDeleteChapter(chapter: WorkspaceChapter): boolean {
+    return chapters.length > 1 && scenes.some((scene) => scene.chapterId !== chapter.id);
+  }
+
+  function canDeleteScene(): boolean {
+    return scenes.length > 1;
+  }
+
+  function normalizedProjectTitle(title: string): string {
+    const normalized = title.trim();
+    return normalized.length > 0 ? normalized : "Untitled Project";
+  }
+
+  function normalizedChapterTitle(chapterId: string, title: string): string {
+    const normalized = title.trim();
+    if (normalized.length > 0) {
+      return normalized;
+    }
+    const chapter = chapters.find((candidate) => candidate.id === chapterId);
+    return `Chapter ${chapter?.sequence ?? 1}`;
+  }
+
+  function normalizedSceneTitle(scenePath: string, title: string): string {
+    const normalized = title.trim();
+    if (normalized.length > 0) {
+      return normalized;
+    }
+    const scene = scenes.find((candidate) => candidate.path === scenePath);
+    return `Scene ${scene?.sequence ?? 1}`;
+  }
+
+  function chapterForItem(item: SidebarItem): WorkspaceChapter | undefined {
+    return item.chapterId === undefined
+      ? undefined
+      : chapters.find((chapter) => chapter.id === item.chapterId);
+  }
+
+  function sceneForItem(item: SidebarItem): WorkspaceScene | undefined {
+    return item.path === undefined ? undefined : scenes.find((scene) => scene.path === item.path);
   }
 
   function saveStateLabel(state: SaveState): string {
@@ -982,7 +1532,7 @@
 
     <aside class:open={sidebarOpen} class="sidebar" aria-label="Project sidebar">
       <div class="sidebar-head">
-        <span>{project?.manifest.title ?? "Claros"}</span>
+        <span>Project</span>
         <button type="button" class="icon-button" aria-label="Close sidebar" on:click={closeSidebar}>
           <CaretLeft size={18} weight="bold" />
         </button>
@@ -1002,14 +1552,27 @@
             class:active={item.path === activePath}
             class:focused={item.id === focusedSidebarItemId}
             class:branch={item.collapsible}
+            class:add-line={item.kind === "add-chapter" || item.kind === "add-scene"}
             style={`--depth: ${item.depth}`}
             role="treeitem"
             aria-selected={item.path === activePath}
             aria-current={item.path === activePath ? "page" : undefined}
             aria-expanded={item.collapsible ? !item.collapsed : undefined}
             on:focus={() => (focusedSidebarItemId = item.id)}
+            on:contextmenu={(event) => openSidebarContextMenu(event, item)}
             on:click={() => {
+              if (editingSidebarItemId === item.id) {
+                return;
+              }
               focusedSidebarItemId = item.id;
+              if (item.kind === "add-chapter") {
+                openAppendChapterModal();
+                return;
+              }
+              if (item.kind === "add-scene") {
+                openAppendSceneModal();
+                return;
+              }
               if (item.path !== undefined) {
                 void openDocument(item.path);
               } else if (item.collapsible) {
@@ -1025,7 +1588,27 @@
             {:else}
               <span class="item-icon-spacer"></span>
             {/if}
-            <span class="item-label">{item.label}</span>
+            {#if editingSidebarItemId === item.id}
+              <input
+                class="sidebar-title-input"
+                bind:value={sidebarTitleDraft}
+                aria-label="Title"
+                on:click|stopPropagation
+                on:keydown|stopPropagation={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void commitSidebarTitleEdit(item);
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    cancelInlineTitleEdit();
+                  }
+                }}
+                on:blur={() => void commitSidebarTitleEdit(item)}
+              />
+            {:else}
+              <span class="item-label">{item.label}</span>
+            {/if}
           </button>
         {/each}
       </div>
@@ -1035,7 +1618,33 @@
   <section class="workspace">
     <header class="topbar" aria-label="Workspace">
       <div class="identity">
-        <span class="product">{project?.manifest.title ?? "Claros"}</span>
+        {#if projectIsOpen && editingProjectTitle}
+          <input
+            class="project-title-input"
+            bind:value={projectTitleDraft}
+            aria-label="Project title"
+            on:keydown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void commitProjectTitleEdit();
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelInlineTitleEdit();
+              }
+            }}
+            on:blur={() => void commitProjectTitleEdit()}
+          />
+        {:else}
+          <button
+            type="button"
+            class="product title-button"
+            disabled={!projectIsOpen}
+            on:click={beginProjectTitleEdit}
+          >
+            {displayProjectTitle}
+          </button>
+        {/if}
         {#if projectIsOpen}
           <span class="draft-name">{activeTitle}</span>
           <span class="document-kind">{activeKind}</span>
@@ -1182,6 +1791,98 @@
             <p class="empty-command">No commands</p>
           {/each}
         </div>
+      </section>
+    </div>
+  {/if}
+
+  {#if contextMenu !== undefined}
+    <button
+      type="button"
+      class="context-backdrop"
+      aria-label="Close context menu"
+      on:click={() => (contextMenu = undefined)}
+    ></button>
+    <div
+      class="context-menu"
+      style={`left: ${contextMenu.x}px; top: ${contextMenu.y}px`}
+      role="menu"
+    >
+      <button type="button" role="menuitem" on:click={beginContextMenuTitleEdit}>
+        Change title
+      </button>
+      {#if contextMenu.item.kind === "chapter"}
+        {@const chapter = chapterForItem(contextMenu.item)}
+        <button
+          type="button"
+          role="menuitem"
+          disabled={chapter === undefined || !canDeleteChapter(chapter)}
+          on:click={() => chapter !== undefined && openDeleteChapterModal(chapter)}
+        >
+          Delete chapter
+        </button>
+      {:else}
+        {@const scene = sceneForItem(contextMenu.item)}
+        <button
+          type="button"
+          role="menuitem"
+          disabled={scene === undefined || !canDeleteScene()}
+          on:click={() => scene !== undefined && openDeleteSceneModal(scene)}
+        >
+          Delete scene
+        </button>
+      {/if}
+    </div>
+  {/if}
+
+  {#if titleModal !== undefined}
+    <div class="modal-layer">
+      <button
+        type="button"
+        class="modal-backdrop"
+        aria-label="Close title dialog"
+        on:click={() => (titleModal = undefined)}
+      ></button>
+      <section class="modal" aria-label={titleModal.heading}>
+        <h2>{titleModal.heading}</h2>
+        <form on:submit|preventDefault={() => void submitTitleModal()}>
+          <input
+            bind:this={titleModalInput}
+            bind:value={titleModal.value}
+            placeholder={titleModal.placeholder}
+            aria-label={titleModal.heading}
+          />
+          <div class="modal-actions">
+            <button type="button" on:click={() => (titleModal = undefined)}>Cancel</button>
+            <button type="submit">Save</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  {/if}
+
+  {#if deleteModal !== undefined}
+    <div class="modal-layer">
+      <button
+        type="button"
+        class="modal-backdrop"
+        aria-label="Close delete dialog"
+        on:click={() => (deleteModal = undefined)}
+      ></button>
+      <section class="modal" aria-label={deleteModal.heading}>
+        <h2>{deleteModal.heading}</h2>
+        <p>Type delete to confirm.</p>
+        <form on:submit|preventDefault={() => void submitDeleteModal()}>
+          <input
+            bind:this={deleteModalInput}
+            bind:value={deleteModal.confirmation}
+            placeholder="delete"
+            aria-label={`Confirm ${deleteModal.label}`}
+          />
+          <div class="modal-actions">
+            <button type="button" on:click={() => (deleteModal = undefined)}>Cancel</button>
+            <button type="submit" disabled={deleteModal.confirmation !== "delete"}>Delete</button>
+          </div>
+        </form>
       </section>
     </div>
   {/if}
@@ -1350,6 +2051,88 @@
     background: var(--claros-prose-widget-background);
   }
 
+  .sidebar-item.add-line {
+    position: relative;
+    grid-template-columns: 1fr;
+    min-height: 1.55rem;
+    border-color: transparent;
+    padding-left: calc(0.35rem + var(--depth) * 0.82rem);
+    color: var(--claros-prose-muted);
+  }
+
+  .sidebar-item.add-line .item-label {
+    position: absolute;
+    z-index: 1;
+    left: 50%;
+    top: 50%;
+    max-width: max-content;
+    padding: 0 0.35rem;
+    transform: translate(-50%, -50%);
+    background: color-mix(in srgb, var(--claros-editor-background) 94%, var(--claros-app-background));
+    color: var(--claros-prose-text);
+    font-weight: 600;
+    visibility: hidden;
+  }
+
+  .sidebar-item.add-line .item-caret,
+  .sidebar-item.add-line .item-icon-spacer {
+    display: none;
+  }
+
+  .sidebar-item.add-line::before {
+    content: "";
+    position: absolute;
+    left: calc(0.55rem + var(--depth) * 0.82rem);
+    right: 0.55rem;
+    top: 50%;
+    height: 1px;
+    background: var(--claros-prose-widget-border);
+  }
+
+  .sidebar-item.add-line::after {
+    content: "+";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 1;
+    min-width: 1.2rem;
+    transform: translate(-50%, -50%);
+    background: color-mix(in srgb, var(--claros-editor-background) 94%, var(--claros-app-background));
+    color: var(--claros-prose-muted);
+    font: 0.86rem/1 system-ui, sans-serif;
+    text-align: center;
+  }
+
+  .sidebar-item.add-line.focused::before,
+  .sidebar-item.add-line:hover::before,
+  .sidebar-item.add-line:focus-visible::before {
+    height: 2px;
+    background: var(--claros-prose-focus-ring);
+  }
+
+  .sidebar-item.add-line.focused::after,
+  .sidebar-item.add-line:hover::after,
+  .sidebar-item.add-line:focus-visible::after {
+    content: "";
+  }
+
+  .sidebar-item.add-line.focused .item-label,
+  .sidebar-item.add-line:hover .item-label,
+  .sidebar-item.add-line:focus-visible .item-label {
+    visibility: visible;
+  }
+
+  .sidebar-title-input {
+    min-width: 0;
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid var(--claros-prose-focus-ring);
+    background: transparent;
+    color: var(--claros-prose-text);
+    outline: none;
+    font: inherit;
+  }
+
   .topbar {
     position: fixed;
     z-index: 10;
@@ -1385,6 +2168,28 @@
 
   .product {
     color: var(--claros-prose-text);
+    font: 600 0.92rem/1.2 system-ui, sans-serif;
+  }
+
+  .title-button {
+    min-height: 1.8rem;
+    padding: 0 0.25rem;
+    color: var(--claros-prose-text);
+  }
+
+  .title-button:disabled {
+    cursor: default;
+    opacity: 1;
+  }
+
+  .project-title-input {
+    width: min(18rem, 38vw);
+    min-height: 1.8rem;
+    border: 0;
+    border-bottom: 1px solid var(--claros-prose-focus-ring);
+    background: transparent;
+    color: var(--claros-prose-text);
+    outline: none;
     font: 600 0.92rem/1.2 system-ui, sans-serif;
   }
 
@@ -1701,6 +2506,119 @@
     padding: 0.65rem 0.5rem;
     color: var(--claros-prose-muted);
     font: 0.95rem/1.3 system-ui, sans-serif;
+  }
+
+  .context-backdrop,
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    width: 100%;
+    min-height: 100%;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    cursor: default;
+  }
+
+  .context-backdrop:hover,
+  .context-backdrop:focus-visible {
+    border-color: transparent;
+    background: transparent;
+    outline: none;
+  }
+
+  .modal-backdrop:hover,
+  .modal-backdrop:focus-visible {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--claros-app-background) 62%, transparent);
+    outline: none;
+  }
+
+  .context-menu {
+    position: fixed;
+    z-index: 50;
+    display: grid;
+    gap: 0.2rem;
+    min-width: 11rem;
+    border: 1px solid var(--claros-prose-widget-border);
+    border-radius: 8px;
+    padding: 0.35rem;
+    background: var(--claros-editor-background);
+    box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--claros-prose-text) 14%, transparent);
+  }
+
+  .context-menu button {
+    justify-content: flex-start;
+    width: 100%;
+    text-align: left;
+  }
+
+  .modal-layer {
+    position: fixed;
+    z-index: 55;
+    inset: 0;
+    display: grid;
+    align-items: start;
+    justify-items: center;
+    padding-top: 16vh;
+  }
+
+  .modal-backdrop {
+    background: color-mix(in srgb, var(--claros-app-background) 62%, transparent);
+  }
+
+  .modal {
+    position: relative;
+    z-index: 56;
+    display: grid;
+    gap: 0.8rem;
+    width: min(24rem, calc(100vw - 2rem));
+    border: 1px solid var(--claros-prose-widget-border);
+    border-radius: 8px;
+    padding: 1rem;
+    background: var(--claros-editor-background);
+    box-shadow: 0 1.25rem 4rem color-mix(in srgb, var(--claros-prose-text) 16%, transparent);
+  }
+
+  .modal h2,
+  .modal p {
+    margin: 0;
+  }
+
+  .modal h2 {
+    color: var(--claros-prose-text);
+    font: 600 0.98rem/1.2 system-ui, sans-serif;
+  }
+
+  .modal p {
+    color: var(--claros-prose-muted);
+    font: 0.84rem/1.4 system-ui, sans-serif;
+  }
+
+  .modal form {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .modal input {
+    min-height: 2.5rem;
+    border: 0;
+    border-bottom: 1px solid var(--claros-prose-widget-border);
+    background: transparent;
+    color: var(--claros-prose-text);
+    outline: none;
+  }
+
+  .modal input:focus {
+    border-bottom-color: var(--claros-prose-focus-ring);
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.4rem;
   }
 
   @media (max-width: 800px) {

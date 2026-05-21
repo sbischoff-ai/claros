@@ -318,6 +318,59 @@ describe("openProject", () => {
     });
   });
 
+  it("appends and titles manuscript chapters and scenes", async () => {
+    const root = await createProjectRoot();
+    const project = await openProject(root);
+
+    await project.setProjectTitle("Next Workspace");
+    const appendedChapter = await project.appendChapter("Second Act");
+    const appendedScene = await project.appendScene("");
+    await project.setChapterTitle("01-prologue", "");
+    await project.setSceneTitle("manuscript/01-prologue/01-opening.md", "A New Opening");
+
+    expect(appendedChapter.scene.path).toBe("manuscript/02-second-act/03-scene-3.md");
+    expect(appendedScene.scene.path).toBe("manuscript/02-second-act/04-scene-4.md");
+    expect(project.listChapters().map((chapter) => chapter.title)).toEqual([
+      "Chapter 1",
+      "Second Act",
+    ]);
+    expect(project.listScenes().map((scene) => scene.title ?? `Scene ${scene.sequence}`)).toEqual([
+      "A New Opening",
+      "Arrival",
+      "Scene 3",
+      "Scene 4",
+    ]);
+    expect(
+      parseStateFile(await fs.readFile(path.join(root, "claros.yaml"), "utf8")).data
+    ).toMatchObject({
+      title: "Next Workspace",
+    });
+  });
+
+  it("deletes scenes and chapters while resequencing manuscript paths", async () => {
+    const root = await createProjectRoot();
+    const project = await openProject(root);
+
+    await project.appendChapter("Second Act");
+    const deleteSceneResult = await project.deleteScene("manuscript/01-prologue/01-opening.md");
+
+    expect(deleteSceneResult.nextScene?.path).toBe("manuscript/01-prologue/01-arrival.md");
+    expect(project.listScenes().map((scene) => scene.path)).toEqual([
+      "manuscript/01-prologue/01-arrival.md",
+      "manuscript/02-second-act/02-scene-2.md",
+    ]);
+
+    const deleteChapterResult = await project.deleteChapter("01-prologue");
+    expect(deleteChapterResult.nextScene?.path).toBe("manuscript/01-second-act/01-scene-1.md");
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual(["01-second-act"]);
+    expect(project.listScenes().map((scene) => scene.path)).toEqual([
+      "manuscript/01-second-act/01-scene-1.md",
+    ]);
+    await expect(project.deleteScene("manuscript/01-second-act/01-scene-1.md")).rejects.toThrow(
+      "Cannot delete the final remaining scene"
+    );
+  });
+
   it("plans note renames without modifying files during dry-run", async () => {
     const root = await createProjectRoot();
     const project = await openProject(root);

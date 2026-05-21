@@ -74,7 +74,7 @@ export class NodeProjectFileWriter implements ProjectFileWriter {
   }
 
   async removeFile(filePath: string): Promise<void> {
-    await rm(filePath, { force: true });
+    await rm(filePath, { force: true, recursive: true });
   }
 }
 

@@ -88,6 +88,32 @@ describe("local companion server", () => {
       await fs.readFile(path.join(root, "manuscript/01-draft/01-opening.md"), "utf8")
     ).toContain("## Opening");
   });
+
+  it("mutates project titles and manuscript structure", async () => {
+    const root = await createProjectRoot();
+    const { baseUrl, token } = await start(root);
+
+    const renamed = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "set-project-title",
+      title: "Renamed Companion",
+    })) as ProjectResponse;
+    expect(renamed.project.manifest.title).toBe("Renamed Companion");
+
+    const chapter = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "append-chapter",
+      title: "Second Act",
+    })) as MutationResponse;
+    expect(chapter.scene.path).toBe("manuscript/02-second-act/02-scene-2.md");
+
+    const deleted = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "delete-scene",
+      path: "manuscript/01-start/01-opening.md",
+    })) as MutationResponse;
+    expect(deleted.nextPath).toBe("manuscript/01-second-act/01-scene-1.md");
+    expect(deleted.project.chapters.map((entry) => entry.scenes[0].path)).toEqual([
+      "manuscript/01-second-act/01-scene-1.md",
+    ]);
+  });
 });
 
 async function start(
@@ -115,11 +141,34 @@ async function fetchJson(baseUrl: string, token: string, path: string): Promise<
   return response.json();
 }
 
+async function postJson(
+  baseUrl: string,
+  token: string,
+  path: string,
+  body: Record<string, unknown>
+): Promise<unknown> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  expect(response.status).toBe(200);
+  return response.json();
+}
+
 interface ProjectResponse {
   project: {
     manifest: { title: string };
     chapters: Array<{ scenes: Array<{ path: string }> }>;
   };
+}
+
+interface MutationResponse extends ProjectResponse {
+  scene: { path: string };
+  nextPath?: string;
 }
 
 interface DocumentResponse {

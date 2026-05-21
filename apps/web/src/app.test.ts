@@ -125,11 +125,39 @@ describe("project session", () => {
 
   it("creates a new project from browser file handles", async () => {
     const handle = directory("project");
-    const session = await createNewLocalProjectSession(handle);
+    const session = await createNewLocalProjectSession(handle, "Browser Draft");
 
-    expect(session.manifest.title).toBe("Untitled Project");
+    expect(session.manifest.title).toBe("Browser Draft");
     expect(firstDocumentPath(session)).toBe("manuscript/01-draft/01-opening.md");
-    expect(await readHandleFile(handle, "/claros.yaml")).toContain("Untitled Project");
+    expect(await readHandleFile(handle, "/claros.yaml")).toContain("Browser Draft");
+  });
+
+  it("mutates local project titles and manuscript structure", async () => {
+    const handle = createProjectHandle();
+    const session = await openLocalProjectSession(handle);
+
+    await session.setProjectTitle("Renamed Workspace");
+    const chapterScene = await session.appendChapter("Second Act");
+    const appendedScene = await session.appendScene("");
+    await session.setChapterTitle("01-start", "");
+    await session.setSceneTitle("manuscript/01-start/01-opening.md", "A New Opening");
+
+    expect(session.manifest.title).toBe("Renamed Workspace");
+    expect(chapterScene.path).toBe("manuscript/02-second-act/02-scene-2.md");
+    expect(appendedScene.path).toBe("manuscript/02-second-act/03-scene-3.md");
+    expect(session.listChapters().map((chapter) => chapter.title)).toEqual([
+      "Chapter 1",
+      "Second Act",
+    ]);
+    expect(session.listScenes().map((scene) => scene.title)).toEqual([
+      "A New Opening",
+      "Scene 2",
+      "Scene 3",
+    ]);
+
+    const nextPath = await session.deleteScene("manuscript/01-start/01-opening.md");
+    expect(nextPath).toBe("manuscript/01-second-act/01-scene-1.md");
+    expect(session.listChapters().map((chapter) => chapter.id)).toEqual(["01-second-act"]);
   });
 
   it("opens and writes through the local companion API", async () => {
@@ -195,6 +223,12 @@ describe("workspace command surface", () => {
     expect(pageSource).toContain("New Project: Local Folder");
     expect(pageSource).toContain("Open Project: Local Companion");
     expect(pageSource).toContain("New Project: Local Companion");
+    expect(pageSource).toContain("Change Title: Current Scene");
+    expect(pageSource).toContain("<span>Project</span>");
+    expect(pageSource).toContain('target: "new-chapter-scene"');
+    expect(pageSource).toContain("optimisticChapterTitles");
+    expect(pageSource).toContain("optimisticSceneTitles");
+    expect(pageSource).toContain("await focusEditorAfterOpen()");
     expect(pageSource).not.toContain("Connect Local Companion");
     expect(pageSource).toContain('event.key === "ArrowLeft"');
     expect(pageSource).toContain('event.key === "ArrowRight"');
@@ -261,6 +295,10 @@ class MemoryDirectoryHandle implements DirectoryHandle {
       return created;
     }
     throw new Error(`Directory not found: ${name}`);
+  }
+
+  async removeEntry(name: string, _options?: { recursive?: boolean }): Promise<void> {
+    this.entries.delete(name);
   }
 }
 
