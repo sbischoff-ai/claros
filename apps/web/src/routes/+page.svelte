@@ -1,7 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
+  import Book from "phosphor-svelte/lib/Book";
+  import CaretLeft from "phosphor-svelte/lib/CaretLeft";
   import CaretDown from "phosphor-svelte/lib/CaretDown";
+  import Command from "phosphor-svelte/lib/Command";
+  import Files from "phosphor-svelte/lib/Files";
   import FolderOpen from "phosphor-svelte/lib/FolderOpen";
+  import Notebook from "phosphor-svelte/lib/Notebook";
   import Plus from "phosphor-svelte/lib/Plus";
   import TerminalWindow from "phosphor-svelte/lib/TerminalWindow";
   import {
@@ -54,6 +59,7 @@
   interface StorageBackendOption {
     id: StorageBackendId;
     label: string;
+    icon: typeof FolderOpen;
     available: boolean;
     unavailableReason?: string;
   }
@@ -80,6 +86,7 @@
   let projectError = "";
   let canOpenLocalProject = false;
   let selectedStorageBackendId: StorageBackendId = "file-picker";
+  let openStorageBackendId: StorageBackendId = "file-picker";
   let storageBackendMenuOpen = false;
   let createProjectIntent = false;
   let companionConnection: CompanionConnection | undefined;
@@ -92,6 +99,9 @@
   $: storageBackendOptions = buildStorageBackendOptions(canOpenLocalProject);
   $: selectedStorageBackend =
     storageBackendOptions.find((backend) => backend.id === selectedStorageBackendId) ??
+    storageBackendOptions[0];
+  $: openStorageBackend =
+    storageBackendOptions.find((backend) => backend.id === openStorageBackendId) ??
     storageBackendOptions[0];
   $: projectIsOpen = projectOpenState === "open";
   $: paletteCommands = buildPaletteCommands(activeTheme, vimMode, projectIsOpen, canOpenLocalProject);
@@ -216,6 +226,7 @@
       activePath = firstDocumentPath(project);
       await loadDocument(activePath);
       projectOpenState = "open";
+      openStorageBackendId = "file-picker";
       sidebarOpen = false;
       await ensureEditor();
       editor?.setMarkdown(currentMarkdown);
@@ -256,6 +267,7 @@
       activePath = firstDocumentPath(project);
       await loadDocument(activePath);
       projectOpenState = "open";
+      openStorageBackendId = "file-picker";
       sidebarOpen = false;
       await ensureEditor();
       editor?.setMarkdown(currentMarkdown);
@@ -326,6 +338,7 @@
       activePath = firstDocumentPath(project);
       await loadDocument(activePath);
       projectOpenState = "open";
+      openStorageBackendId = "local-companion";
       sidebarOpen = false;
       await ensureEditor();
       editor?.setMarkdown(currentMarkdown);
@@ -363,6 +376,7 @@
       activePath = firstDocumentPath(project);
       await loadDocument(activePath);
       projectOpenState = "open";
+      openStorageBackendId = "local-companion";
       sidebarOpen = false;
       await ensureEditor();
       editor?.setMarkdown(currentMarkdown);
@@ -693,12 +707,14 @@
       {
         id: "file-picker",
         label: "Local Folder",
+        icon: FolderOpen,
         available: localProjectSupported,
         unavailableReason: localProjectSupported ? undefined : "Not supported by this browser",
       },
       {
         id: "local-companion",
         label: "Local Companion",
+        icon: TerminalWindow,
         available: true,
       },
     ];
@@ -952,20 +968,24 @@
 
 <main bind:this={appShell} class={`app-shell ${projectIsOpen && sidebarOpen ? "sidebar-open" : ""}`}>
   {#if projectIsOpen}
-    <button
-      type="button"
-      class="sidebar-tab"
-      aria-label={sidebarOpen ? "Close workspace sidebar" : "Open workspace sidebar"}
-      aria-expanded={sidebarOpen}
-      on:click={toggleSidebar}
-    >
-      <span>Project</span>
-    </button>
+    {#if !sidebarOpen}
+      <button
+        type="button"
+        class="sidebar-tab"
+        aria-label="Open workspace sidebar"
+        aria-expanded={sidebarOpen}
+        on:click={toggleSidebar}
+      >
+        <Files size={19} weight="regular" />
+      </button>
+    {/if}
 
     <aside class:open={sidebarOpen} class="sidebar" aria-label="Project sidebar">
       <div class="sidebar-head">
         <span>{project?.manifest.title ?? "Claros"}</span>
-        <button type="button" aria-label="Close sidebar" on:click={closeSidebar}>Close</button>
+        <button type="button" class="icon-button" aria-label="Close sidebar" on:click={closeSidebar}>
+          <CaretLeft size={18} weight="bold" />
+        </button>
       </div>
       <div
         bind:this={sidebarNav}
@@ -984,7 +1004,7 @@
             class:branch={item.collapsible}
             style={`--depth: ${item.depth}`}
             role="treeitem"
-            aria-selected={item.id === focusedSidebarItemId}
+            aria-selected={item.path === activePath}
             aria-current={item.path === activePath ? "page" : undefined}
             aria-expanded={item.collapsible ? !item.collapsed : undefined}
             on:focus={() => (focusedSidebarItemId = item.id)}
@@ -998,7 +1018,14 @@
             }}
           >
             <span class="item-caret">{item.collapsible ? (item.collapsed ? "+" : "-") : ""}</span>
-            <span>{item.label}</span>
+            {#if item.id === "manuscript"}
+              <Book size={16} weight="regular" />
+            {:else if item.id === "notes"}
+              <Notebook size={16} weight="regular" />
+            {:else}
+              <span class="item-icon-spacer"></span>
+            {/if}
+            <span class="item-label">{item.label}</span>
           </button>
         {/each}
       </div>
@@ -1012,16 +1039,25 @@
         {#if projectIsOpen}
           <span class="draft-name">{activeTitle}</span>
           <span class="document-kind">{activeKind}</span>
-          <span class:error={saveState === "error"} class="save-state">{saveStateLabel(saveState)}</span>
+          <span
+            class={`save-state status-${saveState}`}
+            aria-label={`${openStorageBackend.label}: ${saveStateLabel(saveState)}`}
+            title={`${openStorageBackend.label}: ${saveStateLabel(saveState)}`}
+          >
+            <svelte:component this={openStorageBackend.icon} size={18} weight="regular" />
+            <span class="save-state-dot"></span>
+          </span>
         {/if}
       </div>
       <nav class="actions" aria-label="Editor actions">
         <button
           type="button"
+          class="icon-button"
+          aria-label="Open command palette"
           aria-expanded={paletteOpen}
           on:click={togglePalette}
         >
-          Commands
+          <Command size={19} weight="regular" />
         </button>
       </nav>
     </header>
@@ -1057,11 +1093,7 @@
               aria-expanded={storageBackendMenuOpen}
               on:click={() => (storageBackendMenuOpen = !storageBackendMenuOpen)}
             >
-              {#if selectedStorageBackendId === "file-picker"}
-                <FolderOpen size={19} weight="regular" />
-              {:else}
-                <TerminalWindow size={19} weight="regular" />
-              {/if}
+              <svelte:component this={selectedStorageBackend.icon} size={19} weight="regular" />
               <CaretDown size={13} weight="bold" />
             </button>
             {#if storageBackendMenuOpen}
@@ -1074,11 +1106,7 @@
                     disabled={!backend.available}
                     on:click={() => selectStorageBackend(backend)}
                   >
-                    {#if backend.id === "file-picker"}
-                      <FolderOpen size={18} weight="regular" />
-                    {:else}
-                      <TerminalWindow size={18} weight="regular" />
-                    {/if}
+                    <svelte:component this={backend.icon} size={18} weight="regular" />
                     <span>{backend.label}</span>
                     {#if !backend.available && backend.unavailableReason !== undefined}
                       <small>{backend.unavailableReason}</small>
@@ -1184,6 +1212,9 @@
     --claros-prose-focus-ring: rgba(70, 95, 124, 0.26);
     --claros-prose-widget-background: #f0ede5;
     --claros-prose-widget-border: #d8d1c4;
+    --claros-status-okay: #4f7d4f;
+    --claros-status-warning: #b7791f;
+    --claros-status-error: #9d3d3d;
     min-height: 100vh;
     background: var(--claros-app-background);
   }
@@ -1205,8 +1236,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 1.65rem;
-    min-height: 5.75rem;
+    width: 2.25rem;
+    min-height: 2.25rem;
     border: 1px solid var(--claros-prose-widget-border);
     border-left: 0;
     border-radius: 0 6px 6px 0;
@@ -1214,15 +1245,6 @@
     background: var(--claros-editor-background);
     color: var(--claros-prose-muted);
     box-shadow: 0 0.75rem 2rem color-mix(in srgb, var(--claros-prose-text) 8%, transparent);
-  }
-
-  .sidebar-tab span {
-    display: inline-block;
-    writing-mode: vertical-rl;
-    transform: rotate(180deg);
-    font: 600 0.7rem/1 system-ui, sans-serif;
-    letter-spacing: 0;
-    text-transform: uppercase;
   }
 
   .sidebar {
@@ -1270,7 +1292,8 @@
 
   .sidebar-item {
     display: grid;
-    grid-template-columns: 1rem 1fr;
+    grid-template-columns: 1rem 1.25rem 1fr;
+    column-gap: 0.15rem;
     align-items: center;
     width: 100%;
     min-height: 1.9rem;
@@ -1284,11 +1307,16 @@
     text-align: left;
   }
 
-  .sidebar-item span:last-child {
+  .sidebar-item .item-label {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .item-icon-spacer {
+    display: block;
+    width: 1.25rem;
   }
 
   .sidebar-item.branch {
@@ -1301,14 +1329,25 @@
     font: 0.8rem/1 var(--claros-prose-mono-font, monospace);
   }
 
-  .sidebar-item:hover,
-  .sidebar-item:focus-visible,
-  .sidebar-item.focused,
   .sidebar-item.active {
-    border-color: var(--claros-prose-focus-ring);
     background: var(--claros-prose-widget-background);
     color: var(--claros-prose-text);
+  }
+
+  .sidebar-item:hover,
+  .sidebar-item:focus-visible,
+  .sidebar-item.focused {
+    border-color: var(--claros-prose-focus-ring);
+    background: transparent;
+    color: var(--claros-prose-text);
     outline: none;
+  }
+
+  .sidebar-item.active:hover,
+  .sidebar-item.active:focus-visible,
+  .sidebar-item.active.focused {
+    border-color: var(--claros-prose-focus-ring);
+    background: var(--claros-prose-widget-background);
   }
 
   .topbar {
@@ -1365,8 +1404,34 @@
     text-transform: uppercase;
   }
 
-  .save-state.error {
-    color: #9d3d3d;
+  .save-state {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    color: var(--claros-prose-muted);
+  }
+
+  .save-state-dot {
+    position: absolute;
+    top: 0.05rem;
+    right: 0.05rem;
+    width: 0.42rem;
+    height: 0.42rem;
+    border: 1px solid var(--claros-editor-background);
+    border-radius: 999px;
+    background: var(--claros-status-okay);
+  }
+
+  .save-state.status-dirty .save-state-dot,
+  .save-state.status-saving .save-state-dot {
+    background: var(--claros-status-warning);
+  }
+
+  .save-state.status-error .save-state-dot {
+    background: var(--claros-status-error);
   }
 
   .actions {
@@ -1403,6 +1468,14 @@
   button:disabled {
     cursor: not-allowed;
     opacity: 0.45;
+  }
+
+  .icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    padding: 0;
   }
 
   .editor-frame {
@@ -1601,6 +1674,26 @@
     justify-content: flex-start;
     width: 100%;
     text-align: left;
+  }
+
+  .palette button.active {
+    background: var(--claros-prose-widget-background);
+    color: var(--claros-prose-text);
+  }
+
+  .palette button:hover,
+  .palette button:focus-visible,
+  .palette button.selected {
+    border-color: var(--claros-prose-focus-ring);
+    background: transparent;
+    color: var(--claros-prose-text);
+    outline: none;
+  }
+
+  .palette button.active:hover,
+  .palette button.active:focus-visible,
+  .palette button.active.selected {
+    background: var(--claros-prose-widget-background);
   }
 
   .empty-command {

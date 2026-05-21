@@ -200,9 +200,17 @@ describe("workspace command surface", () => {
     expect(pageSource).toContain('event.key === "ArrowRight"');
   });
 
-  it("uses Phosphor icons for the storage backend launcher", () => {
+  it("uses shared Phosphor icon metadata for workspace controls", () => {
+    expect(pageSource).toContain("phosphor-svelte/lib/Command");
+    expect(pageSource).toContain("phosphor-svelte/lib/Files");
+    expect(pageSource).toContain("phosphor-svelte/lib/CaretLeft");
+    expect(pageSource).toContain("phosphor-svelte/lib/Book");
+    expect(pageSource).toContain("phosphor-svelte/lib/Notebook");
     expect(pageSource).toContain("phosphor-svelte/lib/FolderOpen");
     expect(pageSource).toContain("phosphor-svelte/lib/TerminalWindow");
+    expect(pageSource).toContain("icon: FolderOpen");
+    expect(pageSource).toContain("icon: TerminalWindow");
+    expect(pageSource).toContain("openStorageBackendId");
   });
 
   it("keeps no-project mode separate from the editor workspace", () => {

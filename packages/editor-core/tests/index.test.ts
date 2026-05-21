@@ -20,6 +20,7 @@ describe("editor-core", () => {
     expect(properties["--claros-prose-text"]).toBe("#111111");
     expect(properties["--claros-prose-font-size"]).toBe("21px");
     expect(properties["--claros-prose-font"]).toBe(DEFAULT_CLAROS_THEME.proseFont);
+    expect(properties["--claros-status-okay"]).toBe(DEFAULT_CLAROS_THEME.statusOkay);
   });
 
   it("defines all named theme variants with complete tokens", () => {
