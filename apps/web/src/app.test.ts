@@ -16,6 +16,7 @@ const pageSource = readFileSync(
   fileURLToPath(new URL("./routes/+page.svelte", import.meta.url)),
   "utf-8"
 );
+const appHtmlSource = readFileSync(fileURLToPath(new URL("./app.html", import.meta.url)), "utf-8");
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -71,6 +72,14 @@ describe("theme persistence", () => {
     storage.setItem(THEME_STORAGE_KEY, "unknown-theme");
 
     expect(loadTheme(storage)).toBe("default-light");
+  });
+
+  it("bootstraps persisted theme colors before Svelte renders", () => {
+    expect(appHtmlSource).toContain('"claros.theme"');
+    expect(appHtmlSource).toContain('"gruvbox-dark": ["#1d2021", "#d5c4a1"]');
+    expect(appHtmlSource).toContain("--claros-app-background");
+    expect(appHtmlSource).toContain("--claros-prose-text");
+    expect(appHtmlSource).toContain("--claros-startup-spinner");
   });
 });
 
@@ -238,7 +247,7 @@ describe("workspace command surface", () => {
     expect(pageSource).toContain("Open Project: Local Companion");
     expect(pageSource).toContain("New Project: Local Companion");
     expect(pageSource).toContain("Change Title: Current Scene");
-    expect(pageSource).toContain("<span>Project</span>");
+    expect(pageSource).toContain("<span>Project Workspace</span>");
     expect(pageSource).toContain('target: "new-chapter-scene"');
     expect(pageSource).toContain("optimisticChapterTitles");
     expect(pageSource).toContain("optimisticSceneTitles");
@@ -267,6 +276,19 @@ describe("workspace command surface", () => {
     expect(pageSource).toContain('aria-label="Open project"');
     expect(pageSource).toContain("disabled: !localProjectSupported");
     expect(pageSource).toContain("disabled: projectCommandDisabled");
+  });
+
+  it("gates startup rendering behind a themed loading spinner", () => {
+    expect(pageSource).toContain("let startupReady = false");
+    expect(pageSource).toContain("{#if !startupReady}");
+    expect(pageSource).toContain('class="startup-screen"');
+    expect(pageSource).toContain('class="startup-spinner"');
+    expect(pageSource).toContain("{:else}");
+    expect(pageSource.indexOf("{:else}")).toBeLessThan(
+      pageSource.indexOf('<section class="project-empty-state"')
+    );
+    expect(pageSource).toContain("void connectCompanion(companionConnection).finally");
+    expect(pageSource).toContain("async function finishStartup()");
   });
 });
 

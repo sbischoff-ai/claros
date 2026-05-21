@@ -4,6 +4,36 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (() => {
+        const themes = {
+          "default-light": ["#f7f5f0", "#27241f"],
+          "default-dark": ["#191715", "#e7dfd1"],
+          "gruvbox-light": ["#f2e5bc", "#3c3836"],
+          "gruvbox-dark": ["#1d2021", "#d5c4a1"],
+          "solarized-light": ["#eee8d5", "#586e75"],
+          "solarized-dark": ["#00212b", "#93a1a1"],
+          "everforest-light": ["#efebd4", "#5c6a72"],
+          "everforest-dark": ["#1e2326", "#d3c6aa"],
+          "catppuccin-light": ["#eff1f5", "#4c4f69"],
+          "catppuccin-dark": ["#181825", "#cdd6f4"],
+        };
+        let themeId = "default-light";
+        try {
+          const storedTheme = window.localStorage.getItem("claros.theme");
+          if (storedTheme && Object.prototype.hasOwnProperty.call(themes, storedTheme)) {
+            themeId = storedTheme;
+          }
+        } catch {
+          // Storage can be unavailable in hardened browser contexts.
+        }
+        const [background, text] = themes[themeId];
+        document.documentElement.dataset.clarosTheme = themeId;
+        document.documentElement.style.setProperty("--claros-app-background", background);
+        document.documentElement.style.setProperty("--claros-prose-text", text);
+        document.documentElement.style.setProperty("--claros-startup-spinner", text);
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

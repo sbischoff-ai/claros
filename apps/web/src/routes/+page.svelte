@@ -110,13 +110,13 @@
   let projectRevision = 0;
   let activePath = "";
   let activeTitle = "Draft";
-  let activeKind: "scene" | "note" = "scene";
   let currentMarkdown = "";
   let vimMode = false;
   let paletteOpen = false;
   let commandQuery = "";
   let selectedCommandIndex = 0;
   let activeTheme: ClarosThemeId = "default-light";
+  let startupReady = false;
   let sidebarOpen = false;
   let focusedSidebarItemId = "";
   let saveState: SaveState = "saved";
@@ -201,7 +201,11 @@
       loadCompanionConnection(window.localStorage);
     if (companionConnection !== undefined) {
       saveCompanionConnection(window.localStorage, companionConnection);
-      void connectCompanion(companionConnection);
+      void connectCompanion(companionConnection).finally(() => {
+        void finishStartup();
+      });
+    } else {
+      startupReady = true;
     }
 
     const handleKeydown = (event: KeyboardEvent) => {
@@ -284,6 +288,15 @@
       window.removeEventListener("keydown", handleKeydown);
     };
   });
+
+  async function finishStartup(): Promise<void> {
+    startupReady = true;
+    if (projectIsOpen) {
+      await ensureEditor();
+      editor?.setMarkdown(currentMarkdown);
+      editor?.focus();
+    }
+  }
 
   onDestroy(() => {
     if (saveTimer !== undefined) {
@@ -565,7 +578,6 @@
     const document = await project.readDocument({ path });
     activePath = document.path;
     activeTitle = document.title;
-    activeKind = document.kind;
     currentMarkdown = document.body;
     saveState = "saved";
   }
@@ -1517,7 +1529,12 @@
 </svelte:head>
 
 <main bind:this={appShell} class={`app-shell ${projectIsOpen && sidebarOpen ? "sidebar-open" : ""}`}>
-  {#if projectIsOpen}
+  {#if !startupReady}
+    <section class="startup-screen" aria-label="Loading Claros">
+      <span class="startup-spinner" aria-hidden="true"></span>
+    </section>
+  {:else}
+    {#if projectIsOpen}
     {#if !sidebarOpen}
       <button
         type="button"
@@ -1532,7 +1549,7 @@
 
     <aside class:open={sidebarOpen} class="sidebar" aria-label="Project sidebar">
       <div class="sidebar-head">
-        <span>Project</span>
+        <span>Project Workspace</span>
         <button type="button" class="icon-button" aria-label="Close sidebar" on:click={closeSidebar}>
           <CaretLeft size={18} weight="bold" />
         </button>
@@ -1613,9 +1630,9 @@
         {/each}
       </div>
     </aside>
-  {/if}
+    {/if}
 
-  <section class="workspace">
+    <section class="workspace">
     <header class="topbar" aria-label="Workspace">
       <div class="identity">
         {#if projectIsOpen && editingProjectTitle}
@@ -1635,19 +1652,19 @@
             }}
             on:blur={() => void commitProjectTitleEdit()}
           />
-        {:else}
+        {:else if projectIsOpen}
           <button
             type="button"
             class="product title-button"
-            disabled={!projectIsOpen}
             on:click={beginProjectTitleEdit}
           >
             {displayProjectTitle}
           </button>
+        {:else}
+          <span class="product static-title">{displayProjectTitle}</span>
         {/if}
         {#if projectIsOpen}
           <span class="draft-name">{activeTitle}</span>
-          <span class="document-kind">{activeKind}</span>
           <span
             class={`save-state status-${saveState}`}
             aria-label={`${openStorageBackend.label}: ${saveStateLabel(saveState)}`}
@@ -1748,9 +1765,9 @@
         </div>
       </section>
     {/if}
-  </section>
+    </section>
 
-  {#if paletteOpen}
+    {#if paletteOpen}
     <div class="palette-layer">
       <button
         type="button"
@@ -1793,9 +1810,9 @@
         </div>
       </section>
     </div>
-  {/if}
+    {/if}
 
-  {#if contextMenu !== undefined}
+    {#if contextMenu !== undefined}
     <button
       type="button"
       class="context-backdrop"
@@ -1832,9 +1849,9 @@
         </button>
       {/if}
     </div>
-  {/if}
+    {/if}
 
-  {#if titleModal !== undefined}
+    {#if titleModal !== undefined}
     <div class="modal-layer">
       <button
         type="button"
@@ -1858,9 +1875,9 @@
         </form>
       </section>
     </div>
-  {/if}
+    {/if}
 
-  {#if deleteModal !== undefined}
+    {#if deleteModal !== undefined}
     <div class="modal-layer">
       <button
         type="button"
@@ -1885,6 +1902,7 @@
         </form>
       </section>
     </div>
+    {/if}
   {/if}
 </main>
 
@@ -1906,18 +1924,31 @@
   }
 
   .app-shell {
-    --claros-app-background: #f7f5f0;
-    --claros-editor-background: #fffdf8;
-    --claros-prose-text: #27241f;
-    --claros-prose-muted: #7a746b;
-    --claros-prose-focus-ring: rgba(70, 95, 124, 0.26);
-    --claros-prose-widget-background: #f0ede5;
-    --claros-prose-widget-border: #d8d1c4;
-    --claros-status-okay: #4f7d4f;
-    --claros-status-warning: #b7791f;
-    --claros-status-error: #9d3d3d;
     min-height: 100vh;
     background: var(--claros-app-background);
+  }
+
+  .startup-screen {
+    display: grid;
+    min-height: 100vh;
+    place-items: center;
+    background: var(--claros-app-background);
+    color: var(--claros-prose-text);
+  }
+
+  .startup-spinner {
+    width: 2.1rem;
+    height: 2.1rem;
+    border: 2px solid color-mix(in srgb, var(--claros-startup-spinner, currentColor) 24%, transparent);
+    border-top-color: var(--claros-startup-spinner, currentColor);
+    border-radius: 999px;
+    animation: startup-spin 760ms linear infinite;
+  }
+
+  @keyframes startup-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .workspace {
@@ -2182,6 +2213,12 @@
     opacity: 1;
   }
 
+  .static-title {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.8rem;
+  }
+
   .project-title-input {
     width: min(18rem, 38vw);
     min-height: 1.8rem;
@@ -2202,7 +2239,6 @@
     white-space: nowrap;
   }
 
-  .document-kind,
   .save-state {
     color: var(--claros-prose-muted);
     font: 0.72rem/1.2 system-ui, sans-serif;
@@ -2423,9 +2459,9 @@
     z-index: 40;
     inset: 0;
     display: grid;
-    align-items: start;
+    align-items: center;
     justify-items: center;
-    padding-top: 12vh;
+    padding: 1rem;
   }
 
   .palette-backdrop {
@@ -2450,13 +2486,17 @@
   .palette {
     position: relative;
     display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 0.375rem;
     width: min(34rem, calc(100vw - 2rem));
+    min-height: min(18rem, calc(100vh - 2rem));
+    max-height: min(38rem, calc(100vh - 2rem));
     border: 1px solid var(--claros-prose-widget-border);
     border-radius: 8px;
     padding: 0.5rem;
     background: var(--claros-editor-background);
     box-shadow: 0 1.25rem 4rem color-mix(in srgb, var(--claros-prose-text) 16%, transparent);
+    overflow: hidden;
   }
 
   .palette input {
@@ -2472,7 +2512,11 @@
 
   .command-list {
     display: grid;
+    align-content: start;
     gap: 0.375rem;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 0.15rem;
   }
 
   .palette button {
