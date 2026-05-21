@@ -108,15 +108,16 @@ output:
   answer: '"yes"'
 display:
   format: markdown
-  markdown: |
-    > [!claros] Test Display
-    > **Answer:** {{ output.answer }}
+  title: "Test Display"
+  template: |
+    **Answer:** {{output.answer}}
 `;
 
     const macro = parseMacro(yaml);
     expect(macro.display).toEqual({
       format: "markdown",
-      markdown: "> [!claros] Test Display\n> **Answer:** {{ output.answer }}\n",
+      title: "Test Display",
+      template: "**Answer:** {{output.answer}}\n",
     });
   });
 
@@ -130,12 +131,12 @@ steps: []
 output: {}
 display:
   format: html
-  markdown: "<p>No</p>"
+  template: "<p>No</p>"
 `)
     ).toThrow(/display\.format/);
   });
 
-  it("rejects display templates without markdown", () => {
+  it("rejects display templates without template", () => {
     expect(() =>
       parseMacro(`
 id: test.bad-display
@@ -146,7 +147,82 @@ output: {}
 display:
   format: markdown
 `)
-    ).toThrow(/display\.markdown/);
+    ).toThrow(/display\.template/);
+  });
+
+  it("rejects display templates containing Claros wrappers", () => {
+    expect(() =>
+      parseMacro(`
+id: test.bad-display
+name: "Bad Display"
+params: {}
+steps: []
+output: {}
+display:
+  format: markdown
+  template: |
+    > [!claros] Bad
+`)
+    ).toThrow(/\[!claros\]/);
+
+    expect(() =>
+      parseMacro(`
+id: test.bad-run-marker
+name: "Bad Run Marker"
+params: {}
+steps: []
+output: {}
+display:
+  format: markdown
+  template: |
+    [claros-run: 00001]
+`)
+    ).toThrow(/\[claros-run:/);
+  });
+
+  it("rejects invalid display interpolation and unsupported filters", () => {
+    expect(() =>
+      parseMacro(`
+id: test.bad-expression
+name: "Bad Expression"
+params: {}
+steps: []
+output: {}
+display:
+  format: markdown
+  template: "Result: {{ output. }}"
+`)
+    ).toThrow(/invalid expression/);
+
+    expect(() =>
+      parseMacro(`
+id: test.bad-filter
+name: "Bad Filter"
+params: {}
+steps: []
+output: {}
+display:
+  format: markdown
+  template: "Result: {{ output.answer | uppercase }}"
+`)
+    ).toThrow(/unsupported filter/);
+  });
+
+  it("rejects unsupported display directives", () => {
+    expect(() =>
+      parseMacro(`
+id: test.bad-directive
+name: "Bad Directive"
+params: {}
+steps: []
+output: {}
+display:
+  format: markdown
+  template: |
+    {{#each output.items}}
+    {{/each}}
+`)
+    ).toThrow(/unsupported directive/);
   });
 
   it("throws on missing id", () => {

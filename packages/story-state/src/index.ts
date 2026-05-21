@@ -19,7 +19,11 @@ export {
   appendMacroRunLedgerEntry,
   readMacroRunLedger,
 } from "./runs/ledger.js";
-export { executeMacroInDocument, renderMacroDisplayBlock } from "./runs/document.js";
+export {
+  executeMacroInDocument,
+  renderClarosBlock,
+  renderMacroDisplayBlock,
+} from "./runs/document.js";
 
 export { createInMemoryProjectIndex } from "./project/index.js";
 export type {

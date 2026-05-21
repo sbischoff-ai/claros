@@ -15,8 +15,6 @@ output:
 
 display:
   format: markdown
-  markdown: |
-    > [!claros] Mythic Random Event
-    > **Focus:** {{ output.focus }}
-    >
-    > [claros-run: {{ run_id }}]
+  title: "Mythic Random Event"
+  template: |
+    **Focus:** {{output.focus}}

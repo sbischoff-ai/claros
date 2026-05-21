@@ -179,8 +179,9 @@ Current document-context behavior:
 - derives scene/chapter context from the document path when applicable
 - loads modules into a registry from `manifest.modules`
 - runs the macro against the registry and `FileStateAdapter`
-- appends a ledger entry to `state/runs/emergence.yaml`
-- renders `display.format: markdown` / `display.markdown` templates, or a generic fallback
+- renders `display.format: markdown` / `display.template` through `@claros/emergence-engine`
+- wraps the rendered body as an ADR-027 `[!claros]` block
+- appends a ledger entry with `display.block` to `state/runs/emergence.yaml`
 - inserts the rendered markdown display block only when `insertAt` is provided
 - uses the workspace file reader and writer abstractions during insertion
 - refreshes runs/index state afterward

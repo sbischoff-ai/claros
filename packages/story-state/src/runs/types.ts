@@ -58,6 +58,7 @@ export interface MacroRunLedgerEntry {
 }
 
 export interface MacroRunLedgerEntryInput {
+  id?: string;
   macro: string;
   document?: string;
   sceneId?: string;

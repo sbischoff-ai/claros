@@ -24,8 +24,6 @@ output: {}
 
 display:
   format: markdown
-  markdown: |
-    > [!claros] Mythic Scene Setup
-    > Chaos Factor updated for scene context.
-    >
-    > [claros-run: {{ run_id }}]
+  title: "Mythic Scene Setup"
+  template: |
+    Chaos Factor updated for scene context.

@@ -54,7 +54,8 @@ export interface MacroOutputDefinition {
 
 export interface MacroDisplayDefinition {
   format: "markdown";
-  markdown: string;
+  title?: string;
+  template: string;
 }
 
 export interface MacroDefinition {

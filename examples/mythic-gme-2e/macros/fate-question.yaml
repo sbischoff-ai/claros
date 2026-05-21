@@ -52,19 +52,22 @@ steps:
 output:
   result: "steps.outcome.classified"
   random_event_triggered: "steps.random-event != null"
+  random_event: "steps.random-event"
   rolls:
     fate: "steps.fate-roll.total"
 
 display:
   format: markdown
-  markdown: |
-    > [!claros] Mythic Fate Question
-    > **Question:** {{ params.intent }}
-    > **Odds:** {{ params.odds }}
-    > **Chaos Factor:** {{ params.chaos }}
-    >
-    > **Roll:** `1d100 -> {{ steps.fate-roll.total }}`
-    >
-    > **{{ output.result }}.**
-    >
-    > [claros-run: {{ run_id }}]
+  title: "Mythic Fate Question"
+  template: |
+    **Question:** {{params.intent}}
+    **Odds:** {{params.odds | title}}
+    **Chaos Factor:** {{params.chaos}}
+
+    **Roll:** `1d100 -> {{steps.fate-roll.total}}`
+
+    **{{output.result | title}}.**
+
+    {{#if output.random_event}}
+    Random event: {{output.random_event.focus}}
+    {{/if}}

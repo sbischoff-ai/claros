@@ -1,4 +1,5 @@
 import { load } from "js-yaml";
+import { validateMacroDisplayTemplate } from "./display.js";
 import { MacroParseError } from "./errors.js";
 import type {
   MacroDefinition,
@@ -204,7 +205,7 @@ function parseOutput(raw: unknown): MacroOutputDefinition {
   return output;
 }
 
-function parseDisplay(raw: unknown): MacroDisplayDefinition | undefined {
+function parseDisplay(macroId: string, raw: unknown): MacroDisplayDefinition | undefined {
   if (raw === undefined) {
     return undefined;
   }
@@ -213,13 +214,19 @@ function parseDisplay(raw: unknown): MacroDisplayDefinition | undefined {
   if (displayObj["format"] !== "markdown") {
     throw new MacroParseError('display.format must be "markdown"');
   }
-  if (typeof displayObj["markdown"] !== "string" || displayObj["markdown"].length === 0) {
-    throw new MacroParseError("display.markdown must be a non-empty string");
+  if (displayObj["title"] !== undefined && typeof displayObj["title"] !== "string") {
+    throw new MacroParseError("display.title must be a string");
   }
+  if (typeof displayObj["template"] !== "string" || displayObj["template"].trim().length === 0) {
+    throw new MacroParseError("display.template must be a non-empty string");
+  }
+
+  validateMacroDisplayTemplate(macroId, displayObj["template"]);
 
   return {
     format: "markdown",
-    markdown: displayObj["markdown"],
+    title: typeof displayObj["title"] === "string" ? displayObj["title"] : undefined,
+    template: displayObj["template"],
   };
 }
 
@@ -258,6 +265,6 @@ export function parseMacro(yaml: string): MacroDefinition {
     steps: parseSteps(root["steps"]),
     effects: parseEffects(root["effects"]),
     output: parseOutput(root["output"]),
-    display: parseDisplay(root["display"]),
+    display: parseDisplay(root["id"], root["display"]),
   };
 }

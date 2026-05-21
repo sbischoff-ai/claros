@@ -56,14 +56,12 @@ output:
 
 display:
   format: markdown
-  markdown: |
-    > [!claros] Mythic Fate Question
-    > **Question:** {{ params.intent }}
-    > **Roll:** `1d100 -> {{ steps.fate-roll.total }}`
-    >
-    > **{{ output.result }}.**
-    >
-    > [claros-run: {{ run_id }}]
+  title: "Mythic Fate Question"
+  template: |
+    **Question:** {{params.intent}}
+    **Roll:** `1d100 -> {{steps.fate-roll.total}}`
+
+    **{{output.result | title}}.**
 ```
 
 ## Top-Level Fields
@@ -248,33 +246,42 @@ At runtime this becomes a structured output object in `MacroResult.output` and i
 ```yaml
 display:
   format: markdown
-  markdown: |
-    > [!claros] Mythic Fate Question
-    > **Question:** {{ params.intent }}
-    > **Odds:** {{ params.odds }}
-    >
-    > **Roll:** `1d100 -> {{ steps.fate-roll.total }}`
-    >
-    > **{{ output.result }}.**
-    >
-    > [claros-run: {{ run_id }}]
+  title: "Mythic Fate Question"
+  template: |
+    **Question:** {{params.intent}}
+    **Odds:** {{params.odds | title}}
+
+    **Roll:** `1d100 -> {{steps.fate-roll.total}}`
+
+    **{{output.result | title}}.**
+
+    {{#if output.random_event}}
+    Random event: {{output.random_event.focus}}
+    {{/if}}
 ```
 
-The template is rendered by `@claros/story-state`, not by the lower-level macro executor.
-Placeholders use `{{ expression }}` with the same expression evaluator over:
+Macro authors write the body only. `@claros/story-state` owns the final `[!claros]`
+blockquote wrapper and trailing `[claros-run: <id>]` marker.
+
+Template rendering is provided by `@claros/emergence-engine` through
+`renderMacroDisplay(...)`. Placeholders use `{{expression}}` with the same expression
+evaluator over:
 
 - `params`
 - `steps`
 - `output`
-- `state`
-- `scene_id`
-- `chapter_id`
-- `run_id`
+- `context.document`
+- `context.sceneId`
+- `context.chapterId`
+- `run.id`
 - `macro`
 
-If a macro has no display template, `story-state` uses a generic fallback renderer.
-The renderer ensures the final block has a `[!claros]` header and a trailing
-`[claros-run: <id>]` marker.
+Display templates may use `{{#if expression}}...{{/if}}` for optional sections.
+Supported filters are `title` and `json`. Templates containing `[!claros]` or
+`[claros-run:` are rejected so modules cannot double-wrap ADR-027 markers.
+
+If a macro has no display template, `@claros/emergence-engine` uses a generic
+fallback display body.
 
 ## Hooks
 
