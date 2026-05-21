@@ -195,23 +195,35 @@ class BrowserClarosProject implements ClarosProject {
   }
 
   async setChapterTitle(chapterId: string, title: string): Promise<MutationResult> {
-    const path = `manuscript/${chapterId}/chapter.yaml`;
-    const current = await this.readYamlObject(path);
-    await this.fileWriter.writeFileAtomic(
-      toRootPath(path),
-      dump(withOptionalTitle(current, title), { lineWidth: -1 })
+    const current = this.resolveChapter(chapterId);
+    const currentRaw = await this.readOptionalFile(`${current.path}/chapter.yaml`);
+    const nextRaw = serializeChapterYamlWithTitle(currentRaw, title);
+    return this.rebuildManuscript(
+      () => true,
+      () => true,
+      {
+        chapter: (chapter) =>
+          chapter.id === current.id
+            ? { raw: nextRaw, slug: slugForTitle(title, "chapter", chapter.sequence) }
+            : {},
+      }
     );
-    await this.rebuildIndex();
-    return { kind: "metadata", changedPaths: [path], indexUpdated: true };
   }
 
   async setSceneTitle(scene: SceneRef | string, title: string): Promise<MutationResult> {
     const current = this.resolveScene(scene);
     const raw = await this.fileReader.readFile(toRootPath(current.path));
     const nextRaw = setMarkdownTitle(raw, title);
-    await this.fileWriter.writeFileAtomic(toRootPath(current.path), nextRaw);
-    await this.index.updateDocument(current.path, nextRaw);
-    return { kind: "frontmatter-path", changedPaths: [current.path], indexUpdated: true };
+    return this.rebuildManuscript(
+      () => true,
+      () => true,
+      {
+        scene: (candidate) =>
+          candidate.path === current.path
+            ? { raw: nextRaw, slug: slugForTitle(title, "scene", candidate.sequence) }
+            : {},
+      }
+    );
   }
 
   async appendChapter(
@@ -413,6 +425,17 @@ class BrowserClarosProject implements ClarosProject {
     return match;
   }
 
+  private resolveChapter(chapterId: string): ChapterRef {
+    const normalized = normalizeRelativePath(chapterId);
+    const match = this.listChapters().find(
+      (candidate) => candidate.id === normalized || candidate.path === normalized
+    );
+    if (match === undefined) {
+      throw new Error(`Chapter not found: ${chapterId}`);
+    }
+    return match;
+  }
+
   private sceneByPath(path: string): SceneRef {
     const scene = this.listScenes().find((candidate) => candidate.path === path);
     if (scene === undefined) {
@@ -442,7 +465,8 @@ class BrowserClarosProject implements ClarosProject {
 
   private async rebuildManuscript(
     keepChapter: (chapter: ChapterRef) => boolean,
-    keepScene: (scene: SceneRef) => boolean = () => true
+    keepScene: (scene: SceneRef) => boolean = () => true,
+    transform: ManuscriptRebuildTransform = {}
   ): Promise<MutationResult> {
     const scenesByChapter = new Map<string, SceneRef[]>();
     for (const scene of this.listScenes().filter(keepScene)) {
@@ -462,18 +486,20 @@ class BrowserClarosProject implements ClarosProject {
       if (scenes.length === 0) {
         continue;
       }
-      const nextChapterSlug = resequenceDefaultSlug(chapter.slug, "chapter", chapterSequence);
+      const chapterTransform = transform.chapter?.(chapter, chapterSequence) ?? {};
+      const nextChapterSlug =
+        chapterTransform.slug ?? resequenceDefaultSlug(chapter.slug, "chapter", chapterSequence);
       const nextChapterId = `${sequencePrefix(chapterSequence)}-${nextChapterSlug}`;
-      const chapterRaw = await this.readOptionalFile(`${chapter.path}/chapter.yaml`);
+      const chapterRaw =
+        chapterTransform.raw ?? (await this.readOptionalFile(`${chapter.path}/chapter.yaml`));
       const rebuiltScenes: RebuiltScene[] = [];
       for (const scene of scenes) {
+        const sceneTransform = transform.scene?.(scene, sceneSequence) ?? {};
+        const nextSceneSlug =
+          sceneTransform.slug ?? resequenceDefaultSlug(scene.slug, "scene", sceneSequence);
         rebuiltScenes.push({
-          path: `manuscript/${nextChapterId}/${sequencePrefix(sceneSequence)}-${resequenceDefaultSlug(
-            scene.slug,
-            "scene",
-            sceneSequence
-          )}.md`,
-          raw: await this.fileReader.readFile(toRootPath(scene.path)),
+          path: `manuscript/${nextChapterId}/${sequencePrefix(sceneSequence)}-${nextSceneSlug}.md`,
+          raw: sceneTransform.raw ?? (await this.fileReader.readFile(toRootPath(scene.path))),
         });
         sceneSequence += 1;
       }
@@ -644,6 +670,11 @@ interface RebuiltChapter {
   scenes: RebuiltScene[];
 }
 
+interface ManuscriptRebuildTransform {
+  chapter?: (chapter: ChapterRef, nextSequence: number) => { raw?: string; slug?: string };
+  scene?: (scene: SceneRef, nextSequence: number) => { raw?: string; slug?: string };
+}
+
 function normalizedProjectTitle(title: string): string {
   const normalized = title.trim();
   return normalized.length > 0 ? normalized : "Untitled Project";
@@ -671,6 +702,12 @@ function setMarkdownTitle(raw: string, title: string): string {
     : serializeNoteFrontmatter(frontmatter, parsed.body);
 }
 
+function serializeChapterYamlWithTitle(raw: string | undefined, title: string): string {
+  const current = raw === undefined || raw.trim().length === 0 ? {} : load(raw);
+  const metadata = withOptionalTitle(isRecord(current) ? current : {}, title);
+  return Object.keys(metadata).length === 0 ? "" : dump(metadata, { lineWidth: -1 });
+}
+
 function serializeTitleYaml(title: string): string {
   const metadata = withOptionalTitle({}, title);
   return Object.keys(metadata).length === 0 ? "" : dump(metadata, { lineWidth: -1 });
@@ -686,7 +723,12 @@ function nextSequence(sequences: number[]): number {
 }
 
 function sequencePrefix(sequence: number): string {
-  return String(sequence).padStart(2, "0");
+  return String(sequence).padStart(3, "0");
+}
+
+function slugForTitle(title: string, kind: "chapter" | "scene", sequence: number): string {
+  const normalized = title.trim();
+  return normalized.length > 0 ? slugifyPathComponent(normalized) : `${kind}-${sequence}`;
 }
 
 function slugifyPathComponent(value: string): string {
@@ -719,6 +761,10 @@ function resequenceDefaultSlug(slug: string, kind: "chapter" | "scene", sequence
 function basenameWithoutExtension(path: string): string {
   const basename = path.split("/").at(-1) ?? path;
   return basename.toLowerCase().endsWith(".md") ? basename.slice(0, -3) : basename;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function sceneAtNearestIndex(scenes: SceneRef[], index: number): SceneRef | undefined {

@@ -68,8 +68,14 @@ class MemoryProjectFileSystem implements ProjectFileReader, ProjectFileWriter {
     throw new Error("not implemented");
   }
 
-  async removeFile(_path: string): Promise<void> {
-    throw new Error("not implemented");
+  async removeFile(path: string): Promise<void> {
+    const normalized = normalize(path);
+    const prefix = `${normalized}/`;
+    for (const filePath of [...this.files.keys()]) {
+      if (filePath === normalized || filePath.startsWith(prefix)) {
+        this.files.delete(filePath);
+      }
+    }
   }
 }
 
@@ -79,9 +85,9 @@ describe("browser openProject", () => {
     const project = await openProject("/", { fileReader: fs, fileWriter: fs });
 
     expect(project.manifest.title).toBe("Browser Workspace");
-    expect(project.listChapters().map((chapter) => chapter.id)).toEqual(["01-start"]);
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual(["001-start"]);
     expect(project.listScenes().map((scene) => scene.path)).toEqual([
-      "manuscript/01-start/01-opening.md",
+      "manuscript/001-start/001-opening.md",
     ]);
     expect(project.listNotes().map((note) => note.path)).toEqual(["notes/characters/kareth.md"]);
   });
@@ -91,12 +97,31 @@ describe("browser openProject", () => {
     const project = await openProject("/", { fileReader: fs, fileWriter: fs });
 
     await project.writeDocument(
-      { path: "manuscript/01-start/01-opening.md" },
+      { path: "manuscript/001-start/001-opening.md" },
       "---\ntitle: Changed\n---\n\nUpdated body."
     );
 
-    expect(await fs.readFile("/manuscript/01-start/01-opening.md")).toContain("Updated body.");
+    expect(await fs.readFile("/manuscript/001-start/001-opening.md")).toContain("Updated body.");
     expect(project.listScenes()[0]?.title).toBe("Changed");
+  });
+
+  it("renames manuscript paths when titles change", async () => {
+    const fs = createProject();
+    const project = await openProject("/", { fileReader: fs, fileWriter: fs });
+
+    await project.setChapterTitle("001-start", "THE GREAT WALRUS!");
+    await project.setSceneTitle(
+      "manuscript/001-the-great-walrus/001-opening.md",
+      "tHe ulTimATUm..."
+    );
+
+    expect(project.listChapters()[0]?.id).toBe("001-the-great-walrus");
+    expect(project.listScenes()[0]?.path).toBe(
+      "manuscript/001-the-great-walrus/001-the-ultimatum.md"
+    );
+    expect(await fs.readFile("/manuscript/001-the-great-walrus/001-the-ultimatum.md")).toContain(
+      "tHe ulTimATUm..."
+    );
   });
 
   it("reads missing macro run ledger as an empty run list", async () => {
@@ -110,8 +135,8 @@ describe("browser openProject", () => {
 function createProject(): MemoryProjectFileSystem {
   return new MemoryProjectFileSystem({
     "/claros.yaml": "claros: 1\ntitle: Browser Workspace\n",
-    "/manuscript/01-start/chapter.yaml": "title: Start\n",
-    "/manuscript/01-start/01-opening.md": "---\ntitle: Opening\n---\n\nStart at [[Kareth]].",
+    "/manuscript/001-start/chapter.yaml": "title: Start\n",
+    "/manuscript/001-start/001-opening.md": "---\ntitle: Opening\n---\n\nStart at [[Kareth]].",
     "/notes/characters/kareth.md": "---\ntitle: Kareth\n---\n\nA cautious mercenary.",
   });
 }

@@ -21,16 +21,16 @@ Scene identity is path-derived, not frontmatter-derived.
 From a scene file such as:
 
 ```text
-manuscript/01-prologue/02-arrival.md
+manuscript/001-prologue/002-arrival.md
 ```
 
 Claros derives:
 
-- `scene.id = 01-prologue/02-arrival`
-- `scene.chapterId = 01-prologue`
+- `scene.id = 001-prologue/002-arrival`
+- `scene.chapterId = 001-prologue`
 - `scene.sequence = 2`
 - `scene.slug = arrival`
-- `scene.path = manuscript/01-prologue/02-arrival.md`
+- `scene.path = manuscript/001-prologue/002-arrival.md`
 
 Scene frontmatter is optional metadata and may include fields like:
 

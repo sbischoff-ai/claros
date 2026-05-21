@@ -22,12 +22,12 @@ describe("local companion server", () => {
 
     const project = (await fetchJson(baseUrl, token, "/api/project")) as ProjectResponse;
     expect(project.project.manifest.title).toBe("Companion Workspace");
-    expect(project.project.chapters[0].scenes[0].path).toBe("manuscript/01-start/01-opening.md");
+    expect(project.project.chapters[0].scenes[0].path).toBe("manuscript/001-start/001-opening.md");
 
     const document = (await fetchJson(
       baseUrl,
       token,
-      "/api/document?path=manuscript/01-start/01-opening.md"
+      "/api/document?path=manuscript/001-start/001-opening.md"
     )) as DocumentResponse;
     expect(document.document.body).toBe("\nStart.");
   });
@@ -85,7 +85,7 @@ describe("local companion server", () => {
     expect(response.status).toBe(201);
     expect(await fs.readFile(path.join(root, "claros.yaml"), "utf8")).toContain("Untitled Project");
     expect(
-      await fs.readFile(path.join(root, "manuscript/01-draft/01-opening.md"), "utf8")
+      await fs.readFile(path.join(root, "manuscript/001-draft/001-opening.md"), "utf8")
     ).toContain("## Opening");
   });
 
@@ -103,15 +103,29 @@ describe("local companion server", () => {
       action: "append-chapter",
       title: "Second Act",
     })) as MutationResponse;
-    expect(chapter.scene.path).toBe("manuscript/02-second-act/02-scene-2.md");
+    expect(chapter.scene?.path).toBe("manuscript/002-second-act/002-scene-2.md");
+
+    const retitledChapter = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "set-chapter-title",
+      chapterId: "002-second-act",
+      title: "THE GREAT WALRUS!",
+    })) as MutationResponse;
+    expect(retitledChapter.chapter?.id).toBe("002-the-great-walrus");
+
+    const retitledScene = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "set-scene-title",
+      path: "manuscript/002-the-great-walrus/002-scene-2.md",
+      title: "tHe ulTimATUm...",
+    })) as MutationResponse;
+    expect(retitledScene.scene?.path).toBe("manuscript/002-the-great-walrus/002-the-ultimatum.md");
 
     const deleted = (await postJson(baseUrl, token, "/api/project/mutation", {
       action: "delete-scene",
-      path: "manuscript/01-start/01-opening.md",
+      path: "manuscript/001-start/001-opening.md",
     })) as MutationResponse;
-    expect(deleted.nextPath).toBe("manuscript/01-second-act/01-scene-1.md");
+    expect(deleted.nextPath).toBe("manuscript/001-the-great-walrus/001-the-ultimatum.md");
     expect(deleted.project.chapters.map((entry) => entry.scenes[0].path)).toEqual([
-      "manuscript/01-second-act/01-scene-1.md",
+      "manuscript/001-the-great-walrus/001-the-ultimatum.md",
     ]);
   });
 });
@@ -167,7 +181,8 @@ interface ProjectResponse {
 }
 
 interface MutationResponse extends ProjectResponse {
-  scene: { path: string };
+  chapter?: { id: string };
+  scene?: { path: string };
   nextPath?: string;
 }
 
@@ -180,10 +195,10 @@ interface DocumentResponse {
 async function createProjectRoot(): Promise<string> {
   const root = await makeTempDir();
   await writeProjectFile(root, "claros.yaml", "claros: 1\ntitle: Companion Workspace\n");
-  await writeProjectFile(root, "manuscript/01-start/chapter.yaml", "title: Start\n");
+  await writeProjectFile(root, "manuscript/001-start/chapter.yaml", "title: Start\n");
   await writeProjectFile(
     root,
-    "manuscript/01-start/01-opening.md",
+    "manuscript/001-start/001-opening.md",
     "---\ntitle: Opening\n---\n\nStart."
   );
   await writeProjectFile(

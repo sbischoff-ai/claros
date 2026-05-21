@@ -65,14 +65,14 @@ async function createProjectRoot(): Promise<string> {
 
   await writeProjectFile(
     root,
-    "manuscript/01-prologue/01-opening.md",
+    "manuscript/001-prologue/001-opening.md",
     ["---", "title: Opening", "---", "", "Start at [[Ancient Ruin]].", "", "Opening body."].join(
       "\n"
     )
   );
   await writeProjectFile(
     root,
-    "manuscript/01-prologue/02-arrival.md",
+    "manuscript/001-prologue/002-arrival.md",
     ["---", "title: Arrival", "---", "", "See [[kareth]]."].join("\n")
   );
   await writeProjectFile(
@@ -115,7 +115,7 @@ async function createProjectRoot(): Promise<string> {
 
   await writeProjectFile(
     root,
-    "state/scenes/01-prologue/01-opening.yaml",
+    "state/scenes/001-prologue/001-opening.yaml",
     "mythic:\n  chaos_factor: 5\n"
   );
 
@@ -140,10 +140,10 @@ describe("openProject", () => {
     const project = await openProject(root);
 
     expect(project.manifest.title).toBe("Workspace Test");
-    expect(project.listChapters().map((chapter) => chapter.id)).toEqual(["01-prologue"]);
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual(["001-prologue"]);
     expect(project.listScenes().map((scene) => scene.path)).toEqual([
-      "manuscript/01-prologue/01-opening.md",
-      "manuscript/01-prologue/02-arrival.md",
+      "manuscript/001-prologue/001-opening.md",
+      "manuscript/001-prologue/002-arrival.md",
     ]);
     expect(project.listNotes().map((note) => note.path)).toEqual([
       "notes/characters/kareth.md",
@@ -159,7 +159,7 @@ describe("openProject", () => {
       fileWriter: writer,
     });
 
-    const opening = await project.readDocument({ path: "manuscript/01-prologue/01-opening.md" });
+    const opening = await project.readDocument({ path: "manuscript/001-prologue/001-opening.md" });
     expect(opening.frontmatter).toEqual({ title: "Opening" });
 
     const nextOpening = opening.raw.replace("Opening body.", "Updated opening body.");
@@ -197,7 +197,7 @@ describe("openProject", () => {
       fileWriter: new FailingProjectFileWriter(),
     });
 
-    const opening = await project.readDocument({ path: "manuscript/01-prologue/01-opening.md" });
+    const opening = await project.readDocument({ path: "manuscript/001-prologue/001-opening.md" });
     await expect(
       project.writeDocument({ path: opening.path }, opening.raw.replace("Opening", "Changed"))
     ).rejects.toThrow("intentional write failure");
@@ -260,11 +260,11 @@ describe("openProject", () => {
     });
 
     const result = await projectWithWriter.setSceneState(
-      "01-prologue/01-opening",
+      "001-prologue/001-opening",
       "mythic.chaos_factor",
       6
     );
-    expect(await project.getSceneState("01-prologue/01-opening", "mythic.chaos_factor")).toBe(6);
+    expect(await project.getSceneState("001-prologue/001-opening", "mythic.chaos_factor")).toBe(6);
 
     await setSceneState(root, "2-into-the-dark", "mythic.chaos_factor", 4);
     expect(await getSceneState(root, "2-into-the-dark", "mythic.chaos_factor")).toBe(4);
@@ -281,10 +281,10 @@ describe("openProject", () => {
         await fs.readFile(path.join(root, "state/chapters/1-the-abandoned-temple.yaml"), "utf8")
       ).data
     ).toEqual({ route: { current: "north" } });
-    expect(writer.writes).toContain(path.join(root, "state/scenes/01-prologue/01-opening.yaml"));
+    expect(writer.writes).toContain(path.join(root, "state/scenes/001-prologue/001-opening.yaml"));
     expect(result).toEqual({
       kind: "state-path",
-      changedPaths: ["state/scenes/01-prologue/01-opening.yaml"],
+      changedPaths: ["state/scenes/001-prologue/001-opening.yaml"],
       indexUpdated: false,
     });
   });
@@ -293,13 +293,13 @@ describe("openProject", () => {
     const root = await createProjectRoot();
     await writeProjectFile(
       root,
-      "manuscript/01-prologue/chapter.yaml",
+      "manuscript/001-prologue/chapter.yaml",
       ["title: Prologue", "unknown:", "  keep: true"].join("\n")
     );
     const project = await openProject(root);
 
     await project.setProjectMetadataPath("exports.clean", true);
-    await project.setChapterMetadataPath("01-prologue", "route.current", "north");
+    await project.setChapterMetadataPath("001-prologue", "route.current", "north");
 
     expect(
       parseStateFile(await fs.readFile(path.join(root, "claros.yaml"), "utf8")).data
@@ -309,7 +309,7 @@ describe("openProject", () => {
     });
     expect(
       parseStateFile(
-        await fs.readFile(path.join(root, "manuscript/01-prologue/chapter.yaml"), "utf8")
+        await fs.readFile(path.join(root, "manuscript/001-prologue/chapter.yaml"), "utf8")
       ).data
     ).toEqual({
       title: "Prologue",
@@ -325,11 +325,18 @@ describe("openProject", () => {
     await project.setProjectTitle("Next Workspace");
     const appendedChapter = await project.appendChapter("Second Act");
     const appendedScene = await project.appendScene("");
-    await project.setChapterTitle("01-prologue", "");
-    await project.setSceneTitle("manuscript/01-prologue/01-opening.md", "A New Opening");
+    await project.setChapterTitle("001-prologue", "");
+    await project.setSceneTitle("manuscript/001-chapter-1/001-opening.md", "A New Opening");
 
-    expect(appendedChapter.scene.path).toBe("manuscript/02-second-act/03-scene-3.md");
-    expect(appendedScene.scene.path).toBe("manuscript/02-second-act/04-scene-4.md");
+    expect(appendedChapter.scene.path).toBe("manuscript/002-second-act/003-scene-3.md");
+    expect(appendedScene.scene.path).toBe("manuscript/002-second-act/004-scene-4.md");
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual([
+      "001-chapter-1",
+      "002-second-act",
+    ]);
+    expect(project.listScenes().map((scene) => scene.path)).toContain(
+      "manuscript/001-chapter-1/001-a-new-opening.md"
+    );
     expect(project.listChapters().map((chapter) => chapter.title)).toEqual([
       "Chapter 1",
       "Second Act",
@@ -347,26 +354,57 @@ describe("openProject", () => {
     });
   });
 
+  it("renames chapter and scene paths from normalized title slugs", async () => {
+    const root = await createProjectRoot();
+    const project = await openProject(root);
+
+    await project.appendChapter("Second Act");
+    await project.setChapterTitle("002-second-act", "THE GREAT WALRUS!");
+
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual([
+      "001-prologue",
+      "002-the-great-walrus",
+    ]);
+    expect(project.listScenes().map((scene) => scene.path)).toContain(
+      "manuscript/002-the-great-walrus/003-scene-3.md"
+    );
+
+    for (let sequence = 3; sequence <= 121; sequence += 1) {
+      await writeProjectFile(
+        root,
+        `manuscript/001-prologue/${String(sequence).padStart(3, "0")}-scene-${sequence}.md`,
+        `Scene ${sequence}.`
+      );
+    }
+    const reloaded = await openProject(root);
+
+    await reloaded.setSceneTitle("manuscript/001-prologue/121-scene-121.md", "tHe ulTimATUm...");
+
+    expect(reloaded.listScenes().map((scene) => scene.path)).toContain(
+      "manuscript/001-prologue/121-the-ultimatum.md"
+    );
+  });
+
   it("deletes scenes and chapters while resequencing manuscript paths", async () => {
     const root = await createProjectRoot();
     const project = await openProject(root);
 
     await project.appendChapter("Second Act");
-    const deleteSceneResult = await project.deleteScene("manuscript/01-prologue/01-opening.md");
+    const deleteSceneResult = await project.deleteScene("manuscript/001-prologue/001-opening.md");
 
-    expect(deleteSceneResult.nextScene?.path).toBe("manuscript/01-prologue/01-arrival.md");
+    expect(deleteSceneResult.nextScene?.path).toBe("manuscript/001-prologue/001-arrival.md");
     expect(project.listScenes().map((scene) => scene.path)).toEqual([
-      "manuscript/01-prologue/01-arrival.md",
-      "manuscript/02-second-act/02-scene-2.md",
+      "manuscript/001-prologue/001-arrival.md",
+      "manuscript/002-second-act/002-scene-2.md",
     ]);
 
-    const deleteChapterResult = await project.deleteChapter("01-prologue");
-    expect(deleteChapterResult.nextScene?.path).toBe("manuscript/01-second-act/01-scene-1.md");
-    expect(project.listChapters().map((chapter) => chapter.id)).toEqual(["01-second-act"]);
+    const deleteChapterResult = await project.deleteChapter("001-prologue");
+    expect(deleteChapterResult.nextScene?.path).toBe("manuscript/001-second-act/001-scene-1.md");
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual(["001-second-act"]);
     expect(project.listScenes().map((scene) => scene.path)).toEqual([
-      "manuscript/01-second-act/01-scene-1.md",
+      "manuscript/001-second-act/001-scene-1.md",
     ]);
-    await expect(project.deleteScene("manuscript/01-second-act/01-scene-1.md")).rejects.toThrow(
+    await expect(project.deleteScene("manuscript/001-second-act/001-scene-1.md")).rejects.toThrow(
       "Cannot delete the final remaining scene"
     );
   });
@@ -395,7 +433,7 @@ describe("openProject", () => {
     expect(plan.affectedPaths).toContain("notes/characters/kareth.md");
     expect(plan.affectedPaths).toContain("notes/characters/kareth-renamed.md");
     expect(plan.linkRewrite?.rewrites.map((rewrite) => rewrite.path)).toEqual([
-      "manuscript/01-prologue/02-arrival.md",
+      "manuscript/001-prologue/002-arrival.md",
     ]);
     expect(result).toEqual({ kind: "structural", changedPaths: [], indexUpdated: false });
     await expect(fs.stat(path.join(root, "notes/characters/kareth.md"))).resolves.toBeDefined();
@@ -421,7 +459,7 @@ describe("openProject", () => {
       fs.stat(path.join(root, "notes/characters/kareth-renamed.md"))
     ).resolves.toBeDefined();
     expect(
-      await fs.readFile(path.join(root, "manuscript/01-prologue/02-arrival.md"), "utf8")
+      await fs.readFile(path.join(root, "manuscript/001-prologue/002-arrival.md"), "utf8")
     ).toContain("[[notes/characters/kareth-renamed.md|kareth]]");
     expect(project.listNotes().map((note) => note.path)).toContain(
       "notes/characters/kareth-renamed.md"
@@ -439,7 +477,7 @@ describe("openProject", () => {
     expect(result.kind).toBe("structural");
     expect(result.indexUpdated).toBe(true);
     expect(result.changedPaths).toEqual([
-      "manuscript/01-prologue/02-arrival.md",
+      "manuscript/001-prologue/002-arrival.md",
       "notes/characters/kareth-renamed.md",
       "notes/characters/kareth.md",
     ]);
@@ -479,7 +517,7 @@ describe("openProject", () => {
       project
         .getBacklinks({ path: "notes/places/ancient-ruin.md" })
         .map((link) => `${link.fromPath}:${link.target}`)
-    ).toEqual(["manuscript/01-prologue/01-opening.md:Ancient Ruin"]);
+    ).toEqual(["manuscript/001-prologue/001-opening.md:Ancient Ruin"]);
 
     expect(project.listClarosBlocks().map((block) => block.runId)).toEqual(["00009"]);
     expect(project.listClarosBlocks({ path: "notes/places/ancient-ruin.md" })).toHaveLength(1);
@@ -497,27 +535,27 @@ describe("openProject", () => {
     expect(await project.listMacroRuns()).toEqual([]);
 
     const result = await project.executeMacroInDocument({
-      document: { path: "manuscript/01-prologue/01-opening.md" },
+      document: { path: "manuscript/001-prologue/001-opening.md" },
       macroId: "mythic.scene-setup",
       params: { pcs_in_control: true },
       insertAt: { kind: "end-of-document" },
     });
 
     expect(result.run.macro).toBe("mythic.scene-setup");
-    expect(result.run.document).toBe("manuscript/01-prologue/01-opening.md");
-    expect(result.run.sceneId).toBe("01-prologue/01-opening");
-    expect(result.run.chapterId).toBe("01-prologue");
+    expect(result.run.document).toBe("manuscript/001-prologue/001-opening.md");
+    expect(result.run.sceneId).toBe("001-prologue/001-opening");
+    expect(result.run.chapterId).toBe("001-prologue");
     expect(result.document?.raw).toContain("[!claros] Mythi");
-    expect(await project.getSceneState("01-prologue/01-opening", "mythic.chaos_factor")).toBe(4);
+    expect(await project.getSceneState("001-prologue/001-opening", "mythic.chaos_factor")).toBe(4);
 
     const runs = await project.listMacroRuns();
     expect(runs).toHaveLength(1);
     expect(await project.getMacroRun(result.run.id)).toMatchObject({ id: result.run.id });
-    expect(project.listClarosBlocks({ path: "manuscript/01-prologue/01-opening.md" })).toHaveLength(
-      1
-    );
-    expect(reader.reads).toContain(path.join(root, "manuscript/01-prologue/01-opening.md"));
-    expect(writer.writes).toContain(path.join(root, "manuscript/01-prologue/01-opening.md"));
+    expect(
+      project.listClarosBlocks({ path: "manuscript/001-prologue/001-opening.md" })
+    ).toHaveLength(1);
+    expect(reader.reads).toContain(path.join(root, "manuscript/001-prologue/001-opening.md"));
+    expect(writer.writes).toContain(path.join(root, "manuscript/001-prologue/001-opening.md"));
   });
 
   it("exposes checkpoint status/history shape while leaving git checkpoint internals for later", async () => {

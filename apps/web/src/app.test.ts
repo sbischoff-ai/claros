@@ -113,7 +113,7 @@ describe("project session", () => {
   it("returns the first scene path for the initial document", async () => {
     const session = await openLocalProjectSession(createProjectHandle());
 
-    expect(firstDocumentPath(session)).toBe("manuscript/01-start/01-opening.md");
+    expect(firstDocumentPath(session)).toBe("manuscript/001-start/001-opening.md");
   });
 
   it("persists document writes to local files", async () => {
@@ -123,7 +123,7 @@ describe("project session", () => {
 
     await session.writeDocument({ path }, "# Updated");
 
-    expect(await readHandleFile(handle, "/manuscript/01-start/01-opening.md")).toContain(
+    expect(await readHandleFile(handle, "/manuscript/001-start/001-opening.md")).toContain(
       "# Updated"
     );
   });
@@ -158,7 +158,7 @@ describe("project session", () => {
     await session.writeDocument({ path }, document.body);
     await session.writeDocument({ path }, document.body);
 
-    expect(await readHandleFile(handle, "/manuscript/01-start/01-opening.md")).toBe(
+    expect(await readHandleFile(handle, "/manuscript/001-start/001-opening.md")).toBe(
       "---\ntitle: Opening\n---\n\nStart."
     );
   });
@@ -168,7 +168,7 @@ describe("project session", () => {
     const session = await createNewLocalProjectSession(handle, "Browser Draft");
 
     expect(session.manifest.title).toBe("Browser Draft");
-    expect(firstDocumentPath(session)).toBe("manuscript/01-draft/01-opening.md");
+    expect(firstDocumentPath(session)).toBe("manuscript/001-draft/001-opening.md");
     expect(await readHandleFile(handle, "/claros.yaml")).toContain("Browser Draft");
   });
 
@@ -179,12 +179,16 @@ describe("project session", () => {
     await session.setProjectTitle("Renamed Workspace");
     const chapterScene = await session.appendChapter("Second Act");
     const appendedScene = await session.appendScene("");
-    await session.setChapterTitle("01-start", "");
-    await session.setSceneTitle("manuscript/01-start/01-opening.md", "A New Opening");
+    await session.setChapterTitle("001-start", "");
+    const renamedScene = await session.setSceneTitle(
+      "manuscript/001-chapter-1/001-opening.md",
+      "A New Opening"
+    );
 
     expect(session.manifest.title).toBe("Renamed Workspace");
-    expect(chapterScene.path).toBe("manuscript/02-second-act/02-scene-2.md");
-    expect(appendedScene.path).toBe("manuscript/02-second-act/03-scene-3.md");
+    expect(chapterScene.path).toBe("manuscript/002-second-act/002-scene-2.md");
+    expect(appendedScene.path).toBe("manuscript/002-second-act/003-scene-3.md");
+    expect(renamedScene.path).toBe("manuscript/001-chapter-1/001-a-new-opening.md");
     expect(session.listChapters().map((chapter) => chapter.title)).toEqual([
       "Chapter 1",
       "Second Act",
@@ -195,9 +199,24 @@ describe("project session", () => {
       "Scene 3",
     ]);
 
-    const nextPath = await session.deleteScene("manuscript/01-start/01-opening.md");
-    expect(nextPath).toBe("manuscript/01-second-act/01-scene-1.md");
-    expect(session.listChapters().map((chapter) => chapter.id)).toEqual(["01-second-act"]);
+    const nextPath = await session.deleteScene("manuscript/001-chapter-1/001-a-new-opening.md");
+    expect(nextPath).toBe("manuscript/001-second-act/001-scene-1.md");
+    expect(session.listChapters().map((chapter) => chapter.id)).toEqual(["001-second-act"]);
+  });
+
+  it("preserves the surviving scene body when deletion resequences it to the deleted path", async () => {
+    const handle = createTwoSceneDefaultSlugProjectHandle();
+    const session = await openLocalProjectSession(handle);
+
+    const nextPath = await session.deleteScene("manuscript/001-draft/001-scene-1.md");
+    const nextDocument = await session.readDocument({ path: nextPath });
+
+    expect(nextPath).toBe("manuscript/001-draft/001-scene-1.md");
+    expect(nextDocument.body).toContain("Second scene body.");
+    expect(nextDocument.body).not.toContain("First scene body.");
+    expect(await readHandleFile(handle, "/manuscript/001-draft/001-scene-1.md")).toContain(
+      "Second scene body."
+    );
   });
 
   it("opens and writes through the local companion API", async () => {
@@ -214,7 +233,7 @@ describe("project session", () => {
         return jsonResponse({
           ok: true,
           document: {
-            path: "manuscript/01-start/01-opening.md",
+            path: "manuscript/001-start/001-opening.md",
             raw: "---\ntitle: Opening\n---\n\nStart.",
             body: "Start.",
             title: "Opening",
@@ -227,7 +246,7 @@ describe("project session", () => {
           ok: true,
           project: companionProject(),
           document: {
-            path: "manuscript/01-start/01-opening.md",
+            path: "manuscript/001-start/001-opening.md",
             raw: "---\ntitle: Opening\n---\n\nUpdated.",
             body: "Updated.",
             title: "Opening",
@@ -247,7 +266,7 @@ describe("project session", () => {
     expect((await session.readDocument({ path: firstDocumentPath(session) })).body).toBe("Start.");
     await session.writeDocument({ path: firstDocumentPath(session) }, "Updated.");
     expect(requests.at(-1)?.init?.body).toBe(
-      JSON.stringify({ path: "manuscript/01-start/01-opening.md", body: "Updated." })
+      JSON.stringify({ path: "manuscript/001-start/001-opening.md", body: "Updated." })
     );
   });
 });
@@ -269,6 +288,11 @@ describe("workspace command surface", () => {
     expect(pageSource).toContain("optimisticChapterTitles");
     expect(pageSource).toContain("optimisticSceneTitles");
     expect(pageSource).toContain("await focusEditorAfterOpen()");
+    expect(pageSource).toContain("suppressEditorChange");
+    expect(pageSource).toContain("forceReload?: boolean; skipSave?: boolean");
+    expect(pageSource).toContain(
+      "await openDocument(nextPath, { forceReload: true, skipSave: true })"
+    );
     expect(pageSource).toContain('activeDocumentKind === "note" ? "start" : "end"');
     expect(pageSource).toContain("lastWorkspaceFocus");
     expect(pageSource).toContain("restoreWorkspaceFocus(modal.returnFocus)");
@@ -396,9 +420,9 @@ function createProjectHandle(): MemoryDirectoryHandle {
   return directory("project", {
     "claros.yaml": file("claros.yaml", "claros: 1\ntitle: Browser Workspace\n"),
     manuscript: directory("manuscript", {
-      "01-start": directory("01-start", {
+      "001-start": directory("001-start", {
         "chapter.yaml": file("chapter.yaml", "title: Start\n"),
-        "01-opening.md": file("01-opening.md", "---\ntitle: Opening\n---\n\nStart."),
+        "001-opening.md": file("001-opening.md", "---\ntitle: Opening\n---\n\nStart."),
       }),
     }),
     notes: directory("notes", {
@@ -409,6 +433,20 @@ function createProjectHandle(): MemoryDirectoryHandle {
         ),
       }),
     }),
+  });
+}
+
+function createTwoSceneDefaultSlugProjectHandle(): MemoryDirectoryHandle {
+  return directory("project", {
+    "claros.yaml": file("claros.yaml", "claros: 1\ntitle: Browser Workspace\n"),
+    manuscript: directory("manuscript", {
+      "001-draft": directory("001-draft", {
+        "chapter.yaml": file("chapter.yaml", "title: Draft\n"),
+        "001-scene-1.md": file("001-scene-1.md", "---\ntitle: First\n---\n\nFirst scene body."),
+        "002-scene-2.md": file("002-scene-2.md", "---\ntitle: Second\n---\n\nSecond scene body."),
+      }),
+    }),
+    notes: directory("notes"),
   });
 }
 
@@ -438,17 +476,17 @@ function companionProject(): unknown {
     chapters: [
       {
         kind: "chapter",
-        id: "01-start",
+        id: "001-start",
         sequence: 1,
         title: "Start",
         scenes: [
           {
             kind: "scene",
-            id: "01-start/01-opening",
-            chapterId: "01-start",
+            id: "001-start/001-opening",
+            chapterId: "001-start",
             sequence: 1,
             title: "Opening",
-            path: "manuscript/01-start/01-opening.md",
+            path: "manuscript/001-start/001-opening.md",
           },
         ],
       },

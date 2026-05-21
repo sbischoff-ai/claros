@@ -66,8 +66,8 @@ export interface ProjectSession {
   setProjectTitle(title: string): Promise<void>;
   appendChapter(chapterTitle: string, sceneTitle?: string): Promise<WorkspaceScene>;
   appendScene(title: string): Promise<WorkspaceScene>;
-  setChapterTitle(chapterId: string, title: string): Promise<void>;
-  setSceneTitle(scenePath: string, title: string): Promise<void>;
+  setChapterTitle(chapterId: string, title: string): Promise<WorkspaceChapter>;
+  setSceneTitle(scenePath: string, title: string): Promise<WorkspaceScene>;
   deleteChapter(chapterId: string): Promise<string>;
   deleteScene(scenePath: string): Promise<string>;
 }
@@ -203,11 +203,33 @@ function createProjectSession(project: ClarosProject): ProjectSession {
       const { scene } = await project.appendScene(title);
       return toWorkspaceScene(scene);
     },
-    async setChapterTitle(chapterId: string, title: string): Promise<void> {
+    async setChapterTitle(chapterId: string, title: string): Promise<WorkspaceChapter> {
+      const current = project.listChapters().find((chapter) => chapter.id === chapterId);
       await project.setChapterTitle(chapterId, title);
+      const chapter = project
+        .listChapters()
+        .find((candidate) => candidate.sequence === current?.sequence);
+      if (chapter === undefined) {
+        throw new Error(`Chapter not found after title update: ${chapterId}`);
+      }
+      return toWorkspaceChapter(
+        chapter,
+        project
+          .listScenes()
+          .filter((scene) => scene.chapterId === chapter.id)
+          .map(toWorkspaceScene)
+      );
     },
-    async setSceneTitle(scenePath: string, title: string): Promise<void> {
+    async setSceneTitle(scenePath: string, title: string): Promise<WorkspaceScene> {
+      const current = project.listScenes().find((scene) => scene.path === scenePath);
       await project.setSceneTitle(scenePath, title);
+      const scene = project
+        .listScenes()
+        .find((candidate) => candidate.sequence === current?.sequence);
+      if (scene === undefined) {
+        throw new Error(`Scene not found after title update: ${scenePath}`);
+      }
+      return toWorkspaceScene(scene);
     },
     async deleteChapter(chapterId: string): Promise<string> {
       const { nextScene } = await project.deleteChapter(chapterId);
@@ -279,19 +301,31 @@ function createCompanionProjectSession(
       summary = projectFromResponse(response);
       return sceneFromMutationResponse(response);
     },
-    async setChapterTitle(chapterId: string, title: string): Promise<void> {
-      summary = await mutateCompanionProject(connection, {
-        action: "set-chapter-title",
-        chapterId,
-        title,
+    async setChapterTitle(chapterId: string, title: string): Promise<WorkspaceChapter> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "set-chapter-title",
+          chapterId,
+          title,
+        }),
       });
+      summary = projectFromResponse(response);
+      return chapterFromMutationResponse(response);
     },
-    async setSceneTitle(scenePath: string, title: string): Promise<void> {
-      summary = await mutateCompanionProject(connection, {
-        action: "set-scene-title",
-        path: scenePath,
-        title,
+    async setSceneTitle(scenePath: string, title: string): Promise<WorkspaceScene> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "set-scene-title",
+          path: scenePath,
+          title,
+        }),
       });
+      summary = projectFromResponse(response);
+      return sceneFromMutationResponse(response);
     },
     async deleteChapter(chapterId: string): Promise<string> {
       const response = await companionFetch(connection, "/api/project/mutation", {
@@ -323,15 +357,15 @@ async function initializeNewProject(
     throw new Error("claros.yaml already exists");
   }
 
-  await fileSystem.mkdir("/manuscript/01-draft", true);
+  await fileSystem.mkdir("/manuscript/001-draft", true);
   await fileSystem.mkdir("/notes", true);
   await fileSystem.writeFileAtomic(
     "/claros.yaml",
     `claros: 1\ntitle: ${yamlString(normalizedProjectTitle(title))}\n`
   );
-  await fileSystem.writeFileAtomic("/manuscript/01-draft/chapter.yaml", "title: Draft\n");
+  await fileSystem.writeFileAtomic("/manuscript/001-draft/chapter.yaml", "title: Draft\n");
   await fileSystem.writeFileAtomic(
-    "/manuscript/01-draft/01-opening.md",
+    "/manuscript/001-draft/001-opening.md",
     "---\ntitle: Opening\n---\n\n# Draft\n\n## Opening\n\n"
   );
 }
@@ -410,6 +444,13 @@ function sceneFromMutationResponse(response: unknown): WorkspaceScene {
     throw new Error("Companion response did not include a scene");
   }
   return normalizeWorkspaceScene(response.scene);
+}
+
+function chapterFromMutationResponse(response: unknown): WorkspaceChapter {
+  if (!isRecord(response) || !isRecord(response.chapter)) {
+    throw new Error("Companion response did not include a chapter");
+  }
+  return normalizeWorkspaceChapter(response.chapter);
 }
 
 function nextPathFromMutationResponse(response: unknown): string | undefined {

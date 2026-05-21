@@ -16,13 +16,13 @@ Current project scanning requires:
 <project-root>/
   claros.yaml
   manuscript/
-    01-prologue/
+    001-prologue/
       chapter.yaml
-      01-opening.md
-      02-arrival.md
-    02-journey/
+      001-opening.md
+      002-arrival.md
+    002-journey/
       chapter.yaml
-      01-road.md
+      001-road.md
   notes/
     characters/
       kareth.md
@@ -31,9 +31,9 @@ Current project scanning requires:
   state/
     story.yaml
     chapters/
-      01-prologue.yaml
+      001-prologue.yaml
     scenes/
-      01-prologue/01-opening.yaml
+      001-prologue/001-opening.yaml
     runs/
       emergence.yaml
   modules/
@@ -89,13 +89,13 @@ Manuscript structure is strict and path-derived.
 Chapter directories must match:
 
 ```text
-<sequence>-<kebab-slug>
+<three-digit-sequence>-<kebab-slug>
 ```
 
 Examples:
 
-- `01-prologue`
-- `2-the-abandoned-temple`
+- `0001-prologue`
+- `002-the-abandoned-temple`
 
 From this, `story-format` derives:
 
@@ -109,13 +109,13 @@ From this, `story-format` derives:
 Scene markdown files must live inside a chapter directory and must match:
 
 ```text
-<sequence>-<kebab-slug>.md
+<three-digit-sequence>-<kebab-slug>.md
 ```
 
 Examples:
 
-- `01-opening.md`
-- `2-into-the-dark.md`
+- `0001-opening.md`
+- `121-into-the-dark.md`
 
 Direct markdown files under `manuscript/` are invalid in MVP.
 
@@ -128,8 +128,8 @@ scene.id = <chapter-id>/<scene-file-stem>
 For example:
 
 ```text
-manuscript/01-prologue/02-arrival.md
-=> scene.id = 01-prologue/02-arrival
+manuscript/0001-prologue/0002-arrival.md
+=> scene.id = 0001-prologue/0002-arrival
 ```
 
 ### `chapter.yaml`
@@ -167,9 +167,9 @@ Digit-prefixed scene and chapter IDs are intentional and valid.
 Examples:
 
 ```text
-state/chapters/1-the-abandoned-temple.yaml
-state/scenes/2-into-the-dark.yaml
-state/scenes/01-prologue/01-opening.yaml
+state/chapters/001-the-abandoned-temple.yaml
+state/scenes/002-into-the-dark.yaml
+state/scenes/001-prologue/001-opening.yaml
 ```
 
 ## Module Directories

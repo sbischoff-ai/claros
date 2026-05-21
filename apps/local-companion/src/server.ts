@@ -179,6 +179,17 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
         writeJson(response, 200, {
           ok: true,
           project: summarizeProject(project),
+          ...(mutation.chapter === undefined
+            ? {}
+            : {
+                chapter: toWorkspaceChapter(
+                  mutation.chapter,
+                  project
+                    .listScenes()
+                    .filter((scene) => scene.chapterId === mutation.chapter?.id)
+                    .map(toWorkspaceScene)
+                ),
+              }),
           ...(mutation.scene === undefined ? {} : { scene: toWorkspaceScene(mutation.scene) }),
           ...(mutation.nextPath === undefined ? {} : { nextPath: mutation.nextPath }),
         });
@@ -243,7 +254,7 @@ async function initializeProject(projectRoot: string, title = "Untitled Project"
     throw new CompanionError(409, "PROJECT_EXISTS", "claros.yaml already exists");
   }
 
-  await mkdir(path.join(projectRoot, "manuscript", "01-draft"), { recursive: true });
+  await mkdir(path.join(projectRoot, "manuscript", "001-draft"), { recursive: true });
   await mkdir(path.join(projectRoot, "notes"), { recursive: true });
   await writeFile(
     path.join(projectRoot, "claros.yaml"),
@@ -254,12 +265,12 @@ async function initializeProject(projectRoot: string, title = "Untitled Project"
     }
   );
   await writeFile(
-    path.join(projectRoot, "manuscript", "01-draft", "chapter.yaml"),
+    path.join(projectRoot, "manuscript", "001-draft", "chapter.yaml"),
     "title: Draft\n",
     { encoding: "utf8", flag: "wx" }
   );
   await writeFile(
-    path.join(projectRoot, "manuscript", "01-draft", "01-opening.md"),
+    path.join(projectRoot, "manuscript", "001-draft", "001-opening.md"),
     "---\ntitle: Opening\n---\n\n# Draft\n\n## Opening\n\n",
     { encoding: "utf8", flag: "wx" }
   );
@@ -298,7 +309,7 @@ function summarizeProject(project: ClarosProject): ProjectSummary {
 async function applyProjectMutation(
   project: ClarosProject,
   body: Record<string, unknown>
-): Promise<{ scene?: SceneRef; nextPath?: string }> {
+): Promise<{ chapter?: ChapterRef; scene?: SceneRef; nextPath?: string }> {
   const title = typeof body.title === "string" ? body.title : "";
   switch (body.action) {
     case "set-project-title":
@@ -317,14 +328,24 @@ async function applyProjectMutation(
       if (typeof body.chapterId !== "string") {
         throw new CompanionError(400, "BAD_REQUEST", "Expected chapterId");
       }
+      const currentChapter = project
+        .listChapters()
+        .find((chapter) => chapter.id === body.chapterId);
       await project.setChapterTitle(body.chapterId, title);
-      return {};
+      return {
+        chapter: project
+          .listChapters()
+          .find((chapter) => chapter.sequence === currentChapter?.sequence),
+      };
     case "set-scene-title":
       if (typeof body.path !== "string") {
         throw new CompanionError(400, "BAD_REQUEST", "Expected path");
       }
+      const currentScene = project.listScenes().find((scene) => scene.path === body.path);
       await project.setSceneTitle(body.path, title);
-      return {};
+      return {
+        scene: project.listScenes().find((scene) => scene.sequence === currentScene?.sequence),
+      };
     case "delete-chapter": {
       if (typeof body.chapterId !== "string") {
         throw new CompanionError(400, "BAD_REQUEST", "Expected chapterId");

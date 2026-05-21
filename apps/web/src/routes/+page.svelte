@@ -109,6 +109,7 @@
   let projectTitleReturnFocus: WorkspaceFocusTarget | undefined;
   let sidebarTitleReturnFocus: WorkspaceFocusTarget | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let suppressEditorChange = false;
 
   $: chapters = listProjectChapters(projectRevision, project);
   $: scenes = listProjectScenes(projectRevision, project);
@@ -259,7 +260,7 @@
     startupReady = true;
     if (projectIsOpen) {
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
+      setEditorMarkdown(currentMarkdown);
       focusEditorWithDefaultCursor();
     }
   }
@@ -301,7 +302,7 @@
       openStorageBackendId = "file-picker";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
+      setEditorMarkdown(currentMarkdown);
       focusEditorWithDefaultCursor();
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -342,7 +343,7 @@
       openStorageBackendId = "file-picker";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
+      setEditorMarkdown(currentMarkdown);
       focusEditorWithDefaultCursor();
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -426,7 +427,7 @@
       openStorageBackendId = "local-companion";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
+      setEditorMarkdown(currentMarkdown);
       focusEditorWithDefaultCursor();
     } catch (error) {
       projectOpenState = hadOpenProject ? "open" : "error";
@@ -464,7 +465,7 @@
       openStorageBackendId = "local-companion";
       sidebarOpen = false;
       await ensureEditor();
-      editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
+      setEditorMarkdown(currentMarkdown);
       focusEditorWithDefaultCursor();
     } catch (error) {
       projectOpenState = hadOpenProject ? "open" : "error";
@@ -473,6 +474,9 @@
   }
 
   function handleEditorChange(markdown: string): void {
+    if (suppressEditorChange) {
+      return;
+    }
     if (!projectIsOpen) {
       return;
     }
@@ -536,6 +540,18 @@
     projectRevision += 1;
   }
 
+  function setEditorMarkdown(markdown: string): void {
+    if (editor === undefined) {
+      return;
+    }
+    suppressEditorChange = true;
+    try {
+      editor.setMarkdown(markdown, { cursor: defaultCursorForActiveDocument() });
+    } finally {
+      suppressEditorChange = false;
+    }
+  }
+
   async function loadDocument(path: string): Promise<void> {
     if (!project) {
       return;
@@ -549,15 +565,20 @@
     saveState = "saved";
   }
 
-  async function openDocument(path: string): Promise<void> {
-    if (path === activePath) {
+  async function openDocument(
+    path: string,
+    options: { forceReload?: boolean; skipSave?: boolean } = {}
+  ): Promise<void> {
+    if (path === activePath && options.forceReload !== true) {
       await focusEditorAfterOpen();
       return;
     }
 
-    await flushSave();
+    if (options.skipSave !== true) {
+      await flushSave();
+    }
     await loadDocument(path);
-    editor?.setMarkdown(currentMarkdown, { cursor: defaultCursorForActiveDocument() });
+    setEditorMarkdown(currentMarkdown);
     await focusEditorAfterOpen();
   }
 
@@ -1243,13 +1264,13 @@
     if (modal.target === "chapter" && modal.chapterId !== undefined) {
       const nextPath = await project.deleteChapter(modal.chapterId);
       refreshProjectView();
-      await openDocument(nextPath);
+      await openDocument(nextPath, { forceReload: true, skipSave: true });
       return;
     }
     if (modal.target === "scene" && modal.scenePath !== undefined) {
       const nextPath = await project.deleteScene(modal.scenePath);
       refreshProjectView();
-      await openDocument(nextPath);
+      await openDocument(nextPath, { forceReload: true, skipSave: true });
     }
   }
 
@@ -1307,9 +1328,19 @@
       return;
     }
     const nextTitle = normalizedChapterTitle(chapterId, title, chapters);
+    const activeSceneSequence =
+      activeChapter?.id === chapterId ? activeScene?.sequence : undefined;
     optimisticChapterTitles = new Map(optimisticChapterTitles).set(chapterId, nextTitle);
     try {
-      await project.setChapterTitle(chapterId, title);
+      const updatedChapter = await project.setChapterTitle(chapterId, title);
+      const updatedActiveScene =
+        activeSceneSequence === undefined
+          ? undefined
+          : updatedChapter.scenes.find((scene) => scene.sequence === activeSceneSequence);
+      if (updatedActiveScene !== undefined) {
+        await loadDocument(updatedActiveScene.path);
+        setEditorMarkdown(currentMarkdown);
+      }
     } finally {
       const next = new Map(optimisticChapterTitles);
       next.delete(chapterId);
@@ -1328,7 +1359,11 @@
       activeTitle = nextTitle;
     }
     try {
-      await project.setSceneTitle(scenePath, title);
+      const updatedScene = await project.setSceneTitle(scenePath, title);
+      if (scenePath === activePath) {
+        await loadDocument(updatedScene.path);
+        setEditorMarkdown(currentMarkdown);
+      }
     } finally {
       const next = new Map(optimisticSceneTitles);
       next.delete(scenePath);
