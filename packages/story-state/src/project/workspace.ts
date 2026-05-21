@@ -96,6 +96,18 @@ export interface RenameSceneOptions {
   dryRun?: boolean;
 }
 
+export type ManuscriptInsertionPlacement = "append" | "before" | "after";
+
+export interface CreateSceneOptions {
+  placement?: ManuscriptInsertionPlacement;
+  targetScene?: SceneRef | string;
+}
+
+export interface CreateChapterOptions {
+  placement?: ManuscriptInsertionPlacement;
+  targetChapter?: ChapterRef | string;
+}
+
 export interface StructuralMutationPlan {
   operation: "rename-scene" | "rename-note" | "move-note" | "reorder-scene" | "delete-document";
   affectedPaths: string[];
@@ -239,6 +251,15 @@ export interface ClarosProject {
     sceneTitle?: string
   ): Promise<{ result: MutationResult; scene: SceneRef }>;
   appendScene(title: string): Promise<{ result: MutationResult; scene: SceneRef }>;
+  createChapter(
+    chapterTitle: string,
+    sceneTitle?: string,
+    options?: CreateChapterOptions
+  ): Promise<{ result: MutationResult; scene: SceneRef }>;
+  createScene(
+    title: string,
+    options?: CreateSceneOptions
+  ): Promise<{ result: MutationResult; scene: SceneRef }>;
   deleteChapter(chapterId: string): Promise<{ result: MutationResult; nextScene?: SceneRef }>;
   deleteScene(scene: SceneRef | string): Promise<{ result: MutationResult; nextScene?: SceneRef }>;
 
@@ -527,6 +548,27 @@ export async function appendScene(
 ): Promise<{ result: MutationResult; scene: SceneRef }> {
   const project = await openProject(projectRoot, options);
   return project.appendScene(title);
+}
+
+export async function createChapter(
+  projectRoot: string,
+  chapterTitle: string,
+  sceneTitle?: string,
+  createOptions?: CreateChapterOptions,
+  options?: OpenProjectOptions
+): Promise<{ result: MutationResult; scene: SceneRef }> {
+  const project = await openProject(projectRoot, options);
+  return project.createChapter(chapterTitle, sceneTitle, createOptions);
+}
+
+export async function createScene(
+  projectRoot: string,
+  title: string,
+  createOptions?: CreateSceneOptions,
+  options?: OpenProjectOptions
+): Promise<{ result: MutationResult; scene: SceneRef }> {
+  const project = await openProject(projectRoot, options);
+  return project.createScene(title, createOptions);
 }
 
 export async function deleteChapter(
@@ -873,6 +915,91 @@ class ClarosProjectImpl implements ClarosProject {
     };
   }
 
+  async createChapter(
+    chapterTitle: string,
+    sceneTitle = "",
+    options: CreateChapterOptions = {}
+  ): Promise<{ result: MutationResult; scene: SceneRef }> {
+    if (options.placement === undefined || options.placement === "append") {
+      return this.appendChapter(chapterTitle, sceneTitle);
+    }
+    if (options.targetChapter === undefined) {
+      throw new Error("Cannot insert chapter without a target chapter");
+    }
+
+    const target = this.resolveChapterForMutation(options.targetChapter);
+    const chapters = this.listChapters();
+    const scenes = this.listScenes();
+    const targetIndex = chapters.findIndex((chapter) => chapter.id === target.id);
+    const insertedChapterSequence =
+      options.placement === "before" ? targetIndex + 1 : targetIndex + 2;
+    const insertedSceneSequence =
+      scenes.filter((scene) => {
+        const chapterIndex = chapters.findIndex((chapter) => chapter.id === scene.chapterId);
+        return options.placement === "before"
+          ? chapterIndex < targetIndex
+          : chapterIndex <= targetIndex;
+      }).length + 1;
+
+    const result = await this.rebuildManuscript(
+      () => true,
+      () => true,
+      {},
+      {
+        targetChapterId: target.id,
+        placement: options.placement,
+        chapterTitle,
+        sceneTitle,
+      }
+    );
+    const scene = this.listScenes().find(
+      (candidate) => candidate.sequence === insertedSceneSequence
+    );
+    if (
+      scene === undefined ||
+      scene.chapterId !==
+        `${sequencePrefix(insertedChapterSequence)}-${slugForTitle(chapterTitle, "chapter", insertedChapterSequence)}`
+    ) {
+      throw new Error("Inserted chapter scene not found after manuscript mutation");
+    }
+    return { result, scene };
+  }
+
+  async createScene(
+    title: string,
+    options: CreateSceneOptions = {}
+  ): Promise<{ result: MutationResult; scene: SceneRef }> {
+    if (options.placement === undefined || options.placement === "append") {
+      return this.appendScene(title);
+    }
+    if (options.targetScene === undefined) {
+      throw new Error("Cannot insert scene without a target scene");
+    }
+
+    const target = this.resolveSceneForMutation(options.targetScene);
+    const scenes = this.listScenes();
+    const targetIndex = scenes.findIndex((scene) => scene.path === target.path);
+    const insertedSceneSequence =
+      options.placement === "before" ? targetIndex + 1 : targetIndex + 2;
+    const result = await this.rebuildManuscript(
+      () => true,
+      () => true,
+      {},
+      {
+        targetScenePath: target.path,
+        placement: options.placement,
+        sceneTitle: title,
+      }
+    );
+    const scene = this.listScenes().find(
+      (candidate) => candidate.sequence === insertedSceneSequence
+    );
+    if (scene === undefined) {
+      throw new Error("Inserted scene not found after manuscript mutation");
+    }
+    return { result, scene };
+  }
+
   async deleteChapter(
     chapterId: string
   ): Promise<{ result: MutationResult; nextScene?: SceneRef }> {
@@ -1073,7 +1200,11 @@ class ClarosProjectImpl implements ClarosProject {
     return match;
   }
 
-  private resolveChapterForMutation(chapterId: string): ChapterRef {
+  private resolveChapterForMutation(chapterId: ChapterRef | string): ChapterRef {
+    if (typeof chapterId !== "string") {
+      return chapterId;
+    }
+
     const normalized = normalizeProjectRelativePath(chapterId);
     const match = this.listChapters().find(
       (candidate) => candidate.id === normalized || candidate.path === normalized
@@ -1239,7 +1370,8 @@ class ClarosProjectImpl implements ClarosProject {
   private async rebuildManuscript(
     keepChapter: (chapter: ChapterRef) => boolean,
     keepScene: (scene: SceneRef) => boolean = () => true,
-    transform: ManuscriptRebuildTransform = {}
+    transform: ManuscriptRebuildTransform = {},
+    insertion?: ManuscriptInsertion
   ): Promise<MutationResult> {
     const chapters = this.listChapters();
     const scenesByChapter = new Map<string, SceneRef[]>();
@@ -1257,6 +1389,11 @@ class ClarosProjectImpl implements ClarosProject {
       if (!keepChapter(chapter)) {
         continue;
       }
+      if (insertion?.targetChapterId === chapter.id && insertion.placement === "before") {
+        rebuilt.push(buildInsertedChapter(insertion, nextChapterSequence, nextSceneSequence));
+        nextChapterSequence += 1;
+        nextSceneSequence += 1;
+      }
       const scenes = scenesByChapter.get(chapter.id) ?? [];
       if (scenes.length === 0) {
         continue;
@@ -1271,6 +1408,12 @@ class ClarosProjectImpl implements ClarosProject {
       const nextChapterId = `${sequencePrefix(nextChapterSequence)}-${nextChapterSlug}`;
       const rebuiltScenes: RebuiltScene[] = [];
       for (const scene of scenes) {
+        if (insertion?.targetScenePath === scene.path && insertion.placement === "before") {
+          rebuiltScenes.push(
+            buildInsertedScene(insertion.sceneTitle, nextChapterId, nextSceneSequence)
+          );
+          nextSceneSequence += 1;
+        }
         const sceneTransform = transform.scene?.(scene, nextSceneSequence) ?? {};
         const raw =
           sceneTransform.raw ??
@@ -1284,6 +1427,12 @@ class ClarosProjectImpl implements ClarosProject {
           raw,
         });
         nextSceneSequence += 1;
+        if (insertion?.targetScenePath === scene.path && insertion.placement === "after") {
+          rebuiltScenes.push(
+            buildInsertedScene(insertion.sceneTitle, nextChapterId, nextSceneSequence)
+          );
+          nextSceneSequence += 1;
+        }
       }
       rebuilt.push({
         path: normalizeProjectRelativePath(`manuscript/${nextChapterId}`),
@@ -1291,6 +1440,11 @@ class ClarosProjectImpl implements ClarosProject {
         scenes: rebuiltScenes,
       });
       nextChapterSequence += 1;
+      if (insertion?.targetChapterId === chapter.id && insertion.placement === "after") {
+        rebuilt.push(buildInsertedChapter(insertion, nextChapterSequence, nextSceneSequence));
+        nextChapterSequence += 1;
+        nextSceneSequence += 1;
+      }
     }
 
     await this.fileWriter.removeFile(toAbsoluteProjectPath(this.root, "manuscript"));
@@ -1449,6 +1603,42 @@ interface RebuiltChapter {
 interface ManuscriptRebuildTransform {
   chapter?: (chapter: ChapterRef, nextSequence: number) => { raw?: string; slug?: string };
   scene?: (scene: SceneRef, nextSequence: number) => { raw?: string; slug?: string };
+}
+
+interface ManuscriptInsertion {
+  placement: "before" | "after";
+  targetChapterId?: string;
+  targetScenePath?: string;
+  chapterTitle?: string;
+  sceneTitle: string;
+}
+
+function buildInsertedChapter(
+  insertion: ManuscriptInsertion,
+  chapterSequence: number,
+  sceneSequence: number
+): RebuiltChapter {
+  const chapterTitle = insertion.chapterTitle ?? "";
+  const chapterId = `${sequencePrefix(chapterSequence)}-${slugForTitle(
+    chapterTitle,
+    "chapter",
+    chapterSequence
+  )}`;
+  return {
+    path: normalizeProjectRelativePath(`manuscript/${chapterId}`),
+    chapterRaw: serializeTitleYaml(chapterTitle),
+    scenes: [buildInsertedScene(insertion.sceneTitle, chapterId, sceneSequence)],
+  };
+}
+
+function buildInsertedScene(title: string, chapterId: string, sceneSequence: number): RebuiltScene {
+  const sceneSlug = slugForTitle(title, "scene", sceneSequence);
+  return {
+    path: normalizeProjectRelativePath(
+      `manuscript/${chapterId}/${sequencePrefix(sceneSequence)}-${sceneSlug}.md`
+    ),
+    raw: serializeSceneMarkdown(title),
+  };
 }
 
 async function readOptionalFile(

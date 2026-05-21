@@ -2,6 +2,7 @@ import { openProject as openBrowserProject } from "@claros/story-state/browser";
 import type {
   ChapterRef,
   ClarosProject,
+  ManuscriptInsertionPlacement,
   MarkdownDocument,
   NoteRef,
   ProjectManifest,
@@ -66,10 +67,26 @@ export interface ProjectSession {
   setProjectTitle(title: string): Promise<void>;
   appendChapter(chapterTitle: string, sceneTitle?: string): Promise<WorkspaceScene>;
   appendScene(title: string): Promise<WorkspaceScene>;
+  createChapter(
+    chapterTitle: string,
+    sceneTitle?: string,
+    options?: WorkspaceCreateChapterOptions
+  ): Promise<WorkspaceScene>;
+  createScene(title: string, options?: WorkspaceCreateSceneOptions): Promise<WorkspaceScene>;
   setChapterTitle(chapterId: string, title: string): Promise<WorkspaceChapter>;
   setSceneTitle(scenePath: string, title: string): Promise<WorkspaceScene>;
   deleteChapter(chapterId: string): Promise<string>;
   deleteScene(scenePath: string): Promise<string>;
+}
+
+export interface WorkspaceCreateSceneOptions {
+  placement?: ManuscriptInsertionPlacement;
+  targetScenePath?: string;
+}
+
+export interface WorkspaceCreateChapterOptions {
+  placement?: ManuscriptInsertionPlacement;
+  targetChapterId?: string;
 }
 
 interface ProjectSummary {
@@ -203,6 +220,27 @@ function createProjectSession(project: ClarosProject): ProjectSession {
       const { scene } = await project.appendScene(title);
       return toWorkspaceScene(scene);
     },
+    async createChapter(
+      chapterTitle: string,
+      sceneTitle?: string,
+      options?: WorkspaceCreateChapterOptions
+    ): Promise<WorkspaceScene> {
+      const { scene } = await project.createChapter(chapterTitle, sceneTitle, {
+        placement: options?.placement,
+        targetChapter: options?.targetChapterId,
+      });
+      return toWorkspaceScene(scene);
+    },
+    async createScene(
+      title: string,
+      options?: WorkspaceCreateSceneOptions
+    ): Promise<WorkspaceScene> {
+      const { scene } = await project.createScene(title, {
+        placement: options?.placement,
+        targetScene: options?.targetScenePath,
+      });
+      return toWorkspaceScene(scene);
+    },
     async setChapterTitle(chapterId: string, title: string): Promise<WorkspaceChapter> {
       const current = project.listChapters().find((chapter) => chapter.id === chapterId);
       await project.setChapterTitle(chapterId, title);
@@ -297,6 +335,42 @@ function createCompanionProjectSession(
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "append-scene", title }),
+      });
+      summary = projectFromResponse(response);
+      return sceneFromMutationResponse(response);
+    },
+    async createChapter(
+      chapterTitle: string,
+      sceneTitle?: string,
+      options?: WorkspaceCreateChapterOptions
+    ): Promise<WorkspaceScene> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create-chapter",
+          title: chapterTitle,
+          sceneTitle,
+          placement: options?.placement,
+          targetChapterId: options?.targetChapterId,
+        }),
+      });
+      summary = projectFromResponse(response);
+      return sceneFromMutationResponse(response);
+    },
+    async createScene(
+      title: string,
+      options?: WorkspaceCreateSceneOptions
+    ): Promise<WorkspaceScene> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create-scene",
+          title,
+          placement: options?.placement,
+          targetScenePath: options?.targetScenePath,
+        }),
       });
       summary = projectFromResponse(response);
       return sceneFromMutationResponse(response);

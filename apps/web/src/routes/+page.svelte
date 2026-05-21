@@ -25,6 +25,7 @@
     type WorkspaceChapter,
     type WorkspaceScene,
   } from "$lib/project-session";
+  import type { ManuscriptInsertionPlacement } from "@claros/story-state";
   import type { BrowserDirectoryPicker } from "$lib/browser-file-system";
   import ActionMenu from "$lib/ActionMenu.svelte";
   import CommandPalette from "$lib/CommandPalette.svelte";
@@ -895,6 +896,18 @@
         run: openAppendChapterModal,
       },
       {
+        label: "Add Before: New Chapter",
+        disabled: projectCommandDisabled || activeChapter === undefined,
+        focusAfter: "none",
+        run: () => openInsertChapterModal("before", activeChapter),
+      },
+      {
+        label: "Add After: New Chapter",
+        disabled: projectCommandDisabled || activeChapter === undefined,
+        focusAfter: "none",
+        run: () => openInsertChapterModal("after", activeChapter),
+      },
+      {
         label: "Change Title: Current Chapter",
         disabled: projectCommandDisabled || activeChapter === undefined,
         focusAfter: "none",
@@ -911,6 +924,18 @@
         disabled: projectCommandDisabled,
         focusAfter: "none",
         run: openAppendSceneModal,
+      },
+      {
+        label: "Add Before: New Scene",
+        disabled: projectCommandDisabled || activeScene === undefined,
+        focusAfter: "none",
+        run: () => openInsertSceneModal("before", activeScene),
+      },
+      {
+        label: "Add After: New Scene",
+        disabled: projectCommandDisabled || activeScene === undefined,
+        focusAfter: "none",
+        run: () => openInsertSceneModal("after", activeScene),
       },
       {
         label: "Change Title: Current Scene",
@@ -1121,21 +1146,106 @@
   }
 
   function openAppendChapterModal(): void {
+    openChapterCreationModal("append");
+  }
+
+  function openInsertChapterModal(
+    placement: "before" | "after",
+    chapter: WorkspaceChapter | undefined
+  ): void {
+    if (chapter === undefined) {
+      return;
+    }
+    openChapterCreationModal(placement, chapter.id);
+  }
+
+  function openChapterCreationModal(
+    placement: ManuscriptInsertionPlacement,
+    targetChapterId?: string
+  ): void {
     openTitleModal({
       target: "new-chapter",
       heading: "New Chapter",
       value: "",
-      placeholder: `Chapter ${chapters.length + 1}`,
+      placeholder: `Chapter ${chapterCreationSequence(placement, targetChapterId)}`,
+      createPlacement: placement,
+      targetChapterId,
     });
   }
 
   function openAppendSceneModal(): void {
+    openSceneCreationModal("append");
+  }
+
+  function openInsertSceneModal(
+    placement: "before" | "after",
+    scene: WorkspaceScene | undefined
+  ): void {
+    if (scene === undefined) {
+      return;
+    }
+    openSceneCreationModal(placement, scene.path);
+  }
+
+  function openSceneCreationModal(
+    placement: ManuscriptInsertionPlacement,
+    targetScenePath?: string
+  ): void {
     openTitleModal({
       target: "new-scene",
       heading: "New Scene",
       value: "",
-      placeholder: `Scene ${scenes.length + 1}`,
+      placeholder: `Scene ${sceneCreationSequence(placement, targetScenePath)}`,
+      createPlacement: placement,
+      targetScenePath,
     });
+  }
+
+  function chapterCreationSequence(
+    placement: ManuscriptInsertionPlacement,
+    targetChapterId?: string
+  ): number {
+    if (placement === "append" || targetChapterId === undefined) {
+      return chapters.length + 1;
+    }
+    const targetIndex = chapters.findIndex((chapter) => chapter.id === targetChapterId);
+    if (targetIndex === -1) {
+      return chapters.length + 1;
+    }
+    return placement === "before" ? targetIndex + 1 : targetIndex + 2;
+  }
+
+  function sceneCreationSequence(
+    placement: ManuscriptInsertionPlacement,
+    targetScenePath?: string
+  ): number {
+    if (placement === "append" || targetScenePath === undefined) {
+      return scenes.length + 1;
+    }
+    const targetIndex = scenes.findIndex((scene) => scene.path === targetScenePath);
+    if (targetIndex === -1) {
+      return scenes.length + 1;
+    }
+    return placement === "before" ? targetIndex + 1 : targetIndex + 2;
+  }
+
+  function firstSceneSequenceForChapterCreation(
+    placement: ManuscriptInsertionPlacement | undefined,
+    targetChapterId?: string
+  ): number {
+    if (placement === undefined || placement === "append" || targetChapterId === undefined) {
+      return scenes.length + 1;
+    }
+    const targetIndex = chapters.findIndex((chapter) => chapter.id === targetChapterId);
+    if (targetIndex === -1) {
+      return scenes.length + 1;
+    }
+    return (
+      scenes.filter((scene) => {
+        const chapterIndex = chapters.findIndex((chapter) => chapter.id === scene.chapterId);
+        return placement === "before" ? chapterIndex < targetIndex : chapterIndex <= targetIndex;
+      }).length + 1
+    );
   }
 
   function openCurrentChapterTitleModal(): void {
@@ -1222,20 +1332,31 @@
         target: "new-chapter-scene",
         heading: "New Scene",
         value: "",
-        placeholder: `Scene ${scenes.length + 1}`,
+        placeholder: `Scene ${firstSceneSequenceForChapterCreation(
+          modal.createPlacement,
+          modal.targetChapterId
+        )}`,
         chapterTitle: modal.value,
+        createPlacement: modal.createPlacement,
+        targetChapterId: modal.targetChapterId,
         returnFocus: modal.returnFocus,
       });
       return;
     }
     if (modal.target === "new-chapter-scene") {
-      const scene = await project.appendChapter(modal.chapterTitle ?? "", modal.value);
+      const scene = await project.createChapter(modal.chapterTitle ?? "", modal.value, {
+        placement: modal.createPlacement,
+        targetChapterId: modal.targetChapterId,
+      });
       refreshProjectView();
       await openDocument(scene.path);
       return;
     }
     if (modal.target === "new-scene") {
-      const scene = await project.appendScene(modal.value);
+      const scene = await project.createScene(modal.value, {
+        placement: modal.createPlacement,
+        targetScenePath: modal.targetScenePath,
+      });
       refreshProjectView();
       await openDocument(scene.path);
       return;
@@ -1476,6 +1597,20 @@
     if (item.kind === "chapter") {
       const chapter = chapterForItem(item);
       menuItems.push({
+        label: "Add new chapter",
+        disabled: chapter === undefined,
+        submenu: [
+          {
+            label: "Before",
+            run: () => openInsertChapterModal("before", chapter),
+          },
+          {
+            label: "After",
+            run: () => openInsertChapterModal("after", chapter),
+          },
+        ],
+      });
+      menuItems.push({
         label: "Delete chapter",
         disabled: chapter === undefined || !canDeleteChapter(chapter),
         run: () => {
@@ -1488,6 +1623,20 @@
     }
 
     const scene = sceneForItem(item);
+    menuItems.push({
+      label: "Add new scene",
+      disabled: scene === undefined,
+      submenu: [
+        {
+          label: "Before",
+          run: () => openInsertSceneModal("before", scene),
+        },
+        {
+          label: "After",
+          run: () => openInsertSceneModal("after", scene),
+        },
+      ],
+    });
     menuItems.push({
       label: "Delete scene",
       disabled: scene === undefined || !canDeleteScene(),

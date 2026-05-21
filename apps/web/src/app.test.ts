@@ -204,6 +204,35 @@ describe("project session", () => {
     expect(session.listChapters().map((chapter) => chapter.id)).toEqual(["001-second-act"]);
   });
 
+  it("inserts local chapters and scenes before and after workspace targets", async () => {
+    const handle = createProjectHandle();
+    const session = await openLocalProjectSession(handle);
+
+    await session.appendChapter("Finale");
+    const scene = await session.createScene("Interlude", {
+      placement: "before",
+      targetScenePath: "manuscript/001-start/001-opening.md",
+    });
+    const chapterScene = await session.createChapter("Middle Act", "Bridge", {
+      placement: "after",
+      targetChapterId: "001-start",
+    });
+
+    expect(scene.path).toBe("manuscript/001-start/001-interlude.md");
+    expect(chapterScene.path).toBe("manuscript/002-middle-act/003-bridge.md");
+    expect(session.listChapters().map((chapter) => chapter.id)).toEqual([
+      "001-start",
+      "002-middle-act",
+      "003-finale",
+    ]);
+    expect(session.listScenes().map((entry) => entry.path)).toEqual([
+      "manuscript/001-start/001-interlude.md",
+      "manuscript/001-start/002-opening.md",
+      "manuscript/002-middle-act/003-bridge.md",
+      "manuscript/003-finale/004-scene-4.md",
+    ]);
+  });
+
   it("preserves the surviving scene body when deletion resequences it to the deleted path", async () => {
     const handle = createTwoSceneDefaultSlugProjectHandle();
     const session = await openLocalProjectSession(handle);
@@ -283,6 +312,17 @@ describe("workspace command surface", () => {
     expect(pageSource).toContain("Open Project: Local Companion");
     expect(pageSource).toContain("New Project: Local Companion");
     expect(pageSource).toContain("Change Title: Current Scene");
+    expect(pageSource).toContain("Add Before: New Scene");
+    expect(pageSource).toContain("Add After: New Scene");
+    expect(pageSource).toContain("Add Before: New Chapter");
+    expect(pageSource).toContain("Add After: New Chapter");
+    expect(pageSource).toContain("Add new chapter");
+    expect(pageSource).toContain("Add new scene");
+    expect(pageSource).toContain("chapterCreationSequence(placement, targetChapterId)");
+    expect(pageSource).toContain("sceneCreationSequence(placement, targetScenePath)");
+    expect(pageSource).toContain("firstSceneSequenceForChapterCreation");
+    expect(workspaceSource).toContain("submenu");
+    expect(workspaceSource).toContain("aria-haspopup={item.submenu");
     expect(workspaceSource).toContain("<span>Project Workspace</span>");
     expect(workspaceSource).toContain('target: "new-chapter-scene"');
     expect(pageSource).toContain("optimisticChapterTitles");

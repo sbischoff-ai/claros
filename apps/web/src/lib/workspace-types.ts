@@ -1,4 +1,5 @@
 import type { WorkspaceDocument } from "./project-session";
+import type { ManuscriptInsertionPlacement } from "@claros/story-state";
 
 export type SaveState = "saved" | "dirty" | "saving" | "error";
 export type ProjectOpenState = "idle" | "opening" | "creating" | "connecting" | "open" | "error";
@@ -35,7 +36,8 @@ export interface PaletteCommand {
 export interface ActionMenuItem {
   label: string;
   disabled?: boolean;
-  run(): void;
+  submenu?: ActionMenuItem[];
+  run?: () => void;
 }
 
 export interface SidebarItem {
@@ -58,6 +60,9 @@ export interface TitleModalState {
   chapterTitle?: string;
   chapterId?: string;
   scenePath?: string;
+  createPlacement?: ManuscriptInsertionPlacement;
+  targetChapterId?: string;
+  targetScenePath?: string;
   returnFocus?: WorkspaceFocusTarget;
 }
 

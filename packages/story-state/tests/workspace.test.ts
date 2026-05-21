@@ -354,6 +354,39 @@ describe("openProject", () => {
     });
   });
 
+  it("inserts manuscript chapters and scenes around existing items", async () => {
+    const root = await createProjectRoot();
+    const project = await openProject(root);
+
+    await project.appendChapter("Finale");
+    const insertedScene = await project.createScene("Interlude", {
+      placement: "before",
+      targetScene: "manuscript/001-prologue/002-arrival.md",
+    });
+    const insertedChapter = await project.createChapter("Middle Act", "Bridge", {
+      placement: "after",
+      targetChapter: "001-prologue",
+    });
+
+    expect(insertedScene.scene.path).toBe("manuscript/001-prologue/002-interlude.md");
+    expect(insertedChapter.scene.path).toBe("manuscript/002-middle-act/004-bridge.md");
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual([
+      "001-prologue",
+      "002-middle-act",
+      "003-finale",
+    ]);
+    expect(project.listScenes().map((scene) => scene.path)).toEqual([
+      "manuscript/001-prologue/001-opening.md",
+      "manuscript/001-prologue/002-interlude.md",
+      "manuscript/001-prologue/003-arrival.md",
+      "manuscript/002-middle-act/004-bridge.md",
+      "manuscript/003-finale/005-scene-5.md",
+    ]);
+    expect(
+      await fs.readFile(path.join(root, "manuscript/001-prologue/003-arrival.md"), "utf8")
+    ).toContain("See [[kareth]].");
+  });
+
   it("renames chapter and scene paths from normalized title slugs", async () => {
     const root = await createProjectRoot();
     const project = await openProject(root);

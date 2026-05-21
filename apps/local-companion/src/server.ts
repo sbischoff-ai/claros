@@ -324,6 +324,21 @@ async function applyProjectMutation(
       const { scene } = await project.appendScene(title);
       return { scene };
     }
+    case "create-chapter": {
+      const sceneTitle = typeof body.sceneTitle === "string" ? body.sceneTitle : "";
+      const { scene } = await project.createChapter(title, sceneTitle, {
+        placement: insertionPlacement(body.placement),
+        targetChapter: stringValue(body.targetChapterId),
+      });
+      return { scene };
+    }
+    case "create-scene": {
+      const { scene } = await project.createScene(title, {
+        placement: insertionPlacement(body.placement),
+        targetScene: stringValue(body.targetScenePath),
+      });
+      return { scene };
+    }
     case "set-chapter-title":
       if (typeof body.chapterId !== "string") {
         throw new CompanionError(400, "BAD_REQUEST", "Expected chapterId");
@@ -367,6 +382,14 @@ async function applyProjectMutation(
 
 function titleFromBody(body: unknown): string {
   return isRecord(body) && typeof body.title === "string" ? body.title : "Untitled Project";
+}
+
+function insertionPlacement(value: unknown): "append" | "before" | "after" | undefined {
+  return value === "append" || value === "before" || value === "after" ? value : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 function normalizedProjectTitle(title: string): string {

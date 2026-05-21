@@ -119,13 +119,32 @@ describe("local companion server", () => {
     })) as MutationResponse;
     expect(retitledScene.scene?.path).toBe("manuscript/002-the-great-walrus/002-the-ultimatum.md");
 
+    const insertedChapter = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "create-chapter",
+      title: "Middle Act",
+      sceneTitle: "Bridge",
+      placement: "before",
+      targetChapterId: "002-the-great-walrus",
+    })) as MutationResponse;
+    expect(insertedChapter.scene?.path).toBe("manuscript/002-middle-act/002-bridge.md");
+
+    const insertedScene = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "create-scene",
+      title: "Interlude",
+      placement: "after",
+      targetScenePath: "manuscript/001-start/001-opening.md",
+    })) as MutationResponse;
+    expect(insertedScene.scene?.path).toBe("manuscript/001-start/002-interlude.md");
+
     const deleted = (await postJson(baseUrl, token, "/api/project/mutation", {
       action: "delete-scene",
       path: "manuscript/001-start/001-opening.md",
     })) as MutationResponse;
-    expect(deleted.nextPath).toBe("manuscript/001-the-great-walrus/001-the-ultimatum.md");
+    expect(deleted.nextPath).toBe("manuscript/001-start/001-interlude.md");
     expect(deleted.project.chapters.map((entry) => entry.scenes[0].path)).toEqual([
-      "manuscript/001-the-great-walrus/001-the-ultimatum.md",
+      "manuscript/001-start/001-interlude.md",
+      "manuscript/002-middle-act/002-bridge.md",
+      "manuscript/003-the-great-walrus/003-the-ultimatum.md",
     ]);
   });
 });

@@ -782,10 +782,31 @@ button:disabled {
   box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--claros-prose-text) 14%, transparent);
 }
 
+.context-submenu {
+  position: absolute;
+  left: calc(100% + 0.35rem);
+  top: 0.35rem;
+  display: grid;
+  gap: 0.2rem;
+  min-width: 8rem;
+  border: 1px solid var(--claros-prose-widget-border);
+  border-radius: 8px;
+  padding: 0.35rem;
+  background: var(--claros-editor-background);
+  box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--claros-prose-text) 14%, transparent);
+}
+
 .context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
   justify-content: flex-start;
   width: 100%;
   text-align: left;
+}
+
+.submenu-caret {
+  margin-left: auto;
 }
 
 .context-menu button:hover,
