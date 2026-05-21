@@ -75,6 +75,14 @@ export interface DeleteModalState {
   confirmation: string;
 }
 
+export interface ConfirmationModalState {
+  heading: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm(): void;
+}
+
 export interface ContextMenuState {
   x: number;
   y: number;

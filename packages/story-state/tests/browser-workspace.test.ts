@@ -124,6 +124,29 @@ describe("browser openProject", () => {
     );
   });
 
+  it("moves manuscript scenes and reports rewritten paths", async () => {
+    const fs = createProject({
+      "/manuscript/002-end/chapter.yaml": "title: End\n",
+      "/manuscript/002-end/002-finale.md": "---\ntitle: Finale\n---\n\nEnd.",
+    });
+    const project = await openProject("/", { fileReader: fs, fileWriter: fs });
+
+    const move = await project.moveScene("manuscript/002-end/002-finale.md", {
+      placement: "before",
+      targetScene: "manuscript/001-start/001-opening.md",
+    });
+
+    expect(move.scene.path).toBe("manuscript/001-start/001-finale.md");
+    expect(move.pathMap["manuscript/001-start/001-opening.md"]).toBe(
+      "manuscript/001-start/002-opening.md"
+    );
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual(["001-start"]);
+    expect(project.listScenes().map((scene) => scene.path)).toEqual([
+      "manuscript/001-start/001-finale.md",
+      "manuscript/001-start/002-opening.md",
+    ]);
+  });
+
   it("reads missing macro run ledger as an empty run list", async () => {
     const fs = createProject();
     const project = await openProject("/", { fileReader: fs, fileWriter: fs });
@@ -132,12 +155,13 @@ describe("browser openProject", () => {
   });
 });
 
-function createProject(): MemoryProjectFileSystem {
+function createProject(files: Record<string, string> = {}): MemoryProjectFileSystem {
   return new MemoryProjectFileSystem({
     "/claros.yaml": "claros: 1\ntitle: Browser Workspace\n",
     "/manuscript/001-start/chapter.yaml": "title: Start\n",
     "/manuscript/001-start/001-opening.md": "---\ntitle: Opening\n---\n\nStart at [[Kareth]].",
     "/notes/characters/kareth.md": "---\ntitle: Kareth\n---\n\nA cautious mercenary.",
+    ...files,
   });
 }
 

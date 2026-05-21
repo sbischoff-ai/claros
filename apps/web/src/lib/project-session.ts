@@ -3,6 +3,8 @@ import type {
   ChapterRef,
   ClarosProject,
   ManuscriptInsertionPlacement,
+  MoveChapterOptions,
+  MoveSceneOptions,
   MarkdownDocument,
   NoteRef,
   ProjectManifest,
@@ -77,6 +79,14 @@ export interface ProjectSession {
   setSceneTitle(scenePath: string, title: string): Promise<WorkspaceScene>;
   deleteChapter(chapterId: string): Promise<string>;
   deleteScene(scenePath: string): Promise<string>;
+  moveChapter(
+    chapterId: string,
+    options: WorkspaceMoveChapterOptions
+  ): Promise<WorkspaceMoveResult & { chapter: WorkspaceChapter }>;
+  moveScene(
+    scenePath: string,
+    options: WorkspaceMoveSceneOptions
+  ): Promise<WorkspaceMoveResult & { scene: WorkspaceScene }>;
 }
 
 export interface WorkspaceCreateSceneOptions {
@@ -87,6 +97,20 @@ export interface WorkspaceCreateSceneOptions {
 export interface WorkspaceCreateChapterOptions {
   placement?: ManuscriptInsertionPlacement;
   targetChapterId?: string;
+}
+
+export type WorkspaceMoveChapterOptions = Omit<MoveChapterOptions, "targetChapter"> & {
+  targetChapterId: string;
+};
+
+export type WorkspaceMoveSceneOptions = Omit<MoveSceneOptions, "targetScene" | "targetChapter"> & {
+  targetScenePath?: string;
+  targetChapterId?: string;
+};
+
+export interface WorkspaceMoveResult {
+  pathMap: Record<string, string>;
+  chapterIdMap: Record<string, string>;
 }
 
 interface ProjectSummary {
@@ -277,6 +301,37 @@ function createProjectSession(project: ClarosProject): ProjectSession {
       const { nextScene } = await project.deleteScene(scenePath);
       return nextScene?.path ?? firstDocumentPath(this);
     },
+    async moveChapter(
+      chapterId: string,
+      options: WorkspaceMoveChapterOptions
+    ): Promise<WorkspaceMoveResult & { chapter: WorkspaceChapter }> {
+      const { chapter, pathMap, chapterIdMap } = await project.moveChapter(chapterId, {
+        placement: options.placement,
+        targetChapter: options.targetChapterId,
+      });
+      return {
+        pathMap,
+        chapterIdMap,
+        chapter: toWorkspaceChapter(
+          chapter,
+          project
+            .listScenes()
+            .filter((scene) => scene.chapterId === chapter.id)
+            .map(toWorkspaceScene)
+        ),
+      };
+    },
+    async moveScene(
+      scenePath: string,
+      options: WorkspaceMoveSceneOptions
+    ): Promise<WorkspaceMoveResult & { scene: WorkspaceScene }> {
+      const { scene, pathMap, chapterIdMap } = await project.moveScene(scenePath, {
+        placement: options.placement,
+        targetScene: options.targetScenePath,
+        targetChapter: options.targetChapterId,
+      });
+      return { pathMap, chapterIdMap, scene: toWorkspaceScene(scene) };
+    },
   };
 }
 
@@ -419,6 +474,47 @@ function createCompanionProjectSession(
       summary = projectFromResponse(response);
       return nextPathFromMutationResponse(response) ?? firstDocumentPath(this);
     },
+    async moveChapter(
+      chapterId: string,
+      options: WorkspaceMoveChapterOptions
+    ): Promise<WorkspaceMoveResult & { chapter: WorkspaceChapter }> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "move-chapter",
+          chapterId,
+          placement: options.placement,
+          targetChapterId: options.targetChapterId,
+        }),
+      });
+      summary = projectFromResponse(response);
+      return {
+        ...moveResultFromMutationResponse(response),
+        chapter: chapterFromMutationResponse(response),
+      };
+    },
+    async moveScene(
+      scenePath: string,
+      options: WorkspaceMoveSceneOptions
+    ): Promise<WorkspaceMoveResult & { scene: WorkspaceScene }> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "move-scene",
+          path: scenePath,
+          placement: options.placement,
+          targetScenePath: options.targetScenePath,
+          targetChapterId: options.targetChapterId,
+        }),
+      });
+      summary = projectFromResponse(response);
+      return {
+        ...moveResultFromMutationResponse(response),
+        scene: sceneFromMutationResponse(response),
+      };
+    },
   };
 }
 
@@ -532,6 +628,28 @@ function nextPathFromMutationResponse(response: unknown): string | undefined {
     return undefined;
   }
   return response.nextPath;
+}
+
+function moveResultFromMutationResponse(response: unknown): WorkspaceMoveResult {
+  if (!isRecord(response)) {
+    return { pathMap: {}, chapterIdMap: {} };
+  }
+  return {
+    pathMap: stringRecord(response.pathMap),
+    chapterIdMap: stringRecord(response.chapterIdMap),
+  };
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[0] === "string" && typeof entry[1] === "string"
+    )
+  );
 }
 
 function normalizeProjectSummary(value: unknown): ProjectSummary {

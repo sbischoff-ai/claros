@@ -387,6 +387,93 @@ describe("openProject", () => {
     ).toContain("See [[kareth]].");
   });
 
+  it("moves manuscript chapters while resequencing their scenes", async () => {
+    const root = await createProjectRoot();
+    const project = await openProject(root);
+    await project.appendChapter("Second Act", "Bridge");
+
+    const downMove = await project.moveChapter("001-prologue", {
+      placement: "after",
+      targetChapter: "002-second-act",
+    });
+    expect(downMove.chapter.id).toBe("002-prologue");
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual([
+      "001-second-act",
+      "002-prologue",
+    ]);
+
+    const move = await project.moveChapter("002-prologue", {
+      placement: "before",
+      targetChapter: "001-second-act",
+    });
+
+    expect(move.chapter.id).toBe("001-prologue");
+    expect(move.chapterIdMap).toMatchObject({
+      "001-second-act": "002-second-act",
+      "002-prologue": "001-prologue",
+    });
+    expect(move.pathMap["manuscript/001-second-act/001-bridge.md"]).toBe(
+      "manuscript/002-second-act/003-bridge.md"
+    );
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual([
+      "001-prologue",
+      "002-second-act",
+    ]);
+    expect(project.listScenes().map((scene) => scene.path)).toEqual([
+      "manuscript/001-prologue/001-opening.md",
+      "manuscript/001-prologue/002-arrival.md",
+      "manuscript/002-second-act/003-bridge.md",
+    ]);
+  });
+
+  it("moves scenes across chapter boundaries and deletes an empty source chapter", async () => {
+    const root = await createProjectRoot();
+    const project = await openProject(root);
+    await project.appendChapter("Second Act", "Bridge");
+
+    const downMove = await project.moveScene("manuscript/001-prologue/001-opening.md", {
+      placement: "after",
+      targetScene: "manuscript/001-prologue/002-arrival.md",
+    });
+    expect(downMove.scene.path).toBe("manuscript/001-prologue/002-opening.md");
+
+    const move = await project.moveScene("manuscript/002-second-act/003-bridge.md", {
+      placement: "before",
+      targetScene: "manuscript/001-prologue/001-arrival.md",
+    });
+
+    expect(move.scene.path).toBe("manuscript/001-prologue/001-bridge.md");
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual(["001-prologue"]);
+    expect(project.listScenes().map((scene) => scene.path)).toEqual([
+      "manuscript/001-prologue/001-bridge.md",
+      "manuscript/001-prologue/002-arrival.md",
+      "manuscript/001-prologue/003-opening.md",
+    ]);
+    await expect(fs.stat(path.join(root, "manuscript/002-second-act"))).rejects.toThrow();
+    expect(
+      await fs.readFile(path.join(root, "manuscript/001-prologue/001-bridge.md"), "utf8")
+    ).toContain("title: Bridge");
+  });
+
+  it("appends the only scene in a chapter to another chapter and deletes the source chapter", async () => {
+    const root = await createProjectRoot();
+    const project = await openProject(root);
+    await project.appendChapter("Second Act", "Bridge");
+
+    const move = await project.moveScene("manuscript/002-second-act/003-bridge.md", {
+      placement: "append",
+      targetChapter: "001-prologue",
+    });
+
+    expect(move.scene.path).toBe("manuscript/001-prologue/003-bridge.md");
+    expect(project.listChapters().map((chapter) => chapter.id)).toEqual(["001-prologue"]);
+    expect(project.listScenes().map((scene) => scene.path)).toEqual([
+      "manuscript/001-prologue/001-opening.md",
+      "manuscript/001-prologue/002-arrival.md",
+      "manuscript/001-prologue/003-bridge.md",
+    ]);
+  });
+
   it("renames chapter and scene paths from normalized title slugs", async () => {
     const root = await createProjectRoot();
     const project = await openProject(root);

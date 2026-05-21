@@ -18,16 +18,21 @@ const pageSource = readFileSync(
 );
 const workspaceSource = [
   "./routes/+page.svelte",
+  "./routes/page.css",
   "./lib/ActionMenu.svelte",
   "./lib/CommandPalette.svelte",
+  "./lib/ConfirmationModal.svelte",
   "./lib/DeleteModal.svelte",
   "./lib/directional-navigation.ts",
+  "./lib/ManuscriptDragPreview.svelte",
+  "./lib/manuscript-drag.ts",
   "./lib/ProjectLauncher.svelte",
   "./lib/TitleModal.svelte",
   "./lib/WorkspaceSidebar.svelte",
   "./lib/sidebar-model.ts",
   "./lib/storage-backends.ts",
   "./lib/title-model.ts",
+  "./lib/workspace-commands.ts",
   "./lib/workspace-view-model.ts",
   "./lib/workspace-types.ts",
 ]
@@ -231,6 +236,15 @@ describe("project session", () => {
       "manuscript/002-middle-act/003-bridge.md",
       "manuscript/003-finale/004-scene-4.md",
     ]);
+
+    const movedScene = await session.moveScene("manuscript/002-middle-act/003-bridge.md", {
+      placement: "before",
+      targetScenePath: "manuscript/001-start/001-interlude.md",
+    });
+    expect(movedScene.scene.path).toBe("manuscript/001-start/001-bridge.md");
+    expect(movedScene.pathMap["manuscript/001-start/001-interlude.md"]).toBe(
+      "manuscript/001-start/002-interlude.md"
+    );
   });
 
   it("preserves the surviving scene body when deletion resequences it to the deleted path", async () => {
@@ -301,28 +315,59 @@ describe("project session", () => {
 });
 
 describe("workspace command surface", () => {
+  it("keeps the top-level page from absorbing feature modules", () => {
+    expect(pageSource.split("\n").length).toBeLessThan(2000);
+  });
+
   it("removes the ambiguous return-to-manuscript command", () => {
     expect(pageSource).not.toContain("Return to Manuscript");
   });
 
   it("exposes a focused editor command and region focus shortcuts", () => {
-    expect(pageSource).toContain("Focus Editor");
-    expect(pageSource).toContain("Open Project: Local Folder");
-    expect(pageSource).toContain("New Project: Local Folder");
-    expect(pageSource).toContain("Open Project: Local Companion");
-    expect(pageSource).toContain("New Project: Local Companion");
-    expect(pageSource).toContain("Change Title: Current Scene");
-    expect(pageSource).toContain("Add Before: New Scene");
-    expect(pageSource).toContain("Add After: New Scene");
-    expect(pageSource).toContain("Add Before: New Chapter");
-    expect(pageSource).toContain("Add After: New Chapter");
+    expect(workspaceSource).toContain("Focus Editor");
+    expect(workspaceSource).toContain("Open Project: Local Folder");
+    expect(workspaceSource).toContain("New Project: Local Folder");
+    expect(workspaceSource).toContain("Open Project: Local Companion");
+    expect(workspaceSource).toContain("New Project: Local Companion");
+    expect(workspaceSource).toContain("Change Title: Current Scene");
+    expect(workspaceSource).toContain("Move Up: Current Scene");
+    expect(workspaceSource).toContain("Move Down: Current Scene");
+    expect(workspaceSource).toContain("Move Up: Current Chapter");
+    expect(workspaceSource).toContain("Move Down: Current Chapter");
+    expect(workspaceSource).toContain("Add Before: New Scene");
+    expect(workspaceSource).toContain("Add After: New Scene");
+    expect(workspaceSource).toContain("Add Before: New Chapter");
+    expect(workspaceSource).toContain("Add After: New Chapter");
     expect(pageSource).toContain("Add new chapter");
     expect(pageSource).toContain("Add new scene");
+    expect(pageSource).toContain('label: "Move"');
+    expect(pageSource).toContain("moveSceneByDirection");
+    expect(pageSource).toContain("moveChapterByDirection");
+    expect(pageSource).toContain("ManuscriptDragController");
+    expect(pageSource).toContain("ManuscriptDragPreview");
+    expect(workspaceSource).toContain("handlePointerDown");
+    expect(workspaceSource).toContain("chapterDropIndicatorItemId");
+    expect(workspaceSource).toContain("lastScene.path");
+    expect(pageSource).toContain("shouldConfirmEmptyChapterDeletion");
+    expect(pageSource).toContain("openEmptyChapterMoveConfirmation");
+    expect(pageSource).toContain("Move and Delete Chapter");
+    expect(workspaceSource).toContain("ConfirmationModalState");
+    expect(pageSource).toContain("canMoveCurrentSceneDown");
+    expect(pageSource).toContain("canMoveCurrentChapterDown");
+    expect(workspaceSource).toContain("drag-preview");
+    expect(workspaceSource).toContain("animate:flip");
+    expect(workspaceSource).toContain("class:dragging");
+    expect(workspaceSource).toContain("chapter-ghost");
+    expect(workspaceSource).toContain(".sidebar.dragging");
+    expect(workspaceSource).toContain(".sidebar.dragging .drag-handle");
+    expect(workspaceSource).toContain("phosphor-svelte/lib/DotsSixVertical");
+    expect(workspaceSource).toContain("drag-handle");
     expect(pageSource).toContain("chapterCreationSequence(placement, targetChapterId)");
     expect(pageSource).toContain("sceneCreationSequence(placement, targetScenePath)");
     expect(pageSource).toContain("firstSceneSequenceForChapterCreation");
     expect(workspaceSource).toContain("submenu");
     expect(workspaceSource).toContain("aria-haspopup={item.submenu");
+    expect(workspaceSource).toContain("event.currentTarget.blur()");
     expect(workspaceSource).toContain("<span>Project Workspace</span>");
     expect(workspaceSource).toContain('target: "new-chapter-scene"');
     expect(pageSource).toContain("optimisticChapterTitles");
@@ -367,8 +412,8 @@ describe("workspace command surface", () => {
     expect(pageSource).toContain("{#if projectIsOpen}");
     expect(pageSource).toContain("bind:this={editorHost}");
     expect(pageSource).toContain('aria-label="Open project"');
-    expect(pageSource).toContain("disabled: !localProjectSupported");
-    expect(pageSource).toContain("disabled: projectCommandDisabled");
+    expect(workspaceSource).toContain("disabled: !options.localProjectSupported");
+    expect(workspaceSource).toContain("disabled: projectCommandDisabled");
   });
 
   it("gates startup rendering behind a themed loading spinner", () => {

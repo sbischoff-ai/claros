@@ -192,6 +192,8 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
               }),
           ...(mutation.scene === undefined ? {} : { scene: toWorkspaceScene(mutation.scene) }),
           ...(mutation.nextPath === undefined ? {} : { nextPath: mutation.nextPath }),
+          ...(mutation.pathMap === undefined ? {} : { pathMap: mutation.pathMap }),
+          ...(mutation.chapterIdMap === undefined ? {} : { chapterIdMap: mutation.chapterIdMap }),
         });
         return;
       }
@@ -309,7 +311,13 @@ function summarizeProject(project: ClarosProject): ProjectSummary {
 async function applyProjectMutation(
   project: ClarosProject,
   body: Record<string, unknown>
-): Promise<{ chapter?: ChapterRef; scene?: SceneRef; nextPath?: string }> {
+): Promise<{
+  chapter?: ChapterRef;
+  scene?: SceneRef;
+  nextPath?: string;
+  pathMap?: Record<string, string>;
+  chapterIdMap?: Record<string, string>;
+}> {
   const title = typeof body.title === "string" ? body.title : "";
   switch (body.action) {
     case "set-project-title":
@@ -375,6 +383,30 @@ async function applyProjectMutation(
       const { nextScene } = await project.deleteScene(body.path);
       return { nextPath: nextScene?.path };
     }
+    case "move-chapter": {
+      if (typeof body.chapterId !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected chapterId");
+      }
+      if (typeof body.targetChapterId !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected targetChapterId");
+      }
+      const { chapter, pathMap, chapterIdMap } = await project.moveChapter(body.chapterId, {
+        placement: movePlacement(body.placement),
+        targetChapter: body.targetChapterId,
+      });
+      return { chapter, pathMap, chapterIdMap };
+    }
+    case "move-scene": {
+      if (typeof body.path !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected path");
+      }
+      const { scene, pathMap, chapterIdMap } = await project.moveScene(body.path, {
+        placement: insertionPlacement(body.placement) ?? "append",
+        targetScene: stringValue(body.targetScenePath),
+        targetChapter: stringValue(body.targetChapterId),
+      });
+      return { scene, pathMap, chapterIdMap };
+    }
     default:
       throw new CompanionError(400, "BAD_REQUEST", `Unknown project mutation: ${body.action}`);
   }
@@ -386,6 +418,13 @@ function titleFromBody(body: unknown): string {
 
 function insertionPlacement(value: unknown): "append" | "before" | "after" | undefined {
   return value === "append" || value === "before" || value === "after" ? value : undefined;
+}
+
+function movePlacement(value: unknown): "before" | "after" {
+  if (value !== "before" && value !== "after") {
+    throw new CompanionError(400, "BAD_REQUEST", "Expected before or after placement");
+  }
+  return value;
 }
 
 function stringValue(value: unknown): string | undefined {

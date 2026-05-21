@@ -5,7 +5,6 @@
   import Command from "phosphor-svelte/lib/Command";
   import Files from "phosphor-svelte/lib/Files";
   import {
-    CLAROS_THEMES,
     applyNamedTheme,
     createMarkdownEditor,
     type ClarosMarkdownEditor,
@@ -23,14 +22,20 @@
     type CompanionConnection,
     type ProjectSession,
     type WorkspaceChapter,
+    type WorkspaceMoveResult,
     type WorkspaceScene,
   } from "$lib/project-session";
-  import type { ManuscriptInsertionPlacement } from "@claros/story-state";
   import type { BrowserDirectoryPicker } from "$lib/browser-file-system";
   import ActionMenu from "$lib/ActionMenu.svelte";
   import CommandPalette from "$lib/CommandPalette.svelte";
+  import ConfirmationModal from "$lib/ConfirmationModal.svelte";
   import DeleteModal from "$lib/DeleteModal.svelte";
   import { directionalIntentFromKeydown } from "$lib/directional-navigation";
+  import ManuscriptDragPreview from "$lib/ManuscriptDragPreview.svelte";
+  import {
+    ManuscriptDragController,
+    type SceneMoveOptions,
+  } from "$lib/manuscript-drag";
   import ProjectLauncher from "$lib/ProjectLauncher.svelte";
   import { buildSidebarItems } from "$lib/sidebar-model";
   import { buildStorageBackendOptions, type StorageBackendOption } from "$lib/storage-backends";
@@ -51,9 +56,12 @@
     projectTitleForDisplay,
     saveStateLabel,
   } from "$lib/workspace-view-model";
+  import { buildWorkspacePaletteCommands } from "$lib/workspace-commands";
+  import type { ManuscriptInsertionPlacement } from "@claros/story-state";
   import type {
     ActionMenuItem,
     ActiveDocumentKind,
+    ConfirmationModalState,
     ContextMenuState,
     DeleteModalState,
     PaletteCommand,
@@ -96,6 +104,7 @@
   let collapsedItems = new Set<string>(["notes"]);
   let titleModal: TitleModalState | undefined;
   let deleteModal: DeleteModalState | undefined;
+  let confirmationModal: ConfirmationModalState | undefined;
   let contextMenu: ContextMenuState | undefined;
   let editingProjectTitle = false;
   let projectTitleDraft = "";
@@ -105,6 +114,20 @@
   let optimisticSceneTitles = new Map<string, string>();
   let editingSidebarItemId = "";
   let sidebarTitleDraft = "";
+  const manuscriptDragController = new ManuscriptDragController({
+    getChapters: () => chapters,
+    getScenes: () => scenes,
+    getCollapsedItems: () => collapsedItems,
+    setCollapsedItems: (next) => {
+      collapsedItems = next;
+    },
+    getSidebarNav: () => sidebarNav,
+    isTitleEditing: () => editingSidebarItemId.length > 0,
+    rowForItemId: sidebarItemElement,
+    moveChapter,
+    moveScene,
+  });
+  const manuscriptDrag = manuscriptDragController.state;
   let lastWorkspaceFocus: WorkspaceFocusTarget | undefined;
   let paletteReturnFocus: WorkspaceFocusTarget | undefined;
   let projectTitleReturnFocus: WorkspaceFocusTarget | undefined;
@@ -116,8 +139,9 @@
   $: scenes = listProjectScenes(projectRevision, project);
   $: notes = listProjectNotes(projectRevision, project);
   $: displayProjectTitle = projectTitleForDisplay(projectRevision, project, optimisticProjectTitle);
+  $: visibleChapters = manuscriptDragController.previewChapters(chapters, $manuscriptDrag);
   $: sidebarItems = buildSidebarItems(
-    chapters,
+    visibleChapters,
     notes,
     collapsedItems,
     optimisticChapterTitles,
@@ -133,6 +157,17 @@
     activeChapter !== undefined &&
     chapters.length > 1 &&
     scenes.some((scene) => scene.chapterId !== activeChapter.id);
+  $: activeSceneIndex =
+    activeScene === undefined ? -1 : scenes.findIndex((scene) => scene.path === activeScene.path);
+  $: activeChapterIndex =
+    activeChapter === undefined
+      ? -1
+      : chapters.findIndex((chapter) => chapter.id === activeChapter.id);
+  $: canMoveCurrentSceneUp = projectIsOpen && activeSceneIndex > 0;
+  $: canMoveCurrentSceneDown = projectIsOpen && activeSceneIndex >= 0 && activeSceneIndex < scenes.length - 1;
+  $: canMoveCurrentChapterUp = projectIsOpen && activeChapterIndex > 0;
+  $: canMoveCurrentChapterDown =
+    projectIsOpen && activeChapterIndex >= 0 && activeChapterIndex < chapters.length - 1;
   $: storageBackendOptions = buildStorageBackendOptions(canOpenLocalProject);
   $: selectedStorageBackend =
     storageBackendOptions.find((backend) => backend.id === selectedStorageBackendId) ??
@@ -141,9 +176,44 @@
     storageBackendOptions.find((backend) => backend.id === openStorageBackendId) ??
     storageBackendOptions[0];
   $: projectIsOpen = projectOpenState === "open";
-  $: paletteCommands = buildPaletteCommands(activeTheme, vimMode, projectIsOpen, canOpenLocalProject);
+  $: paletteCommands = buildWorkspacePaletteCommands({
+    currentTheme: activeTheme,
+    currentVimMode: vimMode,
+    currentProjectIsOpen: projectIsOpen,
+    localProjectSupported: canOpenLocalProject,
+    sidebarOpen,
+    currentScene: activeScene,
+    currentChapter: activeChapter,
+    canMoveSceneUp: canMoveCurrentSceneUp,
+    canMoveSceneDown: canMoveCurrentSceneDown,
+    canMoveChapterUp: canMoveCurrentChapterUp,
+    canMoveChapterDown: canMoveCurrentChapterDown,
+    canDeleteScene: canDeleteCurrentScene,
+    canDeleteChapter: canDeleteCurrentChapter,
+    toggleSidebar,
+    openProjectWithBackend: (backendId) => void openProjectWithBackend(backendId),
+    createProjectWithBackend: (backendId) => void createProjectWithBackend(backendId),
+    flushSaveWithoutWaiting,
+    openProjectTitleModal,
+    openAppendChapterModal,
+    openInsertChapterModal,
+    openCurrentChapterTitleModal,
+    moveCurrentChapter: (direction) => void moveCurrentChapter(direction),
+    openCurrentChapterDeleteModal,
+    openAppendSceneModal,
+    openInsertSceneModal,
+    openCurrentSceneTitleModal,
+    moveCurrentScene: (direction) => void moveCurrentScene(direction),
+    openCurrentSceneDeleteModal,
+    toggleVimMode,
+    setTheme,
+  });
   $: filteredCommands = filterCommands(paletteCommands, commandQuery);
   $: selectedCommandIndex = clampCommandIndex(selectedCommandIndex, filteredCommands.length);
+  $: chapterDropIndicatorItemId = manuscriptDragController.chapterDropIndicatorItemId(
+    visibleChapters,
+    $manuscriptDrag
+  );
   $: sidebarContextMenuItems =
     contextMenu === undefined ? [] : buildSidebarContextMenuItems(contextMenu.item);
 
@@ -214,6 +284,11 @@
       }
 
       if (event.key === "Escape") {
+        if ($manuscriptDrag !== undefined) {
+          event.preventDefault();
+          manuscriptDragController.cancel();
+          return;
+        }
         if (storageBackendMenuOpen) {
           storageBackendMenuOpen = false;
           return;
@@ -232,6 +307,10 @@
         }
         if (deleteModal !== undefined) {
           closeDeleteModal();
+          return;
+        }
+        if (confirmationModal !== undefined) {
+          closeConfirmationModal();
           return;
         }
         if (paletteOpen) {
@@ -271,6 +350,7 @@
       clearTimeout(saveTimer);
       void flushSave();
     }
+    manuscriptDragController.destroy();
     editor?.destroy();
   });
 
@@ -702,6 +782,7 @@
       paletteOpen ||
       titleModal !== undefined ||
       deleteModal !== undefined ||
+      confirmationModal !== undefined ||
       contextMenu !== undefined ||
       editingProjectTitle ||
       editingSidebarItemId.length > 0
@@ -838,137 +919,6 @@
 
   function handleCommandInput(): void {
     selectedCommandIndex = 0;
-  }
-
-  function buildPaletteCommands(
-    currentTheme: ClarosThemeId,
-    currentVimMode: boolean,
-    currentProjectIsOpen: boolean,
-    localProjectSupported: boolean
-  ): PaletteCommand[] {
-    const projectCommandDisabled = !currentProjectIsOpen;
-    return [
-      {
-        label: "Toggle Sidebar",
-        active: sidebarOpen,
-        disabled: projectCommandDisabled,
-        focusAfter: "none",
-        run: toggleSidebar,
-      },
-      {
-        label: "Open Project: Local Folder",
-        disabled: !localProjectSupported,
-        focusAfter: "editor",
-        run: () => void openProjectWithBackend("file-picker"),
-      },
-      {
-        label: "New Project: Local Folder",
-        disabled: !localProjectSupported,
-        focusAfter: "editor",
-        run: () => void createProjectWithBackend("file-picker"),
-      },
-      {
-        label: "Open Project: Local Companion",
-        focusAfter: "editor",
-        run: () => void openProjectWithBackend("local-companion"),
-      },
-      {
-        label: "New Project: Local Companion",
-        focusAfter: "editor",
-        run: () => void createProjectWithBackend("local-companion"),
-      },
-      {
-        label: "Save Document",
-        disabled: projectCommandDisabled,
-        focusAfter: "editor",
-        run: flushSaveWithoutWaiting,
-      },
-      {
-        label: "Change Title: Project",
-        disabled: projectCommandDisabled,
-        focusAfter: "none",
-        run: openProjectTitleModal,
-      },
-      {
-        label: "Append: New Chapter",
-        disabled: projectCommandDisabled,
-        focusAfter: "none",
-        run: openAppendChapterModal,
-      },
-      {
-        label: "Add Before: New Chapter",
-        disabled: projectCommandDisabled || activeChapter === undefined,
-        focusAfter: "none",
-        run: () => openInsertChapterModal("before", activeChapter),
-      },
-      {
-        label: "Add After: New Chapter",
-        disabled: projectCommandDisabled || activeChapter === undefined,
-        focusAfter: "none",
-        run: () => openInsertChapterModal("after", activeChapter),
-      },
-      {
-        label: "Change Title: Current Chapter",
-        disabled: projectCommandDisabled || activeChapter === undefined,
-        focusAfter: "none",
-        run: openCurrentChapterTitleModal,
-      },
-      {
-        label: "Delete: Current Chapter",
-        disabled: !canDeleteCurrentChapter,
-        focusAfter: "none",
-        run: openCurrentChapterDeleteModal,
-      },
-      {
-        label: "Append: New Scene",
-        disabled: projectCommandDisabled,
-        focusAfter: "none",
-        run: openAppendSceneModal,
-      },
-      {
-        label: "Add Before: New Scene",
-        disabled: projectCommandDisabled || activeScene === undefined,
-        focusAfter: "none",
-        run: () => openInsertSceneModal("before", activeScene),
-      },
-      {
-        label: "Add After: New Scene",
-        disabled: projectCommandDisabled || activeScene === undefined,
-        focusAfter: "none",
-        run: () => openInsertSceneModal("after", activeScene),
-      },
-      {
-        label: "Change Title: Current Scene",
-        disabled: projectCommandDisabled || activeScene === undefined,
-        focusAfter: "none",
-        run: openCurrentSceneTitleModal,
-      },
-      {
-        label: "Delete: Current Scene",
-        disabled: !canDeleteCurrentScene,
-        focusAfter: "none",
-        run: openCurrentSceneDeleteModal,
-      },
-      {
-        label: currentVimMode ? "Disable Vim" : "Enable Vim",
-        active: currentVimMode,
-        disabled: projectCommandDisabled,
-        focusAfter: "editor",
-        run: toggleVimMode,
-      },
-      ...CLAROS_THEMES.map((theme) => ({
-        label: `Theme: ${theme.label}`,
-        active: theme.id === currentTheme,
-        focusAfter: "editor" as const,
-        run: () => setTheme(theme.id),
-      })),
-      {
-        label: "Focus Editor",
-        disabled: projectCommandDisabled,
-        focusAfter: "editor",
-        run: () => undefined,
-      },
-    ];
   }
 
   function toggleCollapsed(itemId: string): void {
@@ -1406,6 +1356,17 @@
     void restoreWorkspaceFocus();
   }
 
+  function closeConfirmationModal(): void {
+    confirmationModal = undefined;
+    void restoreWorkspaceFocus();
+  }
+
+  function submitConfirmationModal(): void {
+    const modal = confirmationModal;
+    confirmationModal = undefined;
+    modal?.onConfirm();
+  }
+
   function beginProjectTitleEdit(): void {
     if (!projectIsOpen) {
       return;
@@ -1576,6 +1537,140 @@
     return scenes.length > 1;
   }
 
+  function canMoveChapter(chapter: WorkspaceChapter, direction: "up" | "down"): boolean {
+    const index = chapters.findIndex((candidate) => candidate.id === chapter.id);
+    return direction === "up" ? index > 0 : index >= 0 && index < chapters.length - 1;
+  }
+
+  function canMoveScene(scene: WorkspaceScene, direction: "up" | "down"): boolean {
+    const index = scenes.findIndex((candidate) => candidate.path === scene.path);
+    return direction === "up" ? index > 0 : index >= 0 && index < scenes.length - 1;
+  }
+
+  async function moveCurrentChapter(direction: "up" | "down"): Promise<void> {
+    if (activeChapter !== undefined) {
+      await moveChapterByDirection(activeChapter, direction);
+    }
+  }
+
+  async function moveCurrentScene(direction: "up" | "down"): Promise<void> {
+    if (activeScene !== undefined) {
+      await moveSceneByDirection(activeScene, direction);
+    }
+  }
+
+  async function moveChapterByDirection(
+    chapter: WorkspaceChapter,
+    direction: "up" | "down"
+  ): Promise<void> {
+    const index = chapters.findIndex((candidate) => candidate.id === chapter.id);
+    const target = chapters[direction === "up" ? index - 1 : index + 1];
+    if (project === undefined || target === undefined) {
+      return;
+    }
+    await moveChapter(chapter.id, {
+      placement: direction === "up" ? "before" : "after",
+      targetChapterId: target.id,
+    });
+  }
+
+  async function moveSceneByDirection(
+    scene: WorkspaceScene,
+    direction: "up" | "down"
+  ): Promise<void> {
+    const index = scenes.findIndex((candidate) => candidate.path === scene.path);
+    const target = scenes[direction === "up" ? index - 1 : index + 1];
+    if (project === undefined || target === undefined) {
+      return;
+    }
+    await moveScene(scene.path, {
+      placement: direction === "up" ? "before" : "after",
+      targetScenePath: target.path,
+    });
+  }
+
+  async function moveChapter(
+    chapterId: string,
+    options: { placement: "before" | "after"; targetChapterId: string }
+  ): Promise<void> {
+    if (project === undefined) {
+      return;
+    }
+    contextMenu = undefined;
+    await flushSave();
+    const move = await project.moveChapter(chapterId, options);
+    await refreshAfterMove(move);
+  }
+
+  async function moveScene(
+    scenePath: string,
+    options: SceneMoveOptions,
+    moveOptions: { skipEmptyChapterConfirmation?: boolean } = {}
+  ): Promise<void> {
+    if (project === undefined) {
+      return;
+    }
+    contextMenu = undefined;
+    if (
+      !moveOptions.skipEmptyChapterConfirmation &&
+      shouldConfirmEmptyChapterDeletion(scenePath, options)
+    ) {
+      openEmptyChapterMoveConfirmation(scenePath, options);
+      return;
+    }
+    await flushSave();
+    const move = await project.moveScene(scenePath, options);
+    await refreshAfterMove(move);
+  }
+
+  function shouldConfirmEmptyChapterDeletion(scenePath: string, options: SceneMoveOptions): boolean {
+    const scene = scenes.find((candidate) => candidate.path === scenePath);
+    const targetChapterId = targetChapterIdForSceneMove(options);
+    return (
+      scene !== undefined &&
+      targetChapterId !== undefined &&
+      targetChapterId !== scene.chapterId &&
+      scenes.filter((candidate) => candidate.chapterId === scene.chapterId).length === 1
+    );
+  }
+
+  function targetChapterIdForSceneMove(options: SceneMoveOptions): string | undefined {
+    if (options.placement === "append") {
+      return options.targetChapterId;
+    }
+    return scenes.find((scene) => scene.path === options.targetScenePath)?.chapterId;
+  }
+
+  function openEmptyChapterMoveConfirmation(
+    scenePath: string,
+    options: SceneMoveOptions
+  ): void {
+    const scene = scenes.find((candidate) => candidate.path === scenePath);
+    const chapter =
+      scene === undefined
+        ? undefined
+        : chapters.find((candidate) => candidate.id === scene.chapterId);
+    const sceneLabel = scene?.title ?? "this scene";
+    const chapterLabel = chapter?.title ?? "its current chapter";
+    confirmationModal = {
+      heading: "Delete Empty Chapter?",
+      message: `Moving "${sceneLabel}" out of "${chapterLabel}" will delete the empty chapter.`,
+      confirmLabel: "Move and Delete Chapter",
+      cancelLabel: "Cancel",
+      onConfirm: () => {
+        void moveScene(scenePath, options, { skipEmptyChapterConfirmation: true });
+      },
+    };
+  }
+
+  async function refreshAfterMove(move: WorkspaceMoveResult): Promise<void> {
+    const nextActivePath = move.pathMap[activePath] ?? activePath;
+    refreshProjectView();
+    if (nextActivePath !== activePath || scenes.some((scene) => scene.path === nextActivePath)) {
+      await openDocument(nextActivePath, { forceReload: true, skipSave: true });
+    }
+  }
+
   function chapterForItem(item: SidebarItem): WorkspaceChapter | undefined {
     return item.chapterId === undefined
       ? undefined
@@ -1611,6 +1706,30 @@
         ],
       });
       menuItems.push({
+        label: "Move",
+        disabled: chapter === undefined,
+        submenu: [
+          {
+            label: "Up",
+            disabled: chapter === undefined || !canMoveChapter(chapter, "up"),
+            run: () => {
+              if (chapter !== undefined) {
+                void moveChapterByDirection(chapter, "up");
+              }
+            },
+          },
+          {
+            label: "Down",
+            disabled: chapter === undefined || !canMoveChapter(chapter, "down"),
+            run: () => {
+              if (chapter !== undefined) {
+                void moveChapterByDirection(chapter, "down");
+              }
+            },
+          },
+        ],
+      });
+      menuItems.push({
         label: "Delete chapter",
         disabled: chapter === undefined || !canDeleteChapter(chapter),
         run: () => {
@@ -1634,6 +1753,30 @@
         {
           label: "After",
           run: () => openInsertSceneModal("after", scene),
+        },
+      ],
+    });
+    menuItems.push({
+      label: "Move",
+      disabled: scene === undefined,
+      submenu: [
+        {
+          label: "Up",
+          disabled: scene === undefined || !canMoveScene(scene, "up"),
+          run: () => {
+            if (scene !== undefined) {
+              void moveSceneByDirection(scene, "up");
+            }
+          },
+        },
+        {
+          label: "Down",
+          disabled: scene === undefined || !canMoveScene(scene, "down"),
+          run: () => {
+            if (scene !== undefined) {
+              void moveSceneByDirection(scene, "down");
+            }
+          },
         },
       ],
     });
@@ -1682,14 +1825,21 @@
       close={closeSidebar}
       commitTitle={(item) => void commitSidebarTitleEdit(item)}
       cancelTitleEdit={cancelInlineTitleEdit}
+      dragging={$manuscriptDrag !== undefined}
+      draggingItemId={$manuscriptDrag?.itemId ?? ""}
+      ghostChapterId={$manuscriptDrag?.kind === "chapter" ? $manuscriptDrag.chapterId : ""}
+      dropIndicatorItemId={chapterDropIndicatorItemId}
+      dropIndicatorPlacement={$manuscriptDrag?.kind === "chapter" ? $manuscriptDrag.placement : undefined}
       editingItemId={editingSidebarItemId}
       handleContextMenu={openSidebarContextMenu}
+      handleDragPointerDown={(event, item) => manuscriptDragController.handlePointerDown(event, item)}
       handleItemClick={handleSidebarItemClick}
       handleKeydown={handleSidebarKeydown}
       items={sidebarItems}
       open={sidebarOpen}
       rememberFocus={rememberSidebarFocus}
     />
+    <ManuscriptDragPreview drag={$manuscriptDrag} />
     {/if}
 
     <section class="workspace">
@@ -1824,6 +1974,14 @@
       state={deleteModal}
       close={closeDeleteModal}
       submit={() => void submitDeleteModal()}
+    />
+    {/if}
+
+    {#if confirmationModal !== undefined}
+    <ConfirmationModal
+      state={confirmationModal}
+      close={closeConfirmationModal}
+      submit={submitConfirmationModal}
     />
     {/if}
   {/if}

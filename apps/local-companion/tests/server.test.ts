@@ -146,6 +146,26 @@ describe("local companion server", () => {
       "manuscript/002-middle-act/002-bridge.md",
       "manuscript/003-the-great-walrus/003-the-ultimatum.md",
     ]);
+
+    const movedChapter = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "move-chapter",
+      chapterId: "003-the-great-walrus",
+      placement: "before",
+      targetChapterId: "001-start",
+    })) as MutationResponse;
+    expect(movedChapter.chapter?.id).toBe("001-the-great-walrus");
+    expect(movedChapter.chapterIdMap?.["003-the-great-walrus"]).toBe("001-the-great-walrus");
+
+    const movedScene = (await postJson(baseUrl, token, "/api/project/mutation", {
+      action: "move-scene",
+      path: "manuscript/001-the-great-walrus/001-the-ultimatum.md",
+      placement: "after",
+      targetScenePath: "manuscript/003-middle-act/003-bridge.md",
+    })) as MutationResponse;
+    expect(movedScene.scene?.path).toBe("manuscript/003-middle-act/003-the-ultimatum.md");
+    expect(movedScene.pathMap?.["manuscript/001-the-great-walrus/001-the-ultimatum.md"]).toBe(
+      "manuscript/003-middle-act/003-the-ultimatum.md"
+    );
   });
 });
 
@@ -203,6 +223,8 @@ interface MutationResponse extends ProjectResponse {
   chapter?: { id: string };
   scene?: { path: string };
   nextPath?: string;
+  pathMap?: Record<string, string>;
+  chapterIdMap?: Record<string, string>;
 }
 
 interface DocumentResponse {
