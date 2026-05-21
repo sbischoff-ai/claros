@@ -4,6 +4,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseStateFile } from "@claros/story-format";
+import type {
+  ProjectDirEntry,
+  ProjectFileReader,
+  ProjectFileStat,
+  ProjectFileWriter,
+} from "@claros/story-format";
+import { openProject as openBrowserProject } from "../src/browser.js";
 import {
   CheckpointNotImplementedError,
   NodeProjectFileReader,
@@ -46,6 +53,79 @@ class SpyProjectFileWriter extends NodeProjectFileWriter {
 class FailingProjectFileWriter extends NodeProjectFileWriter {
   override async writeFileAtomic(_filePath: string, _content: string): Promise<void> {
     throw new Error("intentional write failure");
+  }
+}
+
+class MemoryProjectFileSystem implements ProjectFileReader, ProjectFileWriter {
+  readonly files = new Map<string, string>();
+
+  constructor(files: Record<string, string>) {
+    for (const [filePath, content] of Object.entries(files)) {
+      this.files.set(normalizeMemoryPath(filePath), content);
+    }
+  }
+
+  async readFile(filePath: string): Promise<string> {
+    const content = this.files.get(normalizeMemoryPath(filePath));
+    if (content === undefined) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    return content;
+  }
+
+  async readDir(filePath: string): Promise<ProjectDirEntry[]> {
+    const directory = normalizeMemoryPath(filePath);
+    const prefix = directory === "/" ? "/" : `${directory}/`;
+    const entries = new Map<string, ProjectDirEntry>();
+    for (const candidate of this.files.keys()) {
+      if (!candidate.startsWith(prefix)) {
+        continue;
+      }
+      const remaining = candidate.slice(prefix.length);
+      const [name, ...rest] = remaining.split("/");
+      if (name.length > 0) {
+        entries.set(name, { name, isDirectory: rest.length > 0 });
+      }
+    }
+    return [...entries.values()];
+  }
+
+  async stat(filePath: string): Promise<ProjectFileStat> {
+    const normalized = normalizeMemoryPath(filePath);
+    if (this.files.has(normalized)) {
+      return { exists: true, isDirectory: false };
+    }
+    const prefix = normalized === "/" ? "/" : `${normalized}/`;
+    return [...this.files.keys()].some((candidate) => candidate.startsWith(prefix))
+      ? { exists: true, isDirectory: true }
+      : { exists: false, isDirectory: false };
+  }
+
+  async writeFileAtomic(filePath: string, content: string): Promise<void> {
+    this.files.set(normalizeMemoryPath(filePath), content);
+  }
+
+  async mkdir(_filePath: string, _recursive = true): Promise<void> {}
+
+  async renameFile(fromPath: string, toPath: string): Promise<void> {
+    const from = normalizeMemoryPath(fromPath);
+    const to = normalizeMemoryPath(toPath);
+    const content = this.files.get(from);
+    if (content === undefined) {
+      throw new Error(`File not found: ${fromPath}`);
+    }
+    this.files.set(to, content);
+    this.files.delete(from);
+  }
+
+  async removeFile(filePath: string): Promise<void> {
+    const normalized = normalizeMemoryPath(filePath);
+    const prefix = `${normalized}/`;
+    for (const candidate of [...this.files.keys()]) {
+      if (candidate === normalized || candidate.startsWith(prefix)) {
+        this.files.delete(candidate);
+      }
+    }
   }
 }
 
@@ -134,6 +214,11 @@ async function writeProjectFile(
   await fs.writeFile(absolutePath, content, "utf8");
 }
 
+function normalizeMemoryPath(filePath: string): string {
+  const normalized = `/${filePath.replace(/\\/g, "/").replace(/^\/+/, "")}`;
+  return normalized.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
+}
+
 describe("openProject", () => {
   it("opens a sample project and lists semantic sidebar data", async () => {
     const root = await createProjectRoot();
@@ -149,6 +234,59 @@ describe("openProject", () => {
       "notes/characters/kareth.md",
       "notes/places/ancient-ruin.md",
     ]);
+  });
+
+  it("keeps Node and browser structural mutation results aligned", async () => {
+    const root = await createProjectRoot();
+    const browserFs = new MemoryProjectFileSystem({
+      "/claros.yaml": ["claros: 1", "title: Workspace Test", "modules:", "  - mythic-gme-2e"].join(
+        "\n"
+      ),
+      "/manuscript/001-prologue/001-opening.md": [
+        "---",
+        "title: Opening",
+        "---",
+        "",
+        "Start at [[Ancient Ruin]].",
+        "",
+        "Opening body.",
+      ].join("\n"),
+      "/manuscript/001-prologue/002-arrival.md": [
+        "---",
+        "title: Arrival",
+        "---",
+        "",
+        "See [[kareth]].",
+      ].join("\n"),
+      "/notes/characters/kareth.md": "---\ntitle: Kareth\n---\n\nBody text.",
+      "/notes/places/ancient-ruin.md": "---\ntitle: Ancient Ruin\n---\n\nAncient note body.",
+    });
+    const nodeProject = await openProject(root);
+    const browserProject = await openBrowserProject("/", {
+      fileReader: browserFs,
+      fileWriter: browserFs,
+    });
+
+    const nodeAppend = await nodeProject.appendChapter("Second Act", "Bridge");
+    const browserAppend = await browserProject.appendChapter("Second Act", "Bridge");
+    expect(browserAppend.result).toEqual(nodeAppend.result);
+
+    const nodeMove = await nodeProject.moveScene("manuscript/002-second-act/003-bridge.md", {
+      placement: "before",
+      targetScene: "manuscript/001-prologue/001-opening.md",
+    });
+    const browserMove = await browserProject.moveScene("manuscript/002-second-act/003-bridge.md", {
+      placement: "before",
+      targetScene: "manuscript/001-prologue/001-opening.md",
+    });
+    expect(browserMove.result).toEqual(nodeMove.result);
+    expect(browserMove.pathMap).toEqual(nodeMove.pathMap);
+
+    const nodeTitle = await nodeProject.setChapterTitle("001-prologue", "New Prologue");
+    const browserTitle = await browserProject.setChapterTitle("001-prologue", "New Prologue");
+    expect(browserTitle).toEqual(nodeTitle);
+    expect(browserProject.listChapters()).toEqual(nodeProject.listChapters());
+    expect(browserProject.listScenes()).toEqual(nodeProject.listScenes());
   });
 
   it("reads and writes scene and note markdown documents through the workspace API", async () => {
@@ -298,8 +436,12 @@ describe("openProject", () => {
     );
     const project = await openProject(root);
 
-    await project.setProjectMetadataPath("exports.clean", true);
-    await project.setChapterMetadataPath("001-prologue", "route.current", "north");
+    const projectResult = await project.setProjectMetadataPath("exports.clean", true);
+    const chapterResult = await project.setChapterMetadataPath(
+      "001-prologue",
+      "route.current",
+      "north"
+    );
 
     expect(
       parseStateFile(await fs.readFile(path.join(root, "claros.yaml"), "utf8")).data
@@ -314,6 +456,19 @@ describe("openProject", () => {
     ).toEqual({
       title: "Prologue",
       unknown: { keep: true },
+      route: { current: "north" },
+    });
+    expect(projectResult).toEqual({
+      kind: "metadata",
+      changedPaths: ["claros.yaml"],
+      indexUpdated: true,
+    });
+    expect(chapterResult).toEqual({
+      kind: "metadata",
+      changedPaths: ["manuscript/001-prologue/chapter.yaml"],
+      indexUpdated: true,
+    });
+    expect(project.listChapters()[0]?.metadata).toMatchObject({
       route: { current: "north" },
     });
   });
@@ -479,7 +634,7 @@ describe("openProject", () => {
     const project = await openProject(root);
 
     await project.appendChapter("Second Act");
-    await project.setChapterTitle("002-second-act", "THE GREAT WALRUS!");
+    const chapterTitleResult = await project.setChapterTitle("002-second-act", "THE GREAT WALRUS!");
 
     expect(project.listChapters().map((chapter) => chapter.id)).toEqual([
       "001-prologue",
@@ -498,11 +653,27 @@ describe("openProject", () => {
     }
     const reloaded = await openProject(root);
 
-    await reloaded.setSceneTitle("manuscript/001-prologue/121-scene-121.md", "tHe ulTimATUm...");
+    const sceneTitleResult = await reloaded.setSceneTitle(
+      "manuscript/001-prologue/121-scene-121.md",
+      "tHe ulTimATUm..."
+    );
 
     expect(reloaded.listScenes().map((scene) => scene.path)).toContain(
       "manuscript/001-prologue/121-the-ultimatum.md"
     );
+    expect(chapterTitleResult.pathMap).toEqual({
+      "manuscript/002-second-act/003-scene-3.md": "manuscript/002-the-great-walrus/003-scene-3.md",
+    });
+    expect(chapterTitleResult.chapterIdMap).toEqual({
+      "002-second-act": "002-the-great-walrus",
+    });
+    expect(chapterTitleResult.affectedPaths).toEqual(chapterTitleResult.changedPaths);
+    expect(sceneTitleResult.pathMap).toEqual({
+      "manuscript/001-prologue/121-scene-121.md": "manuscript/001-prologue/121-the-ultimatum.md",
+      "manuscript/002-the-great-walrus/003-scene-3.md":
+        "manuscript/002-the-great-walrus/122-scene-122.md",
+    });
+    expect(sceneTitleResult.indexUpdated).toBe(true);
   });
 
   it("deletes scenes and chapters while resequencing manuscript paths", async () => {
@@ -517,6 +688,17 @@ describe("openProject", () => {
       "manuscript/001-prologue/001-arrival.md",
       "manuscript/002-second-act/002-scene-2.md",
     ]);
+    expect(deleteSceneResult.result.pathMap).toEqual({
+      "manuscript/001-prologue/002-arrival.md": "manuscript/001-prologue/001-arrival.md",
+      "manuscript/002-second-act/003-scene-3.md": "manuscript/002-second-act/002-scene-2.md",
+    });
+    expect(deleteSceneResult.result.changedPaths).toEqual([
+      "manuscript/001-prologue/001-arrival.md",
+      "manuscript/001-prologue/001-opening.md",
+      "manuscript/001-prologue/002-arrival.md",
+      "manuscript/002-second-act/002-scene-2.md",
+      "manuscript/002-second-act/003-scene-3.md",
+    ]);
 
     const deleteChapterResult = await project.deleteChapter("001-prologue");
     expect(deleteChapterResult.nextScene?.path).toBe("manuscript/001-second-act/001-scene-1.md");
@@ -524,6 +706,11 @@ describe("openProject", () => {
     expect(project.listScenes().map((scene) => scene.path)).toEqual([
       "manuscript/001-second-act/001-scene-1.md",
     ]);
+    expect(deleteChapterResult.result.pathMap).toEqual({
+      "manuscript/002-second-act/002-scene-2.md": "manuscript/001-second-act/001-scene-1.md",
+    });
+    expect(project.listChapters().some((chapter) => chapter.id === "001-prologue")).toBe(false);
+    expect(project.listScenes().some((scene) => scene.path.includes("002-second-act"))).toBe(false);
     await expect(project.deleteScene("manuscript/001-second-act/001-scene-1.md")).rejects.toThrow(
       "Cannot delete the final remaining scene"
     );

@@ -38,9 +38,11 @@ import type {
   SearchOptions,
   SearchResult,
   SetFrontmatterPathOptions,
+  StructuralMutationPlan,
   TimelineRef,
   WriteDocumentOptions,
 } from "./project/workspace.js";
+import { ProjectMutationEngine } from "./project/mutations.js";
 import type {
   ExecuteMacroInDocumentResult,
   MacroRunDisplay,
@@ -77,13 +79,23 @@ export async function openProject(
 }
 
 class BrowserClarosProject implements ClarosProject {
+  private readonly mutations: ProjectMutationEngine;
+
   constructor(
     public readonly root: string,
     public readonly manifest: ProjectManifest,
     private readonly fileReader: ProjectFileReader,
     private readonly fileWriter: ProjectFileWriter,
     private readonly index: ProjectIndex
-  ) {}
+  ) {
+    this.mutations = new ProjectMutationEngine({
+      fileReader,
+      fileWriter,
+      index,
+      toStoragePath: toRootPath,
+      rebuildIndex: () => this.rebuildIndex(),
+    });
+  }
 
   listChapters(): ChapterRef[] {
     return this.index.listChapters();
@@ -174,6 +186,7 @@ class BrowserClarosProject implements ClarosProject {
     const current = await this.readYamlObject("claros.yaml");
     const next = setAtPath(current, metadataPath, value);
     await this.fileWriter.writeFileAtomic(toRootPath("claros.yaml"), dump(next, { lineWidth: -1 }));
+    await this.rebuildIndex();
     return { kind: "metadata", changedPaths: ["claros.yaml"], indexUpdated: true };
   }
 
@@ -186,6 +199,7 @@ class BrowserClarosProject implements ClarosProject {
     const current = await this.readYamlObject(path);
     const next = setAtPath(current, metadataPath, value);
     await this.fileWriter.writeFileAtomic(toRootPath(path), dump(next, { lineWidth: -1 }));
+    await this.rebuildIndex();
     return { kind: "metadata", changedPaths: [path], indexUpdated: true };
   }
 
@@ -200,82 +214,22 @@ class BrowserClarosProject implements ClarosProject {
   }
 
   async setChapterTitle(chapterId: string, title: string): Promise<MutationResult> {
-    const current = this.resolveChapter(chapterId);
-    const currentRaw = await this.readOptionalFile(`${current.path}/chapter.yaml`);
-    const nextRaw = serializeChapterYamlWithTitle(currentRaw, title);
-    return this.rebuildManuscript(
-      () => true,
-      () => true,
-      {
-        chapter: (chapter) =>
-          chapter.id === current.id
-            ? { raw: nextRaw, slug: slugForTitle(title, "chapter", chapter.sequence) }
-            : {},
-      }
-    );
+    return (await this.mutations.setChapterTitle(chapterId, title)).result;
   }
 
   async setSceneTitle(scene: SceneRef | string, title: string): Promise<MutationResult> {
-    const current = this.resolveScene(scene);
-    const raw = await this.fileReader.readFile(toRootPath(current.path));
-    const nextRaw = setMarkdownTitle(raw, title);
-    return this.rebuildManuscript(
-      () => true,
-      () => true,
-      {
-        scene: (candidate) =>
-          candidate.path === current.path
-            ? { raw: nextRaw, slug: slugForTitle(title, "scene", candidate.sequence) }
-            : {},
-      }
-    );
+    return (await this.mutations.setSceneTitle(scene, title)).result;
   }
 
   async appendChapter(
     chapterTitle: string,
     sceneTitle = ""
   ): Promise<{ result: MutationResult; scene: SceneRef }> {
-    const chapterSequence = nextSequence(this.listChapters().map((chapter) => chapter.sequence));
-    const sceneSequence = nextSequence(this.listScenes().map((scene) => scene.sequence));
-    const chapterId = this.uniqueChapterId(chapterSequence, chapterTitle);
-    const scenePath = this.uniqueScenePath(chapterId, sceneSequence, sceneTitle);
-    await this.fileWriter.mkdir(toRootPath(`manuscript/${chapterId}`), true);
-    await this.fileWriter.writeFileAtomic(
-      toRootPath(`manuscript/${chapterId}/chapter.yaml`),
-      serializeTitleYaml(chapterTitle)
-    );
-    await this.fileWriter.writeFileAtomic(
-      toRootPath(scenePath),
-      serializeSceneMarkdown(sceneTitle)
-    );
-    await this.rebuildIndex();
-    return {
-      result: {
-        kind: "structural",
-        changedPaths: [
-          `manuscript/${chapterId}`,
-          `manuscript/${chapterId}/chapter.yaml`,
-          scenePath,
-        ],
-        indexUpdated: true,
-      },
-      scene: this.sceneByPath(scenePath),
-    };
+    return this.mutations.appendChapter(chapterTitle, sceneTitle);
   }
 
   async appendScene(title: string): Promise<{ result: MutationResult; scene: SceneRef }> {
-    const lastChapter = this.listChapters().at(-1);
-    if (lastChapter === undefined) {
-      return this.appendChapter("", title);
-    }
-    const sceneSequence = nextSequence(this.listScenes().map((scene) => scene.sequence));
-    const scenePath = this.uniqueScenePath(lastChapter.id, sceneSequence, title);
-    await this.fileWriter.writeFileAtomic(toRootPath(scenePath), serializeSceneMarkdown(title));
-    await this.rebuildIndex();
-    return {
-      result: { kind: "structural", changedPaths: [scenePath], indexUpdated: true },
-      scene: this.sceneByPath(scenePath),
-    };
+    return this.mutations.appendScene(title);
   }
 
   async createChapter(
@@ -283,210 +237,80 @@ class BrowserClarosProject implements ClarosProject {
     sceneTitle = "",
     options: CreateChapterOptions = {}
   ): Promise<{ result: MutationResult; scene: SceneRef }> {
-    if (options.placement === undefined || options.placement === "append") {
-      return this.appendChapter(chapterTitle, sceneTitle);
-    }
-    if (options.targetChapter === undefined) {
-      throw new Error("Cannot insert chapter without a target chapter");
-    }
-
-    const target = this.resolveChapter(options.targetChapter);
-    const chapters = this.listChapters();
-    const scenes = this.listScenes();
-    const targetIndex = chapters.findIndex((chapter) => chapter.id === target.id);
-    const insertedSceneSequence =
-      scenes.filter((scene) => {
-        const chapterIndex = chapters.findIndex((chapter) => chapter.id === scene.chapterId);
-        return options.placement === "before"
-          ? chapterIndex < targetIndex
-          : chapterIndex <= targetIndex;
-      }).length + 1;
-
-    const result = await this.rebuildManuscript(
-      () => true,
-      () => true,
-      {},
-      {
-        targetChapterId: target.id,
-        placement: options.placement,
-        chapterTitle,
-        sceneTitle,
-      }
-    );
-    const scene = this.listScenes().find(
-      (candidate) => candidate.sequence === insertedSceneSequence
-    );
-    if (scene === undefined) {
-      throw new Error("Inserted chapter scene not found after manuscript mutation");
-    }
-    return { result, scene };
+    return this.mutations.createChapter(chapterTitle, sceneTitle, options);
   }
 
   async createScene(
     title: string,
     options: CreateSceneOptions = {}
   ): Promise<{ result: MutationResult; scene: SceneRef }> {
-    if (options.placement === undefined || options.placement === "append") {
-      return this.appendScene(title);
-    }
-    if (options.targetScene === undefined) {
-      throw new Error("Cannot insert scene without a target scene");
-    }
-
-    const target = this.resolveScene(options.targetScene);
-    const targetIndex = this.listScenes().findIndex((scene) => scene.path === target.path);
-    const insertedSceneSequence =
-      options.placement === "before" ? targetIndex + 1 : targetIndex + 2;
-    const result = await this.rebuildManuscript(
-      () => true,
-      () => true,
-      {},
-      {
-        targetScenePath: target.path,
-        placement: options.placement,
-        sceneTitle: title,
-      }
-    );
-    const scene = this.listScenes().find(
-      (candidate) => candidate.sequence === insertedSceneSequence
-    );
-    if (scene === undefined) {
-      throw new Error("Inserted scene not found after manuscript mutation");
-    }
-    return { result, scene };
+    return this.mutations.createScene(title, options);
   }
 
   async deleteChapter(
     chapterId: string
   ): Promise<{ result: MutationResult; nextScene?: SceneRef }> {
-    const scenes = this.listScenes();
-    if (this.listChapters().length <= 1 || scenes.every((scene) => scene.chapterId === chapterId)) {
-      throw new Error("Cannot delete the final remaining chapter");
-    }
-    const index = scenes.findIndex((scene) => scene.chapterId === chapterId);
-    const result = await this.rebuildManuscript((chapter) => chapter.id !== chapterId);
-    return { result, nextScene: sceneAtNearestIndex(this.listScenes(), index) };
+    return this.mutations.deleteChapter(chapterId);
   }
 
   async deleteScene(
     scene: SceneRef | string
   ): Promise<{ result: MutationResult; nextScene?: SceneRef }> {
-    const current = this.resolveScene(scene);
-    const scenes = this.listScenes();
-    if (scenes.length <= 1) {
-      throw new Error("Cannot delete the final remaining scene");
-    }
-    const index = scenes.findIndex((candidate) => candidate.path === current.path);
-    const removeChapter =
-      scenes.filter((candidate) => candidate.chapterId === current.chapterId).length === 1;
-    const result = await this.rebuildManuscript(
-      (chapter) => !removeChapter || chapter.id !== current.chapterId,
-      (candidate) => candidate.path !== current.path
-    );
-    return { result, nextScene: sceneAtNearestIndex(this.listScenes(), index) };
+    return this.mutations.deleteScene(scene);
   }
 
   async moveChapter(
     chapter: ChapterRef | string,
     options: MoveChapterOptions
   ): Promise<ManuscriptMoveResult & { chapter: ChapterRef }> {
-    const current = this.resolveChapter(chapter);
-    const target = this.resolveChapter(options.targetChapter);
-    const chapters = this.listChapters();
-    const currentIndex = chapters.findIndex((candidate) => candidate.id === current.id);
-    const remaining = chapters.filter((candidate) => candidate.id !== current.id);
-    const targetIndex = remaining.findIndex((candidate) => candidate.id === target.id);
-    const insertionIndex = options.placement === "before" ? targetIndex : targetIndex + 1;
-    if (currentIndex === insertionIndex) {
-      return {
-        result: { kind: "structural", changedPaths: [], indexUpdated: false },
-        pathMap: {},
-        chapterIdMap: {},
-        chapter: current,
-      };
-    }
-
-    const orderedChapters = [
-      ...remaining.slice(0, insertionIndex),
-      current,
-      ...remaining.slice(insertionIndex),
-    ];
-    const move = await this.rebuildManuscriptOrder(orderedChapters, this.listScenes());
-    return { ...move, chapter: this.resolveChapter(move.chapterIdMap[current.id] ?? current.id) };
+    return this.mutations.moveChapter(chapter, options);
   }
 
   async moveScene(
     scene: SceneRef | string,
     options: MoveSceneOptions
   ): Promise<ManuscriptMoveResult & { scene: SceneRef }> {
-    const current = this.resolveScene(scene);
-    const scenes = this.listScenes();
-    const currentIndex = scenes.findIndex((candidate) => candidate.path === current.path);
-    const remaining = scenes.filter((candidate) => candidate.path !== current.path);
-    let insertionIndex: number;
-    let targetChapterId: string;
-    if (options.placement === "append") {
-      if (options.targetChapter === undefined) {
-        throw new Error("Cannot append scene without a target chapter");
-      }
-      const targetChapter = this.resolveChapter(options.targetChapter);
-      targetChapterId = targetChapter.id;
-      insertionIndex = appendSceneIndexForChapter(remaining, this.listChapters(), targetChapter.id);
-    } else {
-      if (options.targetScene === undefined) {
-        throw new Error("Cannot move scene without a target scene");
-      }
-      const target = this.resolveScene(options.targetScene);
-      if (target.path === current.path) {
-        return {
-          result: { kind: "structural", changedPaths: [], indexUpdated: false },
-          pathMap: {},
-          chapterIdMap: {},
-          scene: current,
-        };
-      }
-      const targetIndex = remaining.findIndex((candidate) => candidate.path === target.path);
-      insertionIndex = options.placement === "before" ? targetIndex : targetIndex + 1;
-      targetChapterId = target.chapterId;
+    return this.mutations.moveScene(scene, options);
+  }
+
+  planRenameNote(
+    note: NoteRef | string,
+    nextPath: string,
+    options?: { rewriteLinks?: boolean }
+  ): Promise<StructuralMutationPlan> {
+    return this.mutations.planRenameNote(note, nextPath, options?.rewriteLinks ?? false);
+  }
+
+  async renameNote(
+    note: NoteRef | string,
+    nextPath: string,
+    options?: { rewriteLinks?: boolean; dryRun?: boolean }
+  ): Promise<MutationResult> {
+    const plan = await this.planRenameNote(note, nextPath, options);
+    if (options?.dryRun ?? false) {
+      return { kind: "structural", changedPaths: [], indexUpdated: false };
     }
-    if (targetChapterId === current.chapterId && currentIndex === insertionIndex) {
-      return {
-        result: { kind: "structural", changedPaths: [], indexUpdated: false },
-        pathMap: {},
-        chapterIdMap: {},
-        scene: current,
-      };
+    return this.mutations.applyRenamePlan(plan);
+  }
+
+  planRenameScene(
+    scene: SceneRef | string,
+    nextSlug: string,
+    options?: { rewriteLinks?: boolean }
+  ): Promise<StructuralMutationPlan> {
+    return this.mutations.planRenameScene(scene, nextSlug, options?.rewriteLinks ?? false);
+  }
+
+  async renameScene(
+    scene: SceneRef | string,
+    nextSlug: string,
+    options?: { rewriteLinks?: boolean; dryRun?: boolean }
+  ): Promise<MutationResult> {
+    const plan = await this.planRenameScene(scene, nextSlug, options);
+    if (options?.dryRun ?? false) {
+      return { kind: "structural", changedPaths: [], indexUpdated: false };
     }
-
-    const orderedScenes = [
-      ...remaining.slice(0, insertionIndex),
-      { ...current, chapterId: targetChapterId },
-      ...remaining.slice(insertionIndex),
-    ];
-    const removeSourceChapter =
-      targetChapterId !== current.chapterId &&
-      scenes.filter((candidate) => candidate.chapterId === current.chapterId).length === 1;
-    const orderedChapters = this.listChapters().filter(
-      (chapter) => !removeSourceChapter || chapter.id !== current.chapterId
-    );
-    const move = await this.rebuildManuscriptOrder(orderedChapters, orderedScenes);
-    return { ...move, scene: this.resolveScene(move.pathMap[current.path] ?? current.path) };
-  }
-
-  planRenameNote(): Promise<never> {
-    return Promise.reject(browserUnavailable("planRenameNote"));
-  }
-
-  renameNote(): Promise<never> {
-    return Promise.reject(browserUnavailable("renameNote"));
-  }
-
-  planRenameScene(): Promise<never> {
-    return Promise.reject(browserUnavailable("planRenameScene"));
-  }
-
-  renameScene(): Promise<never> {
-    return Promise.reject(browserUnavailable("renameScene"));
+    return this.mutations.applyRenamePlan(plan);
   }
 
   resolveWikilink(link: string, from?: DocumentRef): LinkResolution {
@@ -579,223 +403,6 @@ class BrowserClarosProject implements ClarosProject {
   private async rebuildIndex(): Promise<void> {
     const snapshot = await scanProjectFormat(ROOT, this.fileReader);
     await this.index.build(snapshot, await readMacroRuns(this.fileReader));
-  }
-
-  private resolveScene(scene: SceneRef | string): SceneRef {
-    if (typeof scene !== "string") {
-      return scene;
-    }
-    const normalized = normalizeRelativePath(scene);
-    const match = this.listScenes().find(
-      (candidate) => candidate.id === normalized || candidate.path === normalized
-    );
-    if (match === undefined) {
-      throw new Error(`Scene not found: ${scene}`);
-    }
-    return match;
-  }
-
-  private resolveChapter(chapterId: ChapterRef | string): ChapterRef {
-    if (typeof chapterId !== "string") {
-      return chapterId;
-    }
-
-    const normalized = normalizeRelativePath(chapterId);
-    const match = this.listChapters().find(
-      (candidate) => candidate.id === normalized || candidate.path === normalized
-    );
-    if (match === undefined) {
-      throw new Error(`Chapter not found: ${chapterId}`);
-    }
-    return match;
-  }
-
-  private sceneByPath(path: string): SceneRef {
-    const scene = this.listScenes().find((candidate) => candidate.path === path);
-    if (scene === undefined) {
-      throw new Error(`Scene not found after manuscript mutation: ${path}`);
-    }
-    return scene;
-  }
-
-  private uniqueChapterId(sequence: number, title: string): string {
-    const prefix = sequencePrefix(sequence);
-    const slug = title.trim().length > 0 ? slugifyPathComponent(title) : `chapter-${sequence}`;
-    return uniqueSequenceName(
-      prefix,
-      slug,
-      new Set(this.listChapters().map((chapter) => chapter.id))
-    );
-  }
-
-  private uniqueScenePath(chapterId: string, sequence: number, title: string): string {
-    const prefix = sequencePrefix(sequence);
-    const slug = title.trim().length > 0 ? slugifyPathComponent(title) : `scene-${sequence}`;
-    const existing = new Set(
-      this.listScenes().map((scene) => basenameWithoutExtension(scene.path))
-    );
-    return `manuscript/${chapterId}/${uniqueSequenceName(prefix, slug, existing)}.md`;
-  }
-
-  private async rebuildManuscript(
-    keepChapter: (chapter: ChapterRef) => boolean,
-    keepScene: (scene: SceneRef) => boolean = () => true,
-    transform: ManuscriptRebuildTransform = {},
-    insertion?: ManuscriptInsertion
-  ): Promise<MutationResult> {
-    const scenesByChapter = new Map<string, SceneRef[]>();
-    for (const scene of this.listScenes().filter(keepScene)) {
-      const scenes = scenesByChapter.get(scene.chapterId) ?? [];
-      scenes.push(scene);
-      scenesByChapter.set(scene.chapterId, scenes);
-    }
-
-    const rebuilt: RebuiltChapter[] = [];
-    let chapterSequence = 1;
-    let sceneSequence = 1;
-    for (const chapter of this.listChapters()) {
-      if (!keepChapter(chapter)) {
-        continue;
-      }
-      if (insertion?.targetChapterId === chapter.id && insertion.placement === "before") {
-        rebuilt.push(buildInsertedChapter(insertion, chapterSequence, sceneSequence));
-        chapterSequence += 1;
-        sceneSequence += 1;
-      }
-      const scenes = scenesByChapter.get(chapter.id) ?? [];
-      if (scenes.length === 0) {
-        continue;
-      }
-      const chapterTransform = transform.chapter?.(chapter, chapterSequence) ?? {};
-      const nextChapterSlug =
-        chapterTransform.slug ?? resequenceDefaultSlug(chapter.slug, "chapter", chapterSequence);
-      const nextChapterId = `${sequencePrefix(chapterSequence)}-${nextChapterSlug}`;
-      const chapterRaw =
-        chapterTransform.raw ?? (await this.readOptionalFile(`${chapter.path}/chapter.yaml`));
-      const rebuiltScenes: RebuiltScene[] = [];
-      for (const scene of scenes) {
-        if (insertion?.targetScenePath === scene.path && insertion.placement === "before") {
-          rebuiltScenes.push(
-            buildInsertedScene(insertion.sceneTitle, nextChapterId, sceneSequence)
-          );
-          sceneSequence += 1;
-        }
-        const sceneTransform = transform.scene?.(scene, sceneSequence) ?? {};
-        const nextSceneSlug =
-          sceneTransform.slug ?? resequenceDefaultSlug(scene.slug, "scene", sceneSequence);
-        rebuiltScenes.push({
-          path: `manuscript/${nextChapterId}/${sequencePrefix(sceneSequence)}-${nextSceneSlug}.md`,
-          raw: sceneTransform.raw ?? (await this.fileReader.readFile(toRootPath(scene.path))),
-        });
-        sceneSequence += 1;
-        if (insertion?.targetScenePath === scene.path && insertion.placement === "after") {
-          rebuiltScenes.push(
-            buildInsertedScene(insertion.sceneTitle, nextChapterId, sceneSequence)
-          );
-          sceneSequence += 1;
-        }
-      }
-      rebuilt.push({ path: `manuscript/${nextChapterId}`, chapterRaw, scenes: rebuiltScenes });
-      chapterSequence += 1;
-      if (insertion?.targetChapterId === chapter.id && insertion.placement === "after") {
-        rebuilt.push(buildInsertedChapter(insertion, chapterSequence, sceneSequence));
-        chapterSequence += 1;
-        sceneSequence += 1;
-      }
-    }
-
-    await this.fileWriter.removeFile(toRootPath("manuscript"));
-    await this.fileWriter.mkdir(toRootPath("manuscript"), true);
-    const changedPaths = new Set<string>(["manuscript"]);
-    for (const chapter of rebuilt) {
-      await this.fileWriter.mkdir(toRootPath(chapter.path), true);
-      changedPaths.add(chapter.path);
-      if (chapter.chapterRaw !== undefined) {
-        const chapterMetadataPath = `${chapter.path}/chapter.yaml`;
-        await this.fileWriter.writeFileAtomic(toRootPath(chapterMetadataPath), chapter.chapterRaw);
-        changedPaths.add(chapterMetadataPath);
-      }
-      for (const scene of chapter.scenes) {
-        await this.fileWriter.writeFileAtomic(toRootPath(scene.path), scene.raw);
-        changedPaths.add(scene.path);
-      }
-    }
-    await this.rebuildIndex();
-    return { kind: "structural", changedPaths: [...changedPaths].sort(), indexUpdated: true };
-  }
-
-  private async rebuildManuscriptOrder(
-    orderedChapters: ChapterRef[],
-    orderedScenes: SceneRef[]
-  ): Promise<ManuscriptMoveResult> {
-    const scenesByChapter = new Map<string, SceneRef[]>();
-    for (const scene of orderedScenes) {
-      const scenes = scenesByChapter.get(scene.chapterId) ?? [];
-      scenes.push(scene);
-      scenesByChapter.set(scene.chapterId, scenes);
-    }
-
-    const rebuilt: RebuiltChapter[] = [];
-    const chapterIdMap: Record<string, string> = {};
-    const pathMap: Record<string, string> = {};
-    let chapterSequence = 1;
-    let sceneSequence = 1;
-    for (const chapter of orderedChapters) {
-      const chapterScenes = scenesByChapter.get(chapter.id) ?? [];
-      if (chapterScenes.length === 0) {
-        continue;
-      }
-      const nextChapterSlug = resequenceDefaultSlug(chapter.slug, "chapter", chapterSequence);
-      const nextChapterId = `${sequencePrefix(chapterSequence)}-${nextChapterSlug}`;
-      chapterIdMap[chapter.id] = nextChapterId;
-      const rebuiltScenes: RebuiltScene[] = [];
-      for (const scene of chapterScenes) {
-        const nextSceneSlug = resequenceDefaultSlug(scene.slug, "scene", sceneSequence);
-        const nextScenePath = `manuscript/${nextChapterId}/${sequencePrefix(sceneSequence)}-${nextSceneSlug}.md`;
-        pathMap[scene.path] = nextScenePath;
-        rebuiltScenes.push({
-          path: nextScenePath,
-          raw: await this.fileReader.readFile(toRootPath(scene.path)),
-        });
-        sceneSequence += 1;
-      }
-      rebuilt.push({
-        path: `manuscript/${nextChapterId}`,
-        chapterRaw: await this.readOptionalFile(`${chapter.path}/chapter.yaml`),
-        scenes: rebuiltScenes,
-      });
-      chapterSequence += 1;
-    }
-
-    await this.fileWriter.removeFile(toRootPath("manuscript"));
-    await this.fileWriter.mkdir(toRootPath("manuscript"), true);
-    const changedPaths = new Set<string>(["manuscript"]);
-    for (const chapter of rebuilt) {
-      await this.fileWriter.mkdir(toRootPath(chapter.path), true);
-      changedPaths.add(chapter.path);
-      if (chapter.chapterRaw !== undefined) {
-        const chapterMetadataPath = `${chapter.path}/chapter.yaml`;
-        await this.fileWriter.writeFileAtomic(toRootPath(chapterMetadataPath), chapter.chapterRaw);
-        changedPaths.add(chapterMetadataPath);
-      }
-      for (const scene of chapter.scenes) {
-        await this.fileWriter.writeFileAtomic(toRootPath(scene.path), scene.raw);
-        changedPaths.add(scene.path);
-      }
-    }
-    await this.rebuildIndex();
-    return {
-      result: { kind: "structural", changedPaths: [...changedPaths].sort(), indexUpdated: true },
-      pathMap,
-      chapterIdMap,
-    };
-  }
-
-  private async readOptionalFile(path: string): Promise<string | undefined> {
-    const stat = await this.fileReader.stat(toRootPath(path));
-    return stat.exists && !stat.isDirectory
-      ? this.fileReader.readFile(toRootPath(path))
-      : undefined;
   }
 }
 
@@ -923,172 +530,9 @@ function normalizeRelativePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
 }
 
-interface RebuiltScene {
-  path: string;
-  raw: string;
-}
-
-interface RebuiltChapter {
-  path: string;
-  chapterRaw?: string;
-  scenes: RebuiltScene[];
-}
-
-interface ManuscriptRebuildTransform {
-  chapter?: (chapter: ChapterRef, nextSequence: number) => { raw?: string; slug?: string };
-  scene?: (scene: SceneRef, nextSequence: number) => { raw?: string; slug?: string };
-}
-
-interface ManuscriptInsertion {
-  placement: "before" | "after";
-  targetChapterId?: string;
-  targetScenePath?: string;
-  chapterTitle?: string;
-  sceneTitle: string;
-}
-
-function buildInsertedChapter(
-  insertion: ManuscriptInsertion,
-  chapterSequence: number,
-  sceneSequence: number
-): RebuiltChapter {
-  const chapterTitle = insertion.chapterTitle ?? "";
-  const chapterId = `${sequencePrefix(chapterSequence)}-${slugForTitle(
-    chapterTitle,
-    "chapter",
-    chapterSequence
-  )}`;
-  return {
-    path: `manuscript/${chapterId}`,
-    chapterRaw: serializeTitleYaml(chapterTitle),
-    scenes: [buildInsertedScene(insertion.sceneTitle, chapterId, sceneSequence)],
-  };
-}
-
-function buildInsertedScene(title: string, chapterId: string, sceneSequence: number): RebuiltScene {
-  const sceneSlug = slugForTitle(title, "scene", sceneSequence);
-  return {
-    path: `manuscript/${chapterId}/${sequencePrefix(sceneSequence)}-${sceneSlug}.md`,
-    raw: serializeSceneMarkdown(title),
-  };
-}
-
 function normalizedProjectTitle(title: string): string {
   const normalized = title.trim();
   return normalized.length > 0 ? normalized : "Untitled Project";
-}
-
-function withOptionalTitle(
-  metadata: Record<string, unknown>,
-  title: string
-): Record<string, unknown> {
-  const next = { ...metadata };
-  const normalized = title.trim();
-  if (normalized.length > 0) {
-    next.title = normalized;
-  } else {
-    delete next.title;
-  }
-  return next;
-}
-
-function setMarkdownTitle(raw: string, title: string): string {
-  const parsed = parseNoteFrontmatter(raw);
-  const frontmatter = withOptionalTitle(parsed.frontmatter, title);
-  return Object.keys(frontmatter).length === 0
-    ? parsed.body
-    : serializeNoteFrontmatter(frontmatter, parsed.body);
-}
-
-function serializeChapterYamlWithTitle(raw: string | undefined, title: string): string {
-  const current = raw === undefined || raw.trim().length === 0 ? {} : load(raw);
-  const metadata = withOptionalTitle(isRecord(current) ? current : {}, title);
-  return Object.keys(metadata).length === 0 ? "" : dump(metadata, { lineWidth: -1 });
-}
-
-function serializeTitleYaml(title: string): string {
-  const metadata = withOptionalTitle({}, title);
-  return Object.keys(metadata).length === 0 ? "" : dump(metadata, { lineWidth: -1 });
-}
-
-function serializeSceneMarkdown(title: string): string {
-  const metadata = withOptionalTitle({}, title);
-  return Object.keys(metadata).length === 0 ? "" : serializeNoteFrontmatter(metadata, "");
-}
-
-function nextSequence(sequences: number[]): number {
-  return sequences.length === 0 ? 1 : Math.max(...sequences) + 1;
-}
-
-function sequencePrefix(sequence: number): string {
-  return String(sequence).padStart(3, "0");
-}
-
-function slugForTitle(title: string, kind: "chapter" | "scene", sequence: number): string {
-  const normalized = title.trim();
-  return normalized.length > 0 ? slugifyPathComponent(normalized) : `${kind}-${sequence}`;
-}
-
-function slugifyPathComponent(value: string): string {
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-  if (slug.length === 0) {
-    throw new Error("Slug must not be empty");
-  }
-  return slug;
-}
-
-function uniqueSequenceName(prefix: string, slug: string, existing: Set<string>): string {
-  let candidate = `${prefix}-${slug}`;
-  let suffix = 2;
-  while (existing.has(candidate)) {
-    candidate = `${prefix}-${slug}-${suffix}`;
-    suffix += 1;
-  }
-  return candidate;
-}
-
-function resequenceDefaultSlug(slug: string, kind: "chapter" | "scene", sequence: number): string {
-  return new RegExp(`^${kind}-\\d+$`).test(slug) ? `${kind}-${sequence}` : slug;
-}
-
-function basenameWithoutExtension(path: string): string {
-  const basename = path.split("/").at(-1) ?? path;
-  return basename.toLowerCase().endsWith(".md") ? basename.slice(0, -3) : basename;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function sceneAtNearestIndex(scenes: SceneRef[], index: number): SceneRef | undefined {
-  if (scenes.length === 0) {
-    return undefined;
-  }
-  return scenes[Math.min(Math.max(index, 0), scenes.length - 1)];
-}
-
-function appendSceneIndexForChapter(
-  scenes: SceneRef[],
-  chapters: ChapterRef[],
-  chapterId: string
-): number {
-  const targetChapterIndex = chapters.findIndex((chapter) => chapter.id === chapterId);
-  if (targetChapterIndex === -1) {
-    return scenes.length;
-  }
-  let index = 0;
-  scenes.forEach((scene) => {
-    const chapterIndex = chapters.findIndex((chapter) => chapter.id === scene.chapterId);
-    if (chapterIndex <= targetChapterIndex) {
-      index += 1;
-    }
-  });
-  return index;
 }
 
 function browserUnavailable(action: string): Error {
