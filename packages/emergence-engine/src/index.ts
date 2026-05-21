@@ -31,6 +31,7 @@ export type {
   ParamType,
   ParamSource,
   EffectDefinition,
+  MacroDisplayDefinition,
 } from "./macro/types.js";
 export type {
   ResolvedParams,

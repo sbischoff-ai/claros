@@ -180,7 +180,8 @@ Current document-context behavior:
 - loads modules into a registry from `manifest.modules`
 - runs the macro against the registry and `FileStateAdapter`
 - appends a ledger entry to `state/runs/emergence.yaml`
-- inserts a markdown display block only when `insertAt` is provided
+- renders `display.format: markdown` / `display.markdown` templates, or a generic fallback
+- inserts the rendered markdown display block only when `insertAt` is provided
 - uses the workspace file reader and writer abstractions during insertion
 - refreshes runs/index state afterward
 

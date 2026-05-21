@@ -13,6 +13,7 @@ A macro is a YAML-defined procedure composed from:
 - optional conditions
 - explicit state effects
 - structured output
+- optional writer-facing display template
 
 Macros are registered through a module manifest and executed through the
 emergence engine or the higher-level story-state workspace API.
@@ -52,6 +53,17 @@ effects:
 
 output:
   result: "steps.outcome.classified"
+
+display:
+  format: markdown
+  markdown: |
+    > [!claros] Mythic Fate Question
+    > **Question:** {{ params.intent }}
+    > **Roll:** `1d100 -> {{ steps.fate-roll.total }}`
+    >
+    > **{{ output.result }}.**
+    >
+    > [claros-run: {{ run_id }}]
 ```
 
 ## Top-Level Fields
@@ -66,6 +78,7 @@ Current parsed macro fields:
 - `steps: MacroStep[]`
 - `effects: EffectDefinition[]`
 - `output: MacroOutputDefinition`
+- optional `display: MacroDisplayDefinition`
 
 ## Parameters
 
@@ -227,6 +240,41 @@ output:
 ```
 
 At runtime this becomes a structured output object in `MacroResult.output` and in the run ledger entry.
+
+## Display Templates
+
+`display` is an optional writer-facing Markdown template used by document-context execution.
+
+```yaml
+display:
+  format: markdown
+  markdown: |
+    > [!claros] Mythic Fate Question
+    > **Question:** {{ params.intent }}
+    > **Odds:** {{ params.odds }}
+    >
+    > **Roll:** `1d100 -> {{ steps.fate-roll.total }}`
+    >
+    > **{{ output.result }}.**
+    >
+    > [claros-run: {{ run_id }}]
+```
+
+The template is rendered by `@claros/story-state`, not by the lower-level macro executor.
+Placeholders use `{{ expression }}` with the same expression evaluator over:
+
+- `params`
+- `steps`
+- `output`
+- `state`
+- `scene_id`
+- `chapter_id`
+- `run_id`
+- `macro`
+
+If a macro has no display template, `story-state` uses a generic fallback renderer.
+The renderer ensures the final block has a `[!claros]` header and a trailing
+`[claros-run: <id>]` marker.
 
 ## Hooks
 

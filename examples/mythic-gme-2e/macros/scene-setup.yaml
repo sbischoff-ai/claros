@@ -21,3 +21,11 @@ effects:
     when: "(not params.pcs_in_control) and state.scenes[scene_id].mythic.chaos_factor < 9"
 
 output: {}
+
+display:
+  format: markdown
+  markdown: |
+    > [!claros] Mythic Scene Setup
+    > Chaos Factor updated for scene context.
+    >
+    > [claros-run: {{ run_id }}]

@@ -98,6 +98,57 @@ output: {}
     expect(macro.effects[0].when).toBe("params.val > 0");
   });
 
+  it("parses a markdown display template", () => {
+    const yaml = `
+id: test.display
+name: "Display"
+params: {}
+steps: []
+output:
+  answer: '"yes"'
+display:
+  format: markdown
+  markdown: |
+    > [!claros] Test Display
+    > **Answer:** {{ output.answer }}
+`;
+
+    const macro = parseMacro(yaml);
+    expect(macro.display).toEqual({
+      format: "markdown",
+      markdown: "> [!claros] Test Display\n> **Answer:** {{ output.answer }}\n",
+    });
+  });
+
+  it("rejects display templates with unsupported formats", () => {
+    expect(() =>
+      parseMacro(`
+id: test.bad-display
+name: "Bad Display"
+params: {}
+steps: []
+output: {}
+display:
+  format: html
+  markdown: "<p>No</p>"
+`)
+    ).toThrow(/display\.format/);
+  });
+
+  it("rejects display templates without markdown", () => {
+    expect(() =>
+      parseMacro(`
+id: test.bad-display
+name: "Bad Display"
+params: {}
+steps: []
+output: {}
+display:
+  format: markdown
+`)
+    ).toThrow(/display\.markdown/);
+  });
+
   it("throws on missing id", () => {
     expect(() => parseMacro(`name: "No ID"\nparams: {}\nsteps: []\noutput: {}`)).toThrow();
   });

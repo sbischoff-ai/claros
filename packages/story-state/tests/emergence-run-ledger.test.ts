@@ -160,6 +160,116 @@ output:
     expect(block).toContain("[claros-run: 00042]");
   });
 
+  it("renders macro-authored display templates", () => {
+    const macro = parseMacro(`
+id: test.template
+name: "Template Macro"
+params:
+  question:
+    type: string
+    source: user
+steps:
+  - id: fate-roll
+    roll: 1d100
+output:
+  answer: '"yes"'
+display:
+  format: markdown
+  markdown: |
+    > [!claros] Custom Oracle
+    > **Question:** {{ params.question }}
+    > **Roll:** {{ steps.fate-roll.total }}
+    > **Answer:** {{ output.answer }}
+    >
+    > [claros-run: {{ run_id }}]
+`);
+
+    const block = renderMacroDisplayBlock(
+      macro,
+      {
+        params: { question: "Does it render?" },
+        output: { answer: "yes" },
+        steps: { "fate-roll": { total: 42 } },
+        effects: [],
+      },
+      "00042"
+    );
+
+    expect(block).toBe(
+      [
+        "> [!claros] Custom Oracle",
+        "> **Question:** Does it render?",
+        "> **Roll:** 42",
+        "> **Answer:** yes",
+        ">",
+        "> [claros-run: 00042]",
+      ].join("\n")
+    );
+  });
+
+  it("normalizes display templates missing Claros wrappers", () => {
+    const macro = parseMacro(`
+id: test.template
+name: "Template Macro"
+params: {}
+steps: []
+output:
+  answer: '"yes"'
+display:
+  format: markdown
+  markdown: |
+    **Answer:** {{ output.answer }}
+`);
+
+    const block = renderMacroDisplayBlock(
+      macro,
+      { params: {}, output: { answer: "yes" }, steps: {}, effects: [] },
+      "00042"
+    );
+
+    expect(block).toBe(
+      ["> [!claros] Template Macro", "> **Answer:** yes", ">", "> [claros-run: 00042]"].join("\n")
+    );
+  });
+
+  it("renders display template context values", () => {
+    const macro = parseMacro(`
+id: test.template
+name: "Template Macro"
+params: {}
+steps: []
+output: {}
+display:
+  format: markdown
+  markdown: |
+    > [!claros] {{ macro.name }}
+    > Scene: {{ scene_id }}
+    > Chapter: {{ chapter_id }}
+    > Chaos: {{ state.scenes[scene_id].mythic.chaos_factor }}
+`);
+
+    const block = renderMacroDisplayBlock(
+      macro,
+      { params: {}, output: {}, steps: {}, effects: [] },
+      "00042",
+      {
+        sceneId: "01-prologue/01-opening",
+        chapterId: "01-prologue",
+        state: {
+          story: {},
+          scenes: { "01-prologue/01-opening": { mythic: { chaos_factor: 6 } } },
+          chapters: { "01-prologue": {} },
+        },
+      }
+    );
+
+    expect(block).toContain("> [!claros] Template Macro");
+    expect(block).toContain("> Scene: 01-prologue/01-opening");
+    expect(block).toContain("> Chapter: 01-prologue");
+    expect(block).toContain("> Chaos: 6");
+    expect(block).toContain("> [claros-run: 00042]");
+  });
+
   it("does not mutate the document unless insertAt is provided", async () => {
     const root = makeProject();
     const documentPath = path.join(root, "manuscript", "01-prologue", "01-opening.md");

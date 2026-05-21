@@ -54,3 +54,17 @@ output:
   random_event_triggered: "steps.random-event != null"
   rolls:
     fate: "steps.fate-roll.total"
+
+display:
+  format: markdown
+  markdown: |
+    > [!claros] Mythic Fate Question
+    > **Question:** {{ params.intent }}
+    > **Odds:** {{ params.odds }}
+    > **Chaos Factor:** {{ params.chaos }}
+    >
+    > **Roll:** `1d100 -> {{ steps.fate-roll.total }}`
+    >
+    > **{{ output.result }}.**
+    >
+    > [claros-run: {{ run_id }}]

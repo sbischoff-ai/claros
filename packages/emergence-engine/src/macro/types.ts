@@ -52,6 +52,11 @@ export interface MacroOutputDefinition {
   [key: string]: string | MacroOutputDefinition;
 }
 
+export interface MacroDisplayDefinition {
+  format: "markdown";
+  markdown: string;
+}
+
 export interface MacroDefinition {
   id: string;
   name: string;
@@ -61,4 +66,5 @@ export interface MacroDefinition {
   steps: MacroStep[];
   effects: EffectDefinition[];
   output: MacroOutputDefinition;
+  display?: MacroDisplayDefinition;
 }

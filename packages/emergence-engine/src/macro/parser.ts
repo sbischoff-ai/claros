@@ -7,6 +7,7 @@ import type {
   ParamDefinition,
   EffectDefinition,
   MacroOutputDefinition,
+  MacroDisplayDefinition,
 } from "./types.js";
 
 function asRecord(value: unknown, path: string): Record<string, unknown> {
@@ -203,6 +204,25 @@ function parseOutput(raw: unknown): MacroOutputDefinition {
   return output;
 }
 
+function parseDisplay(raw: unknown): MacroDisplayDefinition | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+
+  const displayObj = asRecord(raw, "display");
+  if (displayObj["format"] !== "markdown") {
+    throw new MacroParseError('display.format must be "markdown"');
+  }
+  if (typeof displayObj["markdown"] !== "string" || displayObj["markdown"].length === 0) {
+    throw new MacroParseError("display.markdown must be a non-empty string");
+  }
+
+  return {
+    format: "markdown",
+    markdown: displayObj["markdown"],
+  };
+}
+
 export function parseMacro(yaml: string): MacroDefinition {
   let raw: unknown;
   try {
@@ -238,5 +258,6 @@ export function parseMacro(yaml: string): MacroDefinition {
     steps: parseSteps(root["steps"]),
     effects: parseEffects(root["effects"]),
     output: parseOutput(root["output"]),
+    display: parseDisplay(root["display"]),
   };
 }
