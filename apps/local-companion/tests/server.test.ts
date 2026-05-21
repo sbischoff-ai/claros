@@ -162,10 +162,14 @@ describe("local companion server", () => {
       placement: "after",
       targetScenePath: "manuscript/003-middle-act/003-bridge.md",
     })) as MutationResponse;
-    expect(movedScene.scene?.path).toBe("manuscript/003-middle-act/003-the-ultimatum.md");
+    expect(movedScene.scene?.path).toBe("manuscript/002-middle-act/003-the-ultimatum.md");
     expect(movedScene.pathMap?.["manuscript/001-the-great-walrus/001-the-ultimatum.md"]).toBe(
-      "manuscript/003-middle-act/003-the-ultimatum.md"
+      "manuscript/002-middle-act/003-the-ultimatum.md"
     );
+    expect(movedScene.project.chapters.map((entry) => entry.id)).toEqual([
+      "001-start",
+      "002-middle-act",
+    ]);
   });
 });
 
