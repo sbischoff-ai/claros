@@ -11,6 +11,7 @@ import {
   executeMacro,
   fixedRNG,
   loadModuleFromDirectory,
+  renderMacroDisplay,
 } from "../src/index.js";
 import type { UserPromptFn } from "../src/index.js";
 import type { ModuleRegistry } from "../src/registry/types.js";
@@ -208,6 +209,10 @@ describe("Mythic GME 2e integration", () => {
       );
 
       expect(result.output.random_event_triggered).toBe(true);
+      expect(result.output.random_event).toEqual({
+        triggered: true,
+        focus: "(random event - stub)",
+      });
     });
 
     it("does not trigger a random event when the double digit exceeds chaos factor", async () => {
@@ -247,6 +252,49 @@ describe("Mythic GME 2e integration", () => {
       );
 
       expect(result.output.random_event_triggered).toBe(false);
+    });
+
+    it("renders the bundled display template with intent text", async () => {
+      const result = await executeMacro(
+        getMacro("mythic.fate-question"),
+        { intent: "Does the priest recognize the blade?", odds: "likely" },
+        registry,
+        state,
+        { sceneId: TEST_SCENE_ID },
+        fixedRNG(42)
+      );
+
+      const display = renderMacroDisplay({
+        macro: getMacro("mythic.fate-question"),
+        result,
+        run: { id: "00003", createdAt: "2026-05-21T00:00:00.000Z" },
+        documentContext: { sceneId: TEST_SCENE_ID },
+      });
+
+      expect(display.title).toBe("Mythic Fate Question");
+      expect(display.body).toContain("**Question:** Does the priest recognize the blade?");
+      expect(display.body).toContain("**Odds:** Likely");
+      expect(display.body).toContain("**Roll:** `1d100 -> 42`");
+    });
+
+    it("renders random-event output in the bundled display template", async () => {
+      const result = await executeMacro(
+        getMacro("mythic.fate-question"),
+        { intent: "Does something interrupt?", odds: "fifty-fifty" },
+        registry,
+        state,
+        { sceneId: TEST_SCENE_ID },
+        fixedRNG(44)
+      );
+
+      const display = renderMacroDisplay({
+        macro: getMacro("mythic.fate-question"),
+        result,
+        run: { id: "00004", createdAt: "2026-05-21T00:00:00.000Z" },
+        documentContext: { sceneId: TEST_SCENE_ID },
+      });
+
+      expect(display.body).toContain("Random event: (random event - stub)");
     });
   });
 

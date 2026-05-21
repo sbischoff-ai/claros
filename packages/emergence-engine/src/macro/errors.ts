@@ -18,3 +18,13 @@ export class MissingParamError extends Error {
     this.name = "MissingParamError";
   }
 }
+
+export class MacroDisplayTemplateError extends Error {
+  constructor(
+    public readonly macroId: string,
+    message: string
+  ) {
+    super(`display template error in ${macroId}: ${message}`);
+    this.name = "MacroDisplayTemplateError";
+  }
+}

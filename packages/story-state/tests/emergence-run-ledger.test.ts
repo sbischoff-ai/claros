@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createRegistry, fixedRNG, parseMacro } from "@claros/emergence-engine";
+import {
+  createRegistry,
+  fixedRNG,
+  MacroDisplayTemplateError,
+  parseMacro,
+} from "@claros/emergence-engine";
 import { parseStateFile, stripClarosMarkers } from "@claros/story-format";
 import { FileStateAdapter } from "../src/state/adapter.js";
 import {
@@ -160,6 +165,102 @@ output:
     expect(block).toContain("[claros-run: 00042]");
   });
 
+  it("renders macro-authored display templates", () => {
+    const macro = parseMacro(`
+id: test.template
+name: "Template Macro"
+params:
+  question:
+    type: string
+    source: user
+steps:
+  - id: fate-roll
+    roll: 1d100
+output:
+  answer: '"yes"'
+display:
+  format: markdown
+  title: "Custom Oracle"
+  template: |
+    **Question:** {{params.question}}
+    **Roll:** {{steps.fate-roll.total}}
+    **Answer:** {{output.answer}}
+`);
+
+    const block = renderMacroDisplayBlock(
+      macro,
+      {
+        params: { question: "Does it render?" },
+        output: { answer: "yes" },
+        steps: { "fate-roll": { total: 42 } },
+        effects: [],
+      },
+      "00042"
+    );
+
+    expect(block).toBe(
+      [
+        "> [!claros] Custom Oracle",
+        "> **Question:** Does it render?",
+        "> **Roll:** 42",
+        "> **Answer:** yes",
+        ">",
+        "> [claros-run: 00042]",
+      ].join("\n")
+    );
+  });
+
+  it("wraps body-only display templates", () => {
+    const macro = parseMacro(`
+id: test.template
+name: "Template Macro"
+params: {}
+steps: []
+output:
+  answer: '"yes"'
+display:
+  format: markdown
+  template: |
+    **Answer:** {{output.answer}}
+`);
+
+    const block = renderMacroDisplayBlock(
+      macro,
+      { params: {}, output: { answer: "yes" }, steps: {}, effects: [] },
+      "00042"
+    );
+
+    expect(block).toBe(
+      ["> [!claros] Template Macro", "> **Answer:** yes", ">", "> [claros-run: 00042]"].join("\n")
+    );
+  });
+
+  it("generated display blocks contain exactly one header and trailing run marker", () => {
+    const macro = parseMacro(`
+id: test.template
+name: "Template Macro"
+params: {}
+steps: []
+output:
+  answer: '"yes"'
+display:
+  format: markdown
+  template: |
+    **Answer:** {{output.answer}}
+`);
+
+    const block = renderMacroDisplayBlock(
+      macro,
+      { params: {}, output: { answer: "yes" }, steps: {}, effects: [] },
+      "00042"
+    );
+
+    expect(block.match(/\[!claros\]/g)).toHaveLength(1);
+    expect(block.match(/\[claros-run:/g)).toHaveLength(1);
+    expect(block.split("\n").every((line) => line.startsWith(">"))).toBe(true);
+    expect(block.split("\n").at(-1)).toBe("> [claros-run: 00042]");
+  });
+
   it("does not mutate the document unless insertAt is provided", async () => {
     const root = makeProject();
     const documentPath = path.join(root, "manuscript", "01-prologue", "01-opening.md");
@@ -176,6 +277,38 @@ output:
     expect(fs.readFileSync(documentPath, "utf-8")).toBe(before);
     expect(result.document).toBeUndefined();
     expect(result.block).toBeUndefined();
+  });
+
+  it("does not insert or persist a run when display rendering fails", async () => {
+    const root = makeProject();
+    const registry = createRegistry();
+    const macro = parseMacro(`
+id: test.bad-display-runtime
+name: "Bad Display Runtime"
+params: {}
+steps: []
+output: {}
+display:
+  format: markdown
+  template: "safe"
+`);
+    macro.display!.template = "[!claros] bad";
+    registry.registerMacro(macro);
+
+    await expect(
+      executeMacroInDocument({
+        projectRoot: root,
+        registry,
+        macroId: "test.bad-display-runtime",
+        documentPath: "manuscript/01-prologue/01-opening.md",
+        insertAt: { kind: "end-of-document" },
+      })
+    ).rejects.toBeInstanceOf(MacroDisplayTemplateError);
+
+    expect(
+      fs.readFileSync(path.join(root, "manuscript", "01-prologue", "01-opening.md"), "utf-8")
+    ).toBe("# Opening\n");
+    expect(fs.existsSync(path.join(root, "state", "runs", "emergence.yaml"))).toBe(false);
   });
 
   it("inserted block remains plain Markdown blockquote when insertAt is explicit", async () => {

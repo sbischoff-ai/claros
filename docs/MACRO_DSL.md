@@ -13,6 +13,7 @@ A macro is a YAML-defined procedure composed from:
 - optional conditions
 - explicit state effects
 - structured output
+- optional writer-facing display template
 
 Macros are registered through a module manifest and executed through the
 emergence engine or the higher-level story-state workspace API.
@@ -52,6 +53,15 @@ effects:
 
 output:
   result: "steps.outcome.classified"
+
+display:
+  format: markdown
+  title: "Mythic Fate Question"
+  template: |
+    **Question:** {{params.intent}}
+    **Roll:** `1d100 -> {{steps.fate-roll.total}}`
+
+    **{{output.result | title}}.**
 ```
 
 ## Top-Level Fields
@@ -66,6 +76,7 @@ Current parsed macro fields:
 - `steps: MacroStep[]`
 - `effects: EffectDefinition[]`
 - `output: MacroOutputDefinition`
+- optional `display: MacroDisplayDefinition`
 
 ## Parameters
 
@@ -227,6 +238,50 @@ output:
 ```
 
 At runtime this becomes a structured output object in `MacroResult.output` and in the run ledger entry.
+
+## Display Templates
+
+`display` is an optional writer-facing Markdown template used by document-context execution.
+
+```yaml
+display:
+  format: markdown
+  title: "Mythic Fate Question"
+  template: |
+    **Question:** {{params.intent}}
+    **Odds:** {{params.odds | title}}
+
+    **Roll:** `1d100 -> {{steps.fate-roll.total}}`
+
+    **{{output.result | title}}.**
+
+    {{#if output.random_event}}
+    Random event: {{output.random_event.focus}}
+    {{/if}}
+```
+
+Macro authors write the body only. `@claros/story-state` owns the final `[!claros]`
+blockquote wrapper and trailing `[claros-run: <id>]` marker.
+
+Template rendering is provided by `@claros/emergence-engine` through
+`renderMacroDisplay(...)`. Placeholders use `{{expression}}` with the same expression
+evaluator over:
+
+- `params`
+- `steps`
+- `output`
+- `context.document`
+- `context.sceneId`
+- `context.chapterId`
+- `run.id`
+- `macro`
+
+Display templates may use `{{#if expression}}...{{/if}}` for optional sections.
+Supported filters are `title` and `json`. Templates containing `[!claros]` or
+`[claros-run:` are rejected so modules cannot double-wrap ADR-027 markers.
+
+If a macro has no display template, `@claros/emergence-engine` uses a generic
+fallback display body.
 
 ## Hooks
 

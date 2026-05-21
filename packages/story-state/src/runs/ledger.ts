@@ -66,7 +66,7 @@ export function appendMacroRunLedgerEntry(
   const ledger = readLedgerWithFormat(adapter);
   const existing = ledger.entries;
   const nextEntry: MacroRunLedgerEntry = {
-    id: formatRunId(maxRunNumber(existing) + 1),
+    id: entry.id ?? nextMacroRunId(adapter),
     createdAt,
     macro: entry.macro,
     document: entry.document,
@@ -81,6 +81,10 @@ export function appendMacroRunLedgerEntry(
 
   writeLedger(adapter, [...existing, nextEntry], ledger.format);
   return nextEntry;
+}
+
+export function nextMacroRunId(adapter: FileStateAdapter): string {
+  return formatRunId(maxRunNumber(readLedger(adapter)) + 1);
 }
 
 export function setMacroRunDisplay(

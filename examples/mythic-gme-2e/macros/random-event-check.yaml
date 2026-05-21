@@ -12,3 +12,9 @@ steps: []
 output:
   triggered: "true"
   focus: '"(random event - stub)"'
+
+display:
+  format: markdown
+  title: "Mythic Random Event"
+  template: |
+    **Focus:** {{output.focus}}

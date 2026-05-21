@@ -1,5 +1,9 @@
 import * as path from "node:path";
-import { executeMacro } from "@claros/emergence-engine";
+import {
+  executeMacro,
+  renderMacroDisplay,
+  type RenderedMacroDisplay,
+} from "@claros/emergence-engine";
 import type {
   MacroDefinition,
   MacroResult,
@@ -13,7 +17,7 @@ import {
   type ProjectFileReader,
   type ProjectFileWriter,
 } from "@claros/story-format";
-import { appendMacroRun, setMacroRunDisplay } from "./ledger.js";
+import { appendMacroRunLedgerEntry, nextMacroRunId } from "./ledger.js";
 import {
   NodeProjectFileReader,
   NodeProjectFileWriter,
@@ -40,6 +44,8 @@ export async function executeMacroInDocument(
   const normalizedDocumentPath = normalizeDocumentPath(options.projectRoot, options.documentPath);
   const invocationContext = deriveDocumentContext(normalizedDocumentPath);
   const adapter = new FileStateAdapter({ projectRoot: options.projectRoot });
+  const createdAt = (options.now ?? new Date()).toISOString();
+  const runId = nextMacroRunId(adapter);
   const macroResult = await executeMacro(
     macro,
     options.params ?? {},
@@ -50,9 +56,22 @@ export async function executeMacroInDocument(
     adaptUserPrompt(options.userPrompt)
   );
 
-  const run = await appendMacroRun(
-    options.projectRoot,
+  const renderedDisplay = renderMacroDisplay({
+    macro,
+    result: macroResult,
+    run: { id: runId, createdAt },
+    documentContext: {
+      document: normalizedDocumentPath,
+      sceneId: invocationContext.sceneId,
+      chapterId: invocationContext.chapterId,
+    },
+  });
+  const finalBlock = renderClarosBlock(renderedDisplay, runId);
+
+  const run = appendMacroRunLedgerEntry(
+    adapter,
     {
+      id: runId,
       macro: macro.id,
       document: normalizedDocumentPath,
       sceneId: invocationContext.sceneId,
@@ -60,16 +79,11 @@ export async function executeMacroInDocument(
       params: macroResult.params,
       rolls: extractMacroRolls(macro, macroResult),
       output: macroResult.output,
+      display: { format: "markdown", block: finalBlock },
       effects: macroResult.effects,
     },
-    (options.now ?? new Date()).toISOString()
+    createdAt
   );
-
-  const finalBlock = renderMacroDisplayBlock(macro, macroResult, run.id);
-  const persisted = setMacroRunDisplay(adapter, run.id, {
-    format: "markdown",
-    block: finalBlock,
-  });
   const inserted =
     options.insertAt === undefined
       ? undefined
@@ -83,10 +97,7 @@ export async function executeMacroInDocument(
         );
 
   return {
-    run: persisted ?? {
-      ...run,
-      display: { format: "markdown", block: finalBlock },
-    },
+    run,
     ...(inserted === undefined
       ? {}
       : {
@@ -102,33 +113,20 @@ export function renderMacroDisplayBlock(
   result: MacroResult,
   runId: string
 ): string {
-  const lines = [`> [!claros] ${macro.name}`];
-  const question = summarizeQuestion(result.params);
-  if (question !== undefined) {
-    lines.push(`> **Question:** ${question}`);
-  }
+  const renderedDisplay = renderMacroDisplay({
+    macro,
+    result,
+    run: { id: runId, createdAt: new Date(0).toISOString() },
+  });
+  return renderClarosBlock(renderedDisplay, runId);
+}
 
-  const remainingInputs = summarizeRemainingParams(
-    result.params,
-    question === undefined ? [] : ["question"]
-  );
-  if (remainingInputs !== undefined) {
-    lines.push(`> **Input:** ${remainingInputs}`);
+export function renderClarosBlock(display: RenderedMacroDisplay, runId: string): string {
+  const lines = [`> [!claros] ${display.title}`];
+  if (display.body.trim().length > 0) {
+    lines.push(...display.body.split(/\r?\n/).map((line) => `> ${line}`.trimEnd()));
   }
-
-  const rolls = summarizeRolls(extractMacroRolls(macro, result));
-  if (rolls !== undefined) {
-    lines.push(`>`);
-    lines.push(`> 🎲 ${rolls}`);
-  }
-
-  const output = summarizeOutput(result.output);
-  if (output !== undefined) {
-    lines.push(`>`);
-    lines.push(`> ${output}`);
-  }
-
-  lines.push(`>`);
+  lines.push(">");
   lines.push(`> [claros-run: ${runId}]`);
   return lines.join("\n");
 }
@@ -287,54 +285,6 @@ function isRollResult(value: unknown): value is { total: number; rolls: number[]
     Array.isArray((value as { rolls?: unknown }).rolls) &&
     Array.isArray((value as { kept?: unknown }).kept)
   );
-}
-
-function summarizeQuestion(params: Record<string, unknown>): string | undefined {
-  const question = params.question;
-  return typeof question === "string" && question.trim().length > 0 ? question : undefined;
-}
-
-function summarizeRemainingParams(
-  params: Record<string, unknown>,
-  excludedKeys: string[]
-): string | undefined {
-  const entries = Object.entries(params).filter(([key]) => !excludedKeys.includes(key));
-  if (entries.length === 0) {
-    return undefined;
-  }
-  return entries.map(([key, value]) => `**${humanize(key)}:** ${formatInline(value)}`).join(" · ");
-}
-
-function summarizeRolls(rolls: MacroRunRoll[]): string | undefined {
-  if (rolls.length === 0) {
-    return undefined;
-  }
-  return rolls.map((roll) => `\`${roll.notation} → ${roll.total ?? "?"}\``).join(" · ");
-}
-
-function summarizeOutput(output: Record<string, unknown>): string | undefined {
-  const entries = Object.entries(output);
-  if (entries.length === 0) {
-    return undefined;
-  }
-  return entries.map(([key, value]) => `**${humanize(key)}:** ${formatInline(value)}`).join(" · ");
-}
-
-function humanize(value: string): string {
-  return value
-    .replace(/_/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/^./, (match) => match.toUpperCase());
-}
-
-function formatInline(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return JSON.stringify(value);
 }
 
 function clampOffset(offset: number, length: number): number {

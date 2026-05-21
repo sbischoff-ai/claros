@@ -16,8 +16,14 @@ export type { ExpressionEvaluator, ExpressionContext } from "./expression/types.
 
 export { parseMacro } from "./macro/parser.js";
 export { executeMacro } from "./macro/executor.js";
+export { renderMacroDisplay, validateMacroDisplayTemplate } from "./macro/display.js";
 export type { UserPromptFn } from "./macro/executor.js";
-export { MacroParseError, NotImplementedError, MissingParamError } from "./macro/errors.js";
+export {
+  MacroParseError,
+  NotImplementedError,
+  MissingParamError,
+  MacroDisplayTemplateError,
+} from "./macro/errors.js";
 export type { MacroInvocationContext } from "./macro/context.js";
 export type {
   MacroDefinition,
@@ -31,7 +37,9 @@ export type {
   ParamType,
   ParamSource,
   EffectDefinition,
+  MacroDisplayDefinition,
 } from "./macro/types.js";
+export type { RenderMacroDisplayOptions, RenderedMacroDisplay } from "./macro/display.js";
 export type {
   ResolvedParams,
   StepResult,
