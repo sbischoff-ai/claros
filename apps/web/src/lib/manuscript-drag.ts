@@ -2,7 +2,7 @@ import { writable, type Readable } from "svelte/store";
 
 import type { WorkspaceChapter, WorkspaceScene } from "./project-session";
 import type { SidebarItem } from "./workspace-types";
-import type { ManuscriptInsertionPlacement } from "@claros/story-state";
+import type { ManuscriptInsertionPlacement } from "@claros/story-state/browser";
 
 export type ManuscriptDragState =
   | {

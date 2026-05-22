@@ -8,7 +8,7 @@ import {
   type ProjectFileReader,
   type ProjectFileWriter,
   type SceneRef,
-} from "@claros/story-format";
+} from "@claros/story-format/browser";
 import type { ProjectIndex } from "./index.js";
 import type {
   CreateChapterOptions,

@@ -1,5 +1,5 @@
 import type { WorkspaceDocument } from "./project-session";
-import type { ManuscriptInsertionPlacement } from "@claros/story-state";
+import type { ManuscriptInsertionPlacement } from "@claros/story-state/browser";
 
 export type SaveState = "saved" | "dirty" | "saving" | "error";
 export type ProjectOpenState = "idle" | "opening" | "creating" | "connecting" | "open" | "error";

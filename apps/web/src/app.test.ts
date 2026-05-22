@@ -334,6 +334,74 @@ describe("project session", () => {
       JSON.stringify({ path: "manuscript/001-start/001-opening.md", body: "Updated." })
     );
   });
+
+  it("moves companion chapters and scenes through mutation requests", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const requestBody =
+        typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+      if (String(url).endsWith("/api/project")) {
+        return jsonResponse({
+          ok: true,
+          project: companionProjectWithTwoChapters(),
+        });
+      }
+      if (String(url).endsWith("/api/project/mutation") && requestBody.action === "move-chapter") {
+        return jsonResponse({
+          ok: true,
+          project: companionProjectAfterChapterMove(),
+          chapter: companionProjectAfterChapterMove().chapters[0],
+          pathMap: {
+            "manuscript/002-finale/002-ending.md": "manuscript/001-finale/001-ending.md",
+            "manuscript/001-start/001-opening.md": "manuscript/002-start/002-opening.md",
+          },
+          chapterIdMap: {
+            "002-finale": "001-finale",
+            "001-start": "002-start",
+          },
+        });
+      }
+      if (String(url).endsWith("/api/project/mutation") && requestBody.action === "move-scene") {
+        return jsonResponse({
+          ok: true,
+          project: companionProjectAfterSceneMove(),
+          scene: companionProjectAfterSceneMove().chapters[0].scenes[1],
+          pathMap: {
+            "manuscript/002-start/002-opening.md": "manuscript/001-finale/002-opening.md",
+          },
+          chapterIdMap: {},
+        });
+      }
+      return jsonResponse({ ok: false }, 404);
+    });
+
+    const session = await openCompanionProjectSession({
+      url: "http://127.0.0.1:3000",
+      token: "token",
+    });
+
+    const movedChapter = await session.moveChapter("002-finale", {
+      placement: "before",
+      targetChapterId: "001-start",
+    });
+    expect(movedChapter.chapter.id).toBe("001-finale");
+    expect(session.listChapters().map((chapter) => chapter.id)).toEqual([
+      "001-finale",
+      "002-start",
+    ]);
+    expect(movedChapter.pathMap["manuscript/001-start/001-opening.md"]).toBe(
+      "manuscript/002-start/002-opening.md"
+    );
+
+    const movedScene = await session.moveScene("manuscript/002-start/002-opening.md", {
+      placement: "after",
+      targetScenePath: "manuscript/001-finale/001-ending.md",
+    });
+    expect(movedScene.scene.path).toBe("manuscript/001-finale/002-opening.md");
+    expect(session.listScenes().map((scene) => scene.path)).toEqual([
+      "manuscript/001-finale/001-ending.md",
+      "manuscript/001-finale/002-opening.md",
+    ]);
+  });
 });
 
 describe("workspace command surface", () => {
@@ -509,6 +577,121 @@ function companionProject(): unknown {
             sequence: 1,
             title: "Opening",
             path: "manuscript/001-start/001-opening.md",
+          },
+        ],
+      },
+    ],
+    notes: [],
+  };
+}
+
+function companionProjectWithTwoChapters() {
+  return {
+    manifest: { title: "Companion Workspace" },
+    chapters: [
+      {
+        kind: "chapter",
+        id: "001-start",
+        sequence: 1,
+        title: "Start",
+        scenes: [
+          {
+            kind: "scene",
+            id: "001-start/001-opening",
+            chapterId: "001-start",
+            sequence: 1,
+            title: "Opening",
+            path: "manuscript/001-start/001-opening.md",
+          },
+        ],
+      },
+      {
+        kind: "chapter",
+        id: "002-finale",
+        sequence: 2,
+        title: "Finale",
+        scenes: [
+          {
+            kind: "scene",
+            id: "002-finale/002-ending",
+            chapterId: "002-finale",
+            sequence: 2,
+            title: "Ending",
+            path: "manuscript/002-finale/002-ending.md",
+          },
+        ],
+      },
+    ],
+    notes: [],
+  };
+}
+
+function companionProjectAfterChapterMove() {
+  return {
+    manifest: { title: "Companion Workspace" },
+    chapters: [
+      {
+        kind: "chapter",
+        id: "001-finale",
+        sequence: 1,
+        title: "Finale",
+        scenes: [
+          {
+            kind: "scene",
+            id: "001-finale/001-ending",
+            chapterId: "001-finale",
+            sequence: 1,
+            title: "Ending",
+            path: "manuscript/001-finale/001-ending.md",
+          },
+        ],
+      },
+      {
+        kind: "chapter",
+        id: "002-start",
+        sequence: 2,
+        title: "Start",
+        scenes: [
+          {
+            kind: "scene",
+            id: "002-start/002-opening",
+            chapterId: "002-start",
+            sequence: 2,
+            title: "Opening",
+            path: "manuscript/002-start/002-opening.md",
+          },
+        ],
+      },
+    ],
+    notes: [],
+  };
+}
+
+function companionProjectAfterSceneMove() {
+  return {
+    manifest: { title: "Companion Workspace" },
+    chapters: [
+      {
+        kind: "chapter",
+        id: "001-finale",
+        sequence: 1,
+        title: "Finale",
+        scenes: [
+          {
+            kind: "scene",
+            id: "001-finale/001-ending",
+            chapterId: "001-finale",
+            sequence: 1,
+            title: "Ending",
+            path: "manuscript/001-finale/001-ending.md",
+          },
+          {
+            kind: "scene",
+            id: "001-finale/002-opening",
+            chapterId: "001-finale",
+            sequence: 2,
+            title: "Opening",
+            path: "manuscript/001-finale/002-opening.md",
           },
         ],
       },

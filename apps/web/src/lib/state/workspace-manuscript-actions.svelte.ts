@@ -1,4 +1,4 @@
-import type { ManuscriptInsertionPlacement } from "@claros/story-state";
+import type { ManuscriptInsertionPlacement } from "@claros/story-state/browser";
 
 import type { SceneMoveOptions } from "$lib/manuscript-drag";
 import type { WorkspaceChapter, WorkspaceMoveResult, WorkspaceScene } from "$lib/project-session";

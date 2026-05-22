@@ -3,7 +3,7 @@ import type {
   ProjectFileReader,
   ProjectFileStat,
   ProjectFileWriter,
-} from "@claros/story-state";
+} from "@claros/story-state/browser";
 
 export interface BrowserDirectoryPicker {
   showDirectoryPicker?: (options?: { mode?: "read" | "readwrite" }) => Promise<DirectoryHandle>;

@@ -2,7 +2,7 @@ import { CLAROS_THEMES, type ClarosThemeId } from "@claros/editor-core";
 
 import type { WorkspaceChapter, WorkspaceScene } from "./project-session";
 import type { PaletteCommand, StorageBackendId } from "./workspace-types";
-import type { ManuscriptInsertionPlacement } from "@claros/story-state";
+import type { ManuscriptInsertionPlacement } from "@claros/story-state/browser";
 
 export interface WorkspacePaletteCommandOptions {
   currentTheme: ClarosThemeId;

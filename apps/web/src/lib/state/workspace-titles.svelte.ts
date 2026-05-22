@@ -1,5 +1,5 @@
 import { tick } from "svelte";
-import type { ManuscriptInsertionPlacement } from "@claros/story-state";
+import type { ManuscriptInsertionPlacement } from "@claros/story-state/browser";
 
 import {
   normalizedChapterTitle,
