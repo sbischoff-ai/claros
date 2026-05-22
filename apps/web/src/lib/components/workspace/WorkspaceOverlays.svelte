@@ -4,9 +4,9 @@
   import ConfirmationModal from "$lib/ConfirmationModal.svelte";
   import DeleteModal from "$lib/DeleteModal.svelte";
   import TitleModal from "$lib/TitleModal.svelte";
-  import type { WorkspaceController } from "$lib/state/workspace-controller.svelte";
+  import type { WorkspaceOverlaysSurface } from "$lib/state/workspace-controller.svelte";
 
-  let { controller }: { controller: WorkspaceController } = $props();
+  let { controller }: { controller: WorkspaceOverlaysSurface } = $props();
 </script>
 
 {#if controller.paletteOpen}

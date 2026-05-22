@@ -2,16 +2,16 @@
   import Command from "phosphor-svelte/lib/Command";
 
   import WorkspaceTitleControl from "./WorkspaceTitleControl.svelte";
-  import type { WorkspaceController } from "$lib/state/workspace-controller.svelte";
+  import type { WorkspaceTopbarSurface } from "$lib/state/workspace-controller.svelte";
   import { saveStateLabel } from "$lib/workspace-view-model";
 
-  let { controller }: { controller: WorkspaceController } = $props();
+  let { controller }: { controller: WorkspaceTopbarSurface } = $props();
   let OpenStorageBackendIcon = $derived(controller.openStorageBackend.icon);
 </script>
 
 <header class="topbar" aria-label="Workspace">
   <div class="identity">
-    <WorkspaceTitleControl {controller} />
+    <WorkspaceTitleControl controller={controller.title} />
     {#if controller.projectIsOpen}
       <span class="draft-name">{controller.activeTitle}</span>
       <span

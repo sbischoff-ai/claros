@@ -1,8 +1,8 @@
 <script lang="ts">
   import ProjectLauncher from "$lib/ProjectLauncher.svelte";
-  import type { WorkspaceController } from "$lib/state/workspace-controller.svelte";
+  import type { WorkspaceProjectLauncherSurface } from "$lib/state/workspace-controller.svelte";
 
-  let { controller }: { controller: WorkspaceController } = $props();
+  let { controller }: { controller: WorkspaceProjectLauncherSurface } = $props();
 
   let statusText = $derived(
     controller.projectOpenState === "opening"

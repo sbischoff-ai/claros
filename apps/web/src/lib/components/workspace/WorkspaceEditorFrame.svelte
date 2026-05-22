@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { WorkspaceController } from "$lib/state/workspace-controller.svelte";
+  import type { WorkspaceEditorSurface } from "$lib/state/workspace-controller.svelte";
 
-  let { controller }: { controller: WorkspaceController } = $props();
+  let { controller }: { controller: WorkspaceEditorSurface } = $props();
 
   onMount(() => {
     void controller.ensureEditor();

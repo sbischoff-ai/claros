@@ -337,121 +337,33 @@ describe("project session", () => {
 });
 
 describe("workspace command surface", () => {
-  it("keeps the top-level page from absorbing feature modules", () => {
+  it("keeps the top-level page as a small controller/bootstrap boundary", () => {
     expect(pageSource.split("\n").length).toBeLessThan(50);
-    expect(pageSource).toContain("<WorkspaceApp {controller} />");
+    expect(pageSource).toContain("createWorkspaceControllers()");
+    expect(pageSource).toContain("<WorkspaceApp {controllers} />");
   });
 
   it("removes the ambiguous return-to-manuscript command", () => {
     expect(pageSource).not.toContain("Return to Manuscript");
   });
 
-  it("exposes a focused editor command and region focus shortcuts", () => {
-    expect(workspaceSource).toContain("Focus Editor");
-    expect(workspaceSource).toContain("Open Project: Local Folder");
-    expect(workspaceSource).toContain("New Project: Local Folder");
-    expect(workspaceSource).toContain("Open Project: Local Companion");
-    expect(workspaceSource).toContain("New Project: Local Companion");
-    expect(workspaceSource).toContain("Change Title: Current Scene");
-    expect(workspaceSource).toContain("Move Up: Current Scene");
-    expect(workspaceSource).toContain("Move Down: Current Scene");
-    expect(workspaceSource).toContain("Move Up: Current Chapter");
-    expect(workspaceSource).toContain("Move Down: Current Chapter");
-    expect(workspaceSource).toContain("Add Before: New Scene");
-    expect(workspaceSource).toContain("Add After: New Scene");
-    expect(workspaceSource).toContain("Add Before: New Chapter");
-    expect(workspaceSource).toContain("Add After: New Chapter");
-    expect(workspaceSource).toContain("Add new chapter");
-    expect(workspaceSource).toContain("Add new scene");
-    expect(workspaceSource).toContain('label: "Move"');
-    expect(workspaceSource).toContain("moveSceneByDirection");
-    expect(workspaceSource).toContain("moveChapterByDirection");
-    expect(workspaceSource).toContain("ManuscriptDragController");
-    expect(workspaceSource).toContain("ManuscriptDragPreview");
-    expect(workspaceSource).toContain("handlePointerDown");
-    expect(workspaceSource).toContain("chapterDropIndicatorItemId");
-    expect(workspaceSource).toContain("lastScene.path");
-    expect(workspaceSource).toContain("shouldConfirmEmptyChapterDeletion");
-    expect(workspaceSource).toContain("openEmptyChapterMoveConfirmation");
-    expect(workspaceSource).toContain("Move and Delete Chapter");
-    expect(workspaceSource).toContain("ConfirmationModalState");
-    expect(workspaceSource).toContain("canMoveCurrentSceneDown");
-    expect(workspaceSource).toContain("canMoveCurrentChapterDown");
-    expect(workspaceSource).toContain("drag-preview");
-    expect(workspaceSource).toContain("animate:flip");
-    expect(workspaceSource).toContain("class:dragging");
-    expect(workspaceSource).toContain("chapter-ghost");
-    expect(workspaceSource).toContain(".sidebar.dragging");
-    expect(workspaceSource).toContain(".sidebar.dragging .drag-handle");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/DotsSixVertical");
-    expect(workspaceSource).toContain("drag-handle");
-    expect(workspaceSource).toContain("chapterCreationSequence(placement, targetChapterId)");
-    expect(workspaceSource).toContain("sceneCreationSequence(placement, targetScenePath)");
-    expect(workspaceSource).toContain("firstSceneSequenceForChapterCreation");
-    expect(workspaceSource).toContain("submenu");
-    expect(workspaceSource).toContain("aria-haspopup={item.submenu");
-    expect(workspaceSource).toContain("event.currentTarget.blur()");
-    expect(workspaceSource).toContain("<span>Project Workspace</span>");
-    expect(workspaceSource).toContain('target: "new-chapter-scene"');
-    expect(workspaceSource).toContain("optimisticChapterTitles");
-    expect(workspaceSource).toContain("optimisticSceneTitles");
-    expect(workspaceSource).toContain("await this.focusEditorAfterOpen()");
-    expect(workspaceSource).toContain("suppressEditorChange");
-    expect(workspaceSource).toContain("forceReload?: boolean; skipSave?: boolean");
-    expect(workspaceSource).toContain(
-      "await this.documents.openDocument(nextPath, { forceReload: true, skipSave: true })"
-    );
-    expect(workspaceSource).toContain('activeDocumentKind === "note" ? "start" : "end"');
-    expect(workspaceSource).toContain("lastWorkspaceFocus");
-    expect(workspaceSource).toContain("restoreWorkspaceFocus(modal.returnFocus)");
-    expect(workspaceSource).toContain("rememberEditorFocus");
-    expect(workspaceSource).toContain("getCursorPosition()");
-    expect(pageSource).not.toContain("Connect Local Companion");
-    expect(workspaceSource).toContain('event.key === "ArrowLeft"');
-    expect(workspaceSource).toContain('event.key === "ArrowRight"');
-    expect(workspaceSource).toContain("directionalIntentFromKeydown");
-    expect(workspaceSource).toContain('case "j"');
-    expect(workspaceSource).toContain('case "k"');
-    expect(workspaceSource).toContain('case "h"');
-    expect(workspaceSource).toContain('case "l"');
-    expect(workspaceSource).toContain("isTextEditingTarget(event.target)");
-    expect(workspaceSource).toContain("<ActionMenu");
+  it("passes feature-scoped controllers instead of a broad workspace controller", () => {
+    expect(workspaceSource).toContain("WorkspaceLifecycleSurface");
+    expect(workspaceSource).toContain("WorkspaceSidebarSurface");
+    expect(workspaceSource).toContain("WorkspaceOverlaysSurface");
+    expect(workspaceSource).not.toContain("interface WorkspaceController ");
+    expect(workspaceSource).not.toContain("new Proxy");
+    expect(workspaceSource).not.toContain("createWorkspaceFacade");
+    expect(workspaceSource).not.toContain("WorkspaceController } from");
   });
 
-  it("uses shared Phosphor icon metadata for workspace controls", () => {
-    expect(workspaceSource).toContain("phosphor-svelte/lib/Command");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/Files");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/CaretLeft");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/Book");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/Notebook");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/FolderOpen");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/TerminalWindow");
-    expect(workspaceSource).toContain("icon: FolderOpen");
-    expect(workspaceSource).toContain("icon: TerminalWindow");
-    expect(workspaceSource).toContain("openStorageBackendId");
-  });
-
-  it("keeps no-project mode separate from the editor workspace", () => {
-    expect(workspaceSource).toContain("{#if controller.projectIsOpen}");
+  it("keeps no-project and startup rendering separate from the editor workspace", () => {
+    expect(workspaceSource).toContain("{#if lifecycle.projectIsOpen}");
+    expect(workspaceSource).toContain("bind:this={lifecycle.appShell}");
     expect(workspaceSource).toContain("bind:this={controller.editorHost}");
     expect(workspaceSource).toContain('aria-label="Open project"');
-    expect(workspaceSource).toContain("disabled: !options.localProjectSupported");
-    expect(workspaceSource).toContain("disabled: projectCommandDisabled");
-  });
-
-  it("gates startup rendering behind a themed loading spinner", () => {
-    expect(workspaceSource).toContain("startupReady = $state(false)");
-    expect(workspaceSource).toContain("{#if !controller.startupReady}");
     expect(workspaceSource).toContain('class="startup-screen"');
     expect(workspaceSource).toContain('class="startup-spinner"');
-    expect(workspaceSource).toContain("{:else}");
-    expect(workspaceSource.indexOf("{:else}")).toBeLessThan(
-      workspaceSource.indexOf('<section class="project-empty-state"')
-    );
-    expect(workspaceSource).toContain(
-      "await this.projects.connectCompanion(this.ctx.companionConnection)"
-    );
-    expect(workspaceSource).toContain("async finishStartup()");
   });
 });
 

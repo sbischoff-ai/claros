@@ -22,17 +22,7 @@ export class WorkspacePalette {
     private readonly projects: WorkspaceProjects,
     private readonly sidebar: WorkspaceSidebarController,
     private readonly titles: WorkspaceTitles
-  ) {
-    $effect(() => {
-      if (this.ctx.paletteOpen) {
-        this.ctx.selectedCommandIndex = 0;
-        void this.focusCommandInput();
-      }
-    });
-    $effect(() => {
-      this.normalizeSelectedCommandIndex();
-    });
-  }
+  ) {}
 
   get paletteCommands(): PaletteCommand[] {
     return buildWorkspacePaletteCommands({
@@ -99,6 +89,7 @@ export class WorkspacePalette {
       this.ctx.paletteOpen = true;
       this.ctx.commandQuery = "";
       this.ctx.selectedCommandIndex = 0;
+      void this.focusCommandInput();
       return;
     }
     this.closePalette();

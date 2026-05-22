@@ -3,71 +3,74 @@
 
   import ManuscriptDragPreview from "$lib/ManuscriptDragPreview.svelte";
   import WorkspaceSidebar from "$lib/WorkspaceSidebar.svelte";
-  import type { WorkspaceController } from "$lib/state/workspace-controller.svelte";
+  import type { WorkspaceControllers } from "$lib/state/workspace-controller.svelte";
   import ProjectEmptyState from "./ProjectEmptyState.svelte";
   import SidebarTab from "./SidebarTab.svelte";
   import WorkspaceEditorFrame from "./WorkspaceEditorFrame.svelte";
   import WorkspaceOverlays from "./WorkspaceOverlays.svelte";
   import WorkspaceTopbar from "./WorkspaceTopbar.svelte";
 
-  let { controller }: { controller: WorkspaceController } = $props();
+  let { controllers }: { controllers: WorkspaceControllers } = $props();
+  let { lifecycle, sidebar, dragPreview, topbar, editor, projectLauncher, overlays } = $derived(
+    controllers
+  );
 
   onMount(() => {
-    void controller.mount();
+    void lifecycle.mount();
   });
 
   onDestroy(() => {
-    controller.destroy();
+    lifecycle.destroy();
   });
 </script>
 
 <main
-  bind:this={controller.appShell}
-  class={`app-shell ${controller.projectIsOpen && controller.sidebarOpen ? "sidebar-open" : ""}`}
+  bind:this={lifecycle.appShell}
+  class={`app-shell ${lifecycle.projectIsOpen && lifecycle.sidebarOpen ? "sidebar-open" : ""}`}
 >
-  {#if !controller.startupReady}
+  {#if !lifecycle.startupReady}
     <section class="startup-screen" aria-label="Loading Claros">
       <span class="startup-spinner" aria-hidden="true"></span>
     </section>
   {:else}
-    {#if controller.projectIsOpen}
-      {#if !controller.sidebarOpen}
-        <SidebarTab expanded={controller.sidebarOpen} open={() => controller.toggleSidebar()} />
+    {#if lifecycle.projectIsOpen}
+      {#if !lifecycle.sidebarOpen}
+        <SidebarTab expanded={lifecycle.sidebarOpen} open={() => lifecycle.toggleSidebar()} />
       {/if}
       <WorkspaceSidebar
-        bind:sidebarNav={controller.sidebarNav}
-        bind:focusedItemId={controller.focusedSidebarItemId}
-        bind:titleDraft={controller.sidebarTitleDraft}
-        activePath={controller.activePath}
-        close={() => controller.closeSidebar()}
-        commitTitle={(item) => void controller.commitSidebarTitleEdit(item)}
-        cancelTitleEdit={() => controller.cancelInlineTitleEdit()}
-        dragging={controller.manuscriptDrag !== undefined}
-        draggingItemId={controller.manuscriptDrag?.itemId ?? ""}
-        ghostChapterId={controller.manuscriptDrag?.kind === "chapter" ? controller.manuscriptDrag.chapterId : ""}
-        dropIndicatorItemId={controller.chapterDropIndicatorItemId}
-        dropIndicatorPlacement={controller.manuscriptDrag?.kind === "chapter" ? controller.manuscriptDrag.placement : undefined}
-        editingItemId={controller.editingSidebarItemId}
-        handleContextMenu={(event, item) => controller.openSidebarContextMenu(event, item)}
-        handleDragPointerDown={(event, item) => controller.manuscriptDragController.handlePointerDown(event, item)}
-        handleItemClick={(item) => controller.handleSidebarItemClick(item)}
-        handleKeydown={(event) => controller.handleSidebarKeydown(event)}
-        items={controller.sidebarItems}
-        open={controller.sidebarOpen}
-        rememberFocus={(itemId) => controller.rememberSidebarFocus(itemId)}
+        bind:sidebarNav={sidebar.sidebarNav}
+        bind:focusedItemId={sidebar.focusedItemId}
+        bind:titleDraft={sidebar.titleDraft}
+        activePath={sidebar.activePath}
+        close={() => sidebar.close()}
+        commitTitle={(item) => void sidebar.commitTitle(item)}
+        cancelTitleEdit={() => sidebar.cancelTitleEdit()}
+        dragging={sidebar.dragging}
+        draggingItemId={sidebar.draggingItemId}
+        ghostChapterId={sidebar.ghostChapterId}
+        dropIndicatorItemId={sidebar.dropIndicatorItemId}
+        dropIndicatorPlacement={sidebar.dropIndicatorPlacement}
+        editingItemId={sidebar.editingItemId}
+        handleContextMenu={(event, item) => sidebar.handleContextMenu(event, item)}
+        handleDragPointerDown={(event, item) => sidebar.handleDragPointerDown(event, item)}
+        handleItemClick={(item) => sidebar.handleItemClick(item)}
+        handleKeydown={(event) => sidebar.handleKeydown(event)}
+        items={sidebar.items}
+        open={sidebar.open}
+        rememberFocus={(itemId) => sidebar.rememberFocus(itemId)}
       />
-      <ManuscriptDragPreview drag={controller.manuscriptDrag} />
+      <ManuscriptDragPreview drag={dragPreview.drag} />
     {/if}
 
     <section class="workspace">
-      <WorkspaceTopbar {controller} />
-      {#if controller.projectIsOpen}
-        <WorkspaceEditorFrame {controller} />
+      <WorkspaceTopbar controller={topbar} />
+      {#if lifecycle.projectIsOpen}
+        <WorkspaceEditorFrame controller={editor} />
       {:else}
-        <ProjectEmptyState {controller} />
+        <ProjectEmptyState controller={projectLauncher} />
       {/if}
     </section>
 
-    <WorkspaceOverlays {controller} />
+    <WorkspaceOverlays controller={overlays} />
   {/if}
 </main>

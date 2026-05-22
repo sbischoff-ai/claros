@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { WorkspaceController } from "$lib/state/workspace-controller.svelte";
+  import type { WorkspaceTitleSurface } from "$lib/state/workspace-controller.svelte";
 
-  let { controller }: { controller: WorkspaceController } = $props();
+  let { controller }: { controller: WorkspaceTitleSurface } = $props();
 </script>
 
 {#if controller.projectIsOpen && controller.editingProjectTitle}
