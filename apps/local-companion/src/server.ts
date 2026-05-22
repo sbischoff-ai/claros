@@ -7,6 +7,7 @@ import {
   type ChapterRef,
   type ClarosProject,
   type MarkdownDocument,
+  type NoteFolderRef,
   type NoteRef,
   type ProjectManifest,
   type SceneRef,
@@ -29,6 +30,7 @@ export interface ProjectSummary {
   manifest: WorkspaceManifest;
   chapters: WorkspaceChapter[];
   notes: WorkspaceNote[];
+  noteFolders: WorkspaceNoteFolder[];
 }
 
 interface WorkspaceManifest {
@@ -54,6 +56,14 @@ interface WorkspaceScene {
 
 interface WorkspaceNote {
   kind: "note";
+  id: string;
+  path: string;
+  title: string;
+  folderPath: string[];
+}
+
+interface WorkspaceNoteFolder {
+  kind: "note-folder";
   id: string;
   path: string;
   title: string;
@@ -191,6 +201,10 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
                 ),
               }),
           ...(mutation.scene === undefined ? {} : { scene: toWorkspaceScene(mutation.scene) }),
+          ...(mutation.note === undefined ? {} : { note: toWorkspaceNote(mutation.note) }),
+          ...(mutation.noteFolder === undefined
+            ? {}
+            : { noteFolder: toWorkspaceNoteFolder(mutation.noteFolder) }),
           ...(mutation.nextPath === undefined ? {} : { nextPath: mutation.nextPath }),
           ...(mutation.pathMap === undefined ? {} : { pathMap: mutation.pathMap }),
           ...(mutation.chapterIdMap === undefined ? {} : { chapterIdMap: mutation.chapterIdMap }),
@@ -305,6 +319,7 @@ function summarizeProject(project: ClarosProject): ProjectSummary {
       .listChapters()
       .map((chapter) => toWorkspaceChapter(chapter, scenesByChapter.get(chapter.id) ?? [])),
     notes: project.listNotes().map(toWorkspaceNote),
+    noteFolders: listProjectNoteFolders(project).map(toWorkspaceNoteFolder),
   };
 }
 
@@ -314,6 +329,8 @@ async function applyProjectMutation(
 ): Promise<{
   chapter?: ChapterRef;
   scene?: SceneRef;
+  note?: NoteRef;
+  noteFolder?: NoteFolderRef;
   nextPath?: string;
   pathMap?: Record<string, string>;
   chapterIdMap?: Record<string, string>;
@@ -407,6 +424,41 @@ async function applyProjectMutation(
       });
       return { scene, pathMap, chapterIdMap };
     }
+    case "create-note": {
+      const { note } = await project.createNote(title, {
+        folderPath: stringArrayValue(body.folderPath),
+      });
+      return { note };
+    }
+    case "create-note-folder": {
+      const { folder } = await project.createNoteFolder(title, {
+        parentFolderPath: stringArrayValue(body.parentFolderPath),
+      });
+      return { noteFolder: folder };
+    }
+    case "delete-note": {
+      if (typeof body.path !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected path");
+      }
+      const { nextDocument } = await project.deleteNote(body.path);
+      return { nextPath: nextDocument?.path };
+    }
+    case "delete-note-folder": {
+      if (typeof body.folderPath !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected folderPath");
+      }
+      const { nextDocument } = await project.deleteNoteFolder(body.folderPath);
+      return { nextPath: nextDocument?.path };
+    }
+    case "move-note": {
+      if (typeof body.path !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected path");
+      }
+      const { note } = await project.moveNote(body.path, {
+        targetFolderPath: stringArrayValue(body.targetFolderPath),
+      });
+      return { note };
+    }
     default:
       throw new CompanionError(400, "BAD_REQUEST", `Unknown project mutation: ${body.action}`);
   }
@@ -429,6 +481,12 @@ function movePlacement(value: unknown): "before" | "after" {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function stringArrayValue(value: unknown): string[] | undefined {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
 }
 
 function normalizedProjectTitle(title: string): string {
@@ -473,6 +531,39 @@ function toWorkspaceNote(note: NoteRef): WorkspaceNote {
       ? note.path.slice("notes/".length).split("/").slice(0, -1)
       : [],
   };
+}
+
+function toWorkspaceNoteFolder(folder: NoteFolderRef): WorkspaceNoteFolder {
+  return {
+    kind: "note-folder",
+    id: folder.path,
+    path: folder.path,
+    title: titleFromSlug(folder.name),
+    folderPath: [...folder.folderPath],
+  };
+}
+
+function listProjectNoteFolders(project: ClarosProject): NoteFolderRef[] {
+  if ("listNoteFolders" in project && typeof project.listNoteFolders === "function") {
+    return project.listNoteFolders();
+  }
+  const folders = new Map<string, NoteFolderRef>();
+  for (const note of project.listNotes()) {
+    const parts = note.path.startsWith("notes/")
+      ? note.path.slice("notes/".length).split("/").slice(0, -1)
+      : [];
+    for (let index = 0; index < parts.length; index += 1) {
+      const folderPath = parts.slice(0, index + 1);
+      const folderPathString = `notes/${folderPath.join("/")}`;
+      folders.set(folderPathString, {
+        kind: "note-folder",
+        path: folderPathString,
+        name: folderPath.at(-1) ?? "",
+        folderPath,
+      });
+    }
+  }
+  return [...folders.values()].sort((left, right) => left.path.localeCompare(right.path));
 }
 
 function toWorkspaceDocument(

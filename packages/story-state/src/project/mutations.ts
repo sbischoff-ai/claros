@@ -4,6 +4,7 @@ import {
   serializeNoteFrontmatter,
   serializeStateFile,
   type ChapterRef,
+  type NoteFolderRef,
   type NoteRef,
   type ProjectFileReader,
   type ProjectFileWriter,
@@ -13,11 +14,14 @@ import type { ProjectIndex } from "./index.js";
 import type {
   CreateChapterOptions,
   CreateSceneOptions,
+  CreateNoteFolderOptions,
+  CreateNoteOptions,
   LinkRef,
   LinkRewrite,
   LinkRewritePlan,
   ManuscriptMoveResult,
   MoveChapterOptions,
+  MoveNoteOptions,
   MoveSceneOptions,
   MutationResult,
   MutationWarning,
@@ -363,6 +367,109 @@ export class ProjectMutationEngine {
     );
     const move = await this.rebuildManuscriptOrder(orderedChapters, orderedScenes);
     return { ...move, scene: this.resolveScene(move.pathMap[current.path] ?? current.path) };
+  }
+
+  async createNote(
+    title: string,
+    options: CreateNoteOptions = {}
+  ): Promise<{ result: MutationResult; note: NoteRef }> {
+    const folderPath = normalizeNoteFolderPath(options.folderPath);
+    const notePath = await this.uniqueNotePath(folderPath, title);
+    await this.options.fileWriter.writeFileAtomic(
+      this.storagePath(notePath),
+      serializeNoteMarkdown(title)
+    );
+    await this.options.rebuildIndex();
+    return {
+      result: {
+        kind: "structural",
+        changedPaths: [notePath],
+        affectedPaths: [notePath],
+        warnings: [],
+        indexUpdated: true,
+      },
+      note: this.noteByPath(notePath),
+    };
+  }
+
+  async createNoteFolder(
+    title: string,
+    options: CreateNoteFolderOptions = {}
+  ): Promise<{ result: MutationResult; folder: NoteFolderRef }> {
+    const parent = normalizeNoteFolderPath(options.parentFolderPath);
+    const folderPath = await this.uniqueNoteFolderPath(parent, title);
+    await this.options.fileWriter.mkdir(this.storagePath(folderPath), true);
+    await this.options.rebuildIndex();
+    return {
+      result: {
+        kind: "structural",
+        changedPaths: [folderPath],
+        affectedPaths: [folderPath],
+        warnings: [],
+        indexUpdated: true,
+      },
+      folder: this.noteFolderByPath(folderPath),
+    };
+  }
+
+  async deleteNote(
+    note: NoteRef | string
+  ): Promise<{ result: MutationResult; nextDocument?: SceneRef | NoteRef }> {
+    const current = this.resolveNote(note);
+    const noteIndex = this.listNotes().findIndex((candidate) => candidate.path === current.path);
+    await this.options.fileWriter.removeFile(this.storagePath(current.path));
+    await this.options.rebuildIndex();
+    return {
+      result: {
+        kind: "structural",
+        changedPaths: [current.path],
+        affectedPaths: [current.path],
+        warnings: [],
+        indexUpdated: true,
+      },
+      nextDocument: nextDocumentAfterNoteRemoval(this.listNotes(), this.listScenes(), noteIndex),
+    };
+  }
+
+  async deleteNoteFolder(
+    folder: NoteFolderRef | string
+  ): Promise<{ result: MutationResult; nextDocument?: SceneRef | NoteRef }> {
+    const folderPath = resolveNoteFolderPath(folder);
+    if (folderPath === "notes") {
+      throw new Error("Cannot delete the notes root folder");
+    }
+    const notes = this.listNotes();
+    const firstRemovedNoteIndex = notes.findIndex((note) => note.path.startsWith(`${folderPath}/`));
+    await this.options.fileWriter.removeFile(this.storagePath(folderPath));
+    await this.options.rebuildIndex();
+    return {
+      result: {
+        kind: "structural",
+        changedPaths: [folderPath],
+        affectedPaths: [folderPath],
+        warnings: [],
+        indexUpdated: true,
+      },
+      nextDocument: nextDocumentAfterNoteRemoval(
+        this.listNotes(),
+        this.listScenes(),
+        firstRemovedNoteIndex
+      ),
+    };
+  }
+
+  async moveNote(
+    note: NoteRef | string,
+    options: MoveNoteOptions = {}
+  ): Promise<{ result: MutationResult; note: NoteRef }> {
+    const current = this.resolveNote(note);
+    const targetFolder = normalizeNoteFolderPath(options.targetFolderPath);
+    const basename = current.path.split("/").at(-1) ?? `${current.slug}.md`;
+    const targetPath = await this.uniquePathInFolder(targetFolder, basename, current.path);
+    const result = await this.applyRenamePlan(
+      await this.planRenameNote(current, targetPath, options.rewriteLinks ?? false)
+    );
+    return { result, note: this.noteByPath(result.pathMap?.[current.path] ?? current.path) };
   }
 
   async planRenameNote(
@@ -805,6 +912,61 @@ export class ProjectMutationEngine {
     return scene;
   }
 
+  private noteByPath(notePath: string): NoteRef {
+    const note = this.listNotes().find((candidate) => candidate.path === notePath);
+    if (note === undefined) {
+      throw new Error(`Note not found after mutation: ${notePath}`);
+    }
+    return note;
+  }
+
+  private noteFolderByPath(folderPath: string): NoteFolderRef {
+    const folder = this.options.index
+      .listNoteFolders()
+      .find((candidate) => candidate.path === folderPath);
+    if (folder === undefined) {
+      throw new Error(`Note folder not found after mutation: ${folderPath}`);
+    }
+    return folder;
+  }
+
+  private async uniqueNotePath(folderPath: string, title: string): Promise<string> {
+    const slug = title.trim().length > 0 ? slugifyPathComponent(title) : "untitled-note";
+    return this.uniquePathInFolder(folderPath, `${slug}.md`);
+  }
+
+  private async uniqueNoteFolderPath(parentPath: string, title: string): Promise<string> {
+    const slug = title.trim().length > 0 ? slugifyPathComponent(title) : "untitled-folder";
+    let suffix = 1;
+    while (true) {
+      const name = suffix === 1 ? slug : `${slug}-${suffix}`;
+      const candidate = `${parentPath}/${name}`;
+      const stat = await this.options.fileReader.stat(this.storagePath(candidate));
+      if (!stat.exists) {
+        return candidate;
+      }
+      suffix += 1;
+    }
+  }
+
+  private async uniquePathInFolder(
+    folderPath: string,
+    basename: string,
+    currentPath?: string
+  ): Promise<string> {
+    const stem = basename.toLowerCase().endsWith(".md") ? basename.slice(0, -3) : basename;
+    let suffix = 1;
+    while (true) {
+      const filename = suffix === 1 ? `${stem}.md` : `${stem}-${suffix}.md`;
+      const candidate = `${folderPath}/${filename}`;
+      const stat = await this.options.fileReader.stat(this.storagePath(candidate));
+      if (!stat.exists || candidate === currentPath) {
+        return candidate;
+      }
+      suffix += 1;
+    }
+  }
+
   private uniqueChapterId(sequence: number, title: string): string {
     const prefix = sequencePrefix(sequence);
     const slug = title.trim().length > 0 ? slugifyPathComponent(title) : `chapter-${sequence}`;
@@ -1010,6 +1172,38 @@ function normalizeNoteTargetPath(candidatePath: string): string {
   const normalized = normalizeProjectRelativePath(candidatePath);
   const withDirectory = normalized.startsWith("notes/") ? normalized : `notes/${normalized}`;
   return withDirectory.toLowerCase().endsWith(".md") ? withDirectory : `${withDirectory}.md`;
+}
+
+function normalizeNoteFolderPath(folderPath: string | string[] | undefined): string {
+  const parts = Array.isArray(folderPath) ? folderPath : (folderPath ?? "").split("/");
+  const normalized = parts
+    .flatMap((part) => part.split("/"))
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && part !== "." && part !== "notes");
+  return normalized.length === 0 ? "notes" : `notes/${normalized.join("/")}`;
+}
+
+function resolveNoteFolderPath(folder: NoteFolderRef | string): string {
+  if (typeof folder !== "string") {
+    return normalizeNoteFolderPath(folder.folderPath);
+  }
+  return normalizeNoteFolderPath(folder);
+}
+
+function serializeNoteMarkdown(title: string): string {
+  const normalizedTitle = title.trim().length > 0 ? title.trim() : "Untitled Note";
+  return `---\ntitle: ${JSON.stringify(normalizedTitle)}\n---\n\n# ${normalizedTitle}\n`;
+}
+
+function nextDocumentAfterNoteRemoval(
+  notes: NoteRef[],
+  scenes: SceneRef[],
+  removedNoteIndex: number
+): SceneRef | NoteRef | undefined {
+  if (notes.length > 0) {
+    return notes[Math.min(Math.max(removedNoteIndex, 0), notes.length - 1)];
+  }
+  return scenes[0];
 }
 
 function renameScenePath(currentPath: string, nextSlug: string): string {

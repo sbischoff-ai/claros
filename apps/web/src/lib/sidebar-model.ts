@@ -1,9 +1,10 @@
-import type { WorkspaceChapter, WorkspaceNote } from "./project-session";
+import type { WorkspaceChapter, WorkspaceNote, WorkspaceNoteFolder } from "./project-session";
 import type { SidebarItem } from "./workspace-types";
 
 export function buildSidebarItems(
   chapterList: WorkspaceChapter[],
   noteList: WorkspaceNote[],
+  noteFolderList: WorkspaceNoteFolder[],
   collapsed: Set<string>,
   optimisticChapters: Map<string, string>,
   optimisticScenes: Map<string, string>
@@ -80,7 +81,7 @@ export function buildSidebarItems(
   });
 
   if (!collapsed.has("notes")) {
-    appendNoteItems(items, noteList, [], 1, collapsed);
+    appendNoteItems(items, noteList, noteFolderList, [], 1, collapsed);
   }
 
   return items;
@@ -89,18 +90,19 @@ export function buildSidebarItems(
 function appendNoteItems(
   items: SidebarItem[],
   noteList: WorkspaceNote[],
+  noteFolderList: WorkspaceNoteFolder[],
   folderPath: string[],
   depth: number,
   collapsed: Set<string>
 ): void {
   const childFolderNames = Array.from(
     new Set(
-      noteList
+      noteFolderList
         .filter((note) => startsWithPath(note.folderPath, folderPath))
-        .map((note) => note.folderPath[folderPath.length])
+        .map((folder) => folder.folderPath[folderPath.length])
         .filter((folderName): folderName is string => folderName !== undefined)
     )
-  ).sort((left, right) => left.localeCompare(right));
+  ).sort(compareNormalizedTitle);
 
   for (const folderName of childFolderNames) {
     const nextFolderPath = [...folderPath, folderName];
@@ -112,16 +114,17 @@ function appendNoteItems(
       depth,
       collapsible: true,
       collapsed: collapsed.has(folderId),
+      folderPath: nextFolderPath,
     });
 
     if (!collapsed.has(folderId)) {
-      appendNoteItems(items, noteList, nextFolderPath, depth + 1, collapsed);
+      appendNoteItems(items, noteList, noteFolderList, nextFolderPath, depth + 1, collapsed);
     }
   }
 
   noteList
     .filter((note) => pathsEqual(note.folderPath, folderPath))
-    .sort((left, right) => left.title.localeCompare(right.title))
+    .sort((left, right) => compareNormalizedTitle(left.title, right.title))
     .forEach((note) => {
       items.push({
         id: note.path,
@@ -133,6 +136,19 @@ function appendNoteItems(
         path: note.path,
       });
     });
+}
+
+function compareNormalizedTitle(left: string, right: string): number {
+  return slugForSort(left).localeCompare(slugForSort(right));
+}
+
+function slugForSort(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
 }
 
 function startsWithPath(path: string[], prefix: string[]): boolean {

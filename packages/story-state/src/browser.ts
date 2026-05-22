@@ -11,6 +11,7 @@ import {
   type ChapterRef,
   type ClarosBlockRef,
   type MarkdownDocument,
+  type NoteFolderRef,
   type NoteRef,
   type ProjectFileReader,
   type ProjectFileWriter,
@@ -25,6 +26,8 @@ import type {
   ClarosProject,
   CreateChapterOptions,
   CreateSceneOptions,
+  CreateNoteFolderOptions,
+  CreateNoteOptions,
   DocumentRef,
   HistoryOptions,
   LinkRef,
@@ -32,6 +35,7 @@ import type {
   ManuscriptMoveResult,
   MutationResult,
   MoveChapterOptions,
+  MoveNoteOptions,
   MoveSceneOptions,
   ProjectExecuteMacroInDocumentOptions,
   RestoreCheckpointOptions,
@@ -57,6 +61,7 @@ export type {
   ClarosBlockRef,
   MarkdownDocument,
   NoteRef,
+  NoteFolderRef,
   ProjectDirEntry,
   ProjectFileReader,
   ProjectFileStat,
@@ -75,6 +80,8 @@ export type {
   ClarosProject,
   CreateChapterOptions,
   CreateSceneOptions,
+  CreateNoteFolderOptions,
+  CreateNoteOptions,
   DocumentRef,
   HistoryOptions,
   LinkRef,
@@ -82,6 +89,7 @@ export type {
   ManuscriptInsertionPlacement,
   ManuscriptMoveResult,
   MoveChapterOptions,
+  MoveNoteOptions,
   MoveSceneOptions,
   MutationResult,
   ProjectExecuteMacroInDocumentOptions,
@@ -149,6 +157,10 @@ class BrowserClarosProject implements ClarosProject {
 
   listNotes(): NoteRef[] {
     return this.index.listNotes();
+  }
+
+  listNoteFolders(): NoteFolderRef[] {
+    return this.index.listNoteFolders();
   }
 
   async readDocument(ref: DocumentRef): Promise<MarkdownDocument> {
@@ -313,6 +325,39 @@ class BrowserClarosProject implements ClarosProject {
     options: MoveSceneOptions
   ): Promise<ManuscriptMoveResult & { scene: SceneRef }> {
     return this.mutations.moveScene(scene, options);
+  }
+
+  createNote(
+    title: string,
+    options?: CreateNoteOptions
+  ): Promise<{ result: MutationResult; note: NoteRef }> {
+    return this.mutations.createNote(title, options);
+  }
+
+  createNoteFolder(
+    title: string,
+    options?: CreateNoteFolderOptions
+  ): Promise<{ result: MutationResult; folder: NoteFolderRef }> {
+    return this.mutations.createNoteFolder(title, options);
+  }
+
+  deleteNote(
+    note: NoteRef | string
+  ): Promise<{ result: MutationResult; nextDocument?: DocumentRef }> {
+    return this.mutations.deleteNote(note);
+  }
+
+  deleteNoteFolder(
+    folder: NoteFolderRef | string
+  ): Promise<{ result: MutationResult; nextDocument?: DocumentRef }> {
+    return this.mutations.deleteNoteFolder(folder);
+  }
+
+  moveNote(
+    note: NoteRef | string,
+    options?: MoveNoteOptions
+  ): Promise<{ result: MutationResult; note: NoteRef }> {
+    return this.mutations.moveNote(note, options);
   }
 
   planRenameNote(

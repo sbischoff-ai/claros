@@ -9,6 +9,7 @@ export type {
   ChapterRef,
   SceneFrontmatter,
   SceneRef,
+  NoteFolderRef,
   NoteRef,
   MarkdownDocument,
   SourcePosition,

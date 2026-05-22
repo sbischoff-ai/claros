@@ -70,6 +70,13 @@ export interface NoteRef {
   frontmatter: NoteFrontmatter;
 }
 
+export interface NoteFolderRef {
+  kind: "note-folder";
+  path: string;
+  name: string;
+  folderPath: string[];
+}
+
 export interface MarkdownDocument {
   path: string;
   frontmatter?: Record<string, unknown>;
@@ -111,6 +118,7 @@ export interface ProjectFormatSnapshot {
   chapters: ChapterRef[];
   scenes: SceneRef[];
   notes: NoteRef[];
+  noteFolders: NoteFolderRef[];
   wikilinks: WikilinkRef[];
   clarosBlocks: ClarosBlockRef[];
 }

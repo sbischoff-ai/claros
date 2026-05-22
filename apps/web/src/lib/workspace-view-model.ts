@@ -2,6 +2,7 @@ import type {
   ProjectSession,
   WorkspaceChapter,
   WorkspaceNote,
+  WorkspaceNoteFolder,
   WorkspaceScene,
 } from "./project-session";
 import type { PaletteCommand, SaveState } from "./workspace-types";
@@ -42,6 +43,13 @@ export function listProjectNotes(
   session: ProjectSession | undefined
 ): WorkspaceNote[] {
   return revision < 0 ? [] : (session?.listNotes() ?? []);
+}
+
+export function listProjectNoteFolders(
+  revision: number,
+  session: ProjectSession | undefined
+): WorkspaceNoteFolder[] {
+  return revision < 0 ? [] : (session?.listNoteFolders() ?? []);
 }
 
 export function projectTitleForDisplay(

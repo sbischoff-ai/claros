@@ -75,6 +75,33 @@ describe("workspace controllers", () => {
     expect(editorRuntime.focusedWith).toEqual({ cursor: "end" });
   });
 
+  it("creates notes from the command palette and opens them", async () => {
+    const environment = new FakeBrowserEnvironment();
+    const editorRuntime = new FakeMarkdownEditorRuntime();
+    const handle = createProjectHandle();
+    environment.pickedDirectory = handle;
+    const controllers = createWorkspaceControllers(environment, editorRuntime);
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+    controllers.topbar.togglePalette();
+    const command = controllers.overlays.filteredCommands.find(
+      (candidate) => candidate.label === "Add: New Note"
+    );
+    expect(command?.disabled).toBe(false);
+    controllers.overlays.runCommand(command!);
+    expect(controllers.overlays.titleModal?.target).toBe("new-note");
+    controllers.overlays.titleModal!.value = "Hidden Shrine";
+    await controllers.overlays.submitTitleModal();
+
+    expect(controllers.sidebar.activePath).toBe("notes/hidden-shrine.md");
+    expect(editorRuntime.markdown).toContain("# Hidden Shrine");
+    expect(await readHandleFile(handle, "/notes/hidden-shrine.md")).toContain(
+      'title: "Hidden Shrine"'
+    );
+  });
+
   it("keeps title editing and sidebar state scoped to their feature surfaces", async () => {
     const controllers = createWorkspaceControllers(
       new FakeBrowserEnvironment(),

@@ -5,6 +5,7 @@ import type {
   ChapterRef,
   ClarosBlockRef,
   MarkdownDocument,
+  NoteFolderRef,
   NoteRef,
   ProjectDirEntry,
   ProjectFileReader,
@@ -67,7 +68,11 @@ export async function scanProjectFormat(
 
   const chapters = await scanChapters(normalizedRoot, manuscriptPath, fs);
   const { scenes, markdownFiles: sceneFiles } = await scanScenes(normalizedRoot, fs, chapters);
-  const { notes, markdownFiles: noteFiles } = await scanNotes(normalizedRoot, notesPath, fs);
+  const {
+    notes,
+    noteFolders,
+    markdownFiles: noteFiles,
+  } = await scanNotes(normalizedRoot, notesPath, fs);
 
   const markdownFiles = [...sceneFiles, ...noteFiles];
 
@@ -77,6 +82,7 @@ export async function scanProjectFormat(
     chapters,
     scenes,
     notes,
+    noteFolders,
     wikilinks: markdownFiles.flatMap((file) => extractWikilinks(file.path, file.raw)),
     clarosBlocks: markdownFiles.flatMap((file) => extractClarosBlocks(file.path, file.raw)),
   };
@@ -315,13 +321,18 @@ async function scanNotes(
   root: string,
   notesPath: string,
   fs: ProjectFileReader
-): Promise<{ notes: NoteRef[]; markdownFiles: ScannedMarkdownFile[] }> {
+): Promise<{
+  notes: NoteRef[];
+  noteFolders: NoteFolderRef[];
+  markdownFiles: ScannedMarkdownFile[];
+}> {
   const notesStat = await fs.stat(notesPath);
   if (!notesStat.exists || !notesStat.isDirectory) {
-    return { notes: [], markdownFiles: [] };
+    return { notes: [], noteFolders: [], markdownFiles: [] };
   }
 
   const noteFiles = await collectMarkdownFiles(notesPath, fs);
+  const noteFolders = await collectNoteFolders(root, notesPath, fs);
   const notes: NoteRef[] = [];
   const markdownFiles: ScannedMarkdownFile[] = [];
 
@@ -345,7 +356,39 @@ async function scanNotes(
   }
 
   notes.sort((left, right) => left.path.localeCompare(right.path));
-  return { notes, markdownFiles };
+  return { notes, noteFolders, markdownFiles };
+}
+
+async function collectNoteFolders(
+  root: string,
+  notesPath: string,
+  fs: ProjectFileReader
+): Promise<NoteFolderRef[]> {
+  const folders: NoteFolderRef[] = [];
+
+  async function walk(currentPath: string): Promise<void> {
+    const entries = await readSortedDir(currentPath, fs);
+    for (const entry of entries) {
+      if (!entry.isDirectory || entry.name.startsWith(".")) {
+        continue;
+      }
+      const entryPath = joinPath(currentPath, entry.name);
+      const relative = relativePath(root, entryPath);
+      const folderPath = relative.startsWith("notes/")
+        ? relative.slice("notes/".length).split("/").filter(Boolean)
+        : [];
+      folders.push({
+        kind: "note-folder",
+        path: relative,
+        name: entry.name,
+        folderPath,
+      });
+      await walk(entryPath);
+    }
+  }
+
+  await walk(notesPath);
+  return folders.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 async function collectMarkdownFiles(rootPath: string, fs: ProjectFileReader): Promise<string[]> {

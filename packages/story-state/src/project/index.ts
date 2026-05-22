@@ -5,6 +5,7 @@ import {
   type ChapterRef,
   type ClarosBlockRef,
   type NoteFrontmatter,
+  type NoteFolderRef,
   type NoteRef,
   type ProjectFormatSnapshot,
   type ProjectManifest,
@@ -62,6 +63,7 @@ export interface ProjectIndex {
   listChapters(): ChapterRef[];
   listScenes(): SceneRef[];
   listNotes(): NoteRef[];
+  listNoteFolders(): NoteFolderRef[];
   listClarosBlocks(): ClarosBlockRef[];
   listMacroRuns(filter?: MacroRunFilter): MacroRunLedgerEntry[];
   resolveWikilink(target: string, from?: ProjectIndexDocumentRef): WikilinkResolution;
@@ -85,6 +87,7 @@ class InMemoryProjectIndexImpl implements ProjectIndex {
   private chaptersById = new Map<string, ChapterRef>();
   private scenesByPath = new Map<string, SceneRef>();
   private notesByPath = new Map<string, NoteRef>();
+  private noteFoldersByPath = new Map<string, NoteFolderRef>();
   private wikilinksByPath = new Map<string, WikilinkRef[]>();
   private clarosBlocksByPath = new Map<string, ClarosBlockRef[]>();
   private runs: MacroRunLedgerEntry[] = [];
@@ -101,6 +104,9 @@ class InMemoryProjectIndexImpl implements ProjectIndex {
     this.chaptersById = new Map(snapshot.chapters.map((chapter) => [chapter.id, chapter]));
     this.scenesByPath = new Map(snapshot.scenes.map((scene) => [normalizePath(scene.path), scene]));
     this.notesByPath = new Map(snapshot.notes.map((note) => [normalizePath(note.path), note]));
+    this.noteFoldersByPath = new Map(
+      (snapshot.noteFolders ?? []).map((folder) => [normalizePath(folder.path), folder])
+    );
     this.wikilinksByPath = groupByPath(snapshot.wikilinks);
     this.clarosBlocksByPath = groupByPath(snapshot.clarosBlocks);
     this.runs = runs === undefined ? [] : [...runs];
@@ -170,6 +176,26 @@ class InMemoryProjectIndexImpl implements ProjectIndex {
     return [...this.notesByPath.values()].sort((left, right) =>
       left.path.localeCompare(right.path)
     );
+  }
+
+  listNoteFolders(): NoteFolderRef[] {
+    const folders = new Map(this.noteFoldersByPath);
+    for (const note of this.notesByPath.values()) {
+      const parts = normalizePath(note.path).slice("notes/".length).split("/").slice(0, -1);
+      for (let index = 0; index < parts.length; index += 1) {
+        const folderPath = parts.slice(0, index + 1);
+        const path = `notes/${folderPath.join("/")}`;
+        if (!folders.has(path)) {
+          folders.set(path, {
+            kind: "note-folder",
+            path,
+            name: folderPath.at(-1) ?? "",
+            folderPath,
+          });
+        }
+      }
+    }
+    return [...folders.values()].sort((left, right) => left.path.localeCompare(right.path));
   }
 
   listClarosBlocks(): ClarosBlockRef[] {

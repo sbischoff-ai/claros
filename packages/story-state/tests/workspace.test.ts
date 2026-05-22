@@ -234,6 +234,42 @@ describe("openProject", () => {
       "notes/characters/kareth.md",
       "notes/places/ancient-ruin.md",
     ]);
+    expect(project.listNoteFolders().map((folder) => folder.path)).toEqual([
+      "notes/characters",
+      "notes/places",
+    ]);
+  });
+
+  it("creates, moves, and deletes notes and note folders", async () => {
+    const root = await createProjectRoot();
+    const project = await openProject(root);
+
+    const { folder } = await project.createNoteFolder("Session Notes");
+    expect(folder.path).toBe("notes/session-notes");
+    expect(project.listNoteFolders().map((entry) => entry.path)).toContain("notes/session-notes");
+
+    const { note } = await project.createNote("Mysterious Stranger", {
+      folderPath: ["session-notes"],
+    });
+    expect(note.path).toBe("notes/session-notes/mysterious-stranger.md");
+    expect(await fs.readFile(path.join(root, note.path), "utf8")).toContain(
+      "# Mysterious Stranger"
+    );
+    expect(project.resolveWikilink("Mysterious Stranger")).toMatchObject({
+      status: "resolved",
+      path: note.path,
+    });
+
+    const moved = await project.moveNote(note.path, { targetFolderPath: ["characters"] });
+    expect(moved.note.path).toBe("notes/characters/mysterious-stranger.md");
+    await expect(fs.stat(path.join(root, note.path))).rejects.toThrow();
+    await expect(fs.stat(path.join(root, moved.note.path))).resolves.toBeDefined();
+
+    const { nextDocument } = await project.deleteNoteFolder("notes/session-notes");
+    expect(nextDocument?.path).toBe("notes/characters/kareth.md");
+    expect(project.listNoteFolders().map((entry) => entry.path)).not.toContain(
+      "notes/session-notes"
+    );
   });
 
   it("keeps Node and browser structural mutation results aligned", async () => {

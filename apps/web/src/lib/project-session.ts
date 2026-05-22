@@ -2,10 +2,12 @@ import { openProject as openBrowserProject } from "@claros/story-state/browser";
 import type {
   ChapterRef,
   ClarosProject,
+  LinkResolution,
   ManuscriptInsertionPlacement,
   MoveChapterOptions,
   MoveSceneOptions,
   MarkdownDocument,
+  NoteFolderRef,
   NoteRef,
   ProjectManifest,
   SceneRef,
@@ -49,6 +51,14 @@ export interface WorkspaceNote {
   folderPath: string[];
 }
 
+export interface WorkspaceNoteFolder {
+  kind: "note-folder";
+  id: string;
+  path: string;
+  title: string;
+  folderPath: string[];
+}
+
 export type WorkspaceDocumentRef = WorkspaceScene | WorkspaceNote | { path: string };
 
 export interface WorkspaceDocument {
@@ -64,6 +74,7 @@ export interface ProjectSession {
   listChapters(): WorkspaceChapter[];
   listScenes(): WorkspaceScene[];
   listNotes(): WorkspaceNote[];
+  listNoteFolders(): WorkspaceNoteFolder[];
   readDocument(ref: WorkspaceDocumentRef): Promise<WorkspaceDocument>;
   writeDocument(ref: WorkspaceDocumentRef, body: string): Promise<void>;
   setProjectTitle(title: string): Promise<void>;
@@ -87,6 +98,15 @@ export interface ProjectSession {
     scenePath: string,
     options: WorkspaceMoveSceneOptions
   ): Promise<WorkspaceMoveResult & { scene: WorkspaceScene }>;
+  createNote(title: string, options?: WorkspaceCreateNoteOptions): Promise<WorkspaceNote>;
+  createNoteFolder(
+    title: string,
+    options?: WorkspaceCreateNoteFolderOptions
+  ): Promise<WorkspaceNoteFolder>;
+  deleteNote(notePath: string): Promise<string>;
+  deleteNoteFolder(folderPath: string): Promise<string>;
+  moveNote(notePath: string, options: WorkspaceMoveNoteOptions): Promise<WorkspaceNote>;
+  resolveWikilink(link: string, fromPath?: string): WorkspaceLinkResolution;
 }
 
 export interface WorkspaceCreateSceneOptions {
@@ -97,6 +117,18 @@ export interface WorkspaceCreateSceneOptions {
 export interface WorkspaceCreateChapterOptions {
   placement?: ManuscriptInsertionPlacement;
   targetChapterId?: string;
+}
+
+export interface WorkspaceCreateNoteOptions {
+  folderPath?: string[];
+}
+
+export interface WorkspaceCreateNoteFolderOptions {
+  parentFolderPath?: string[];
+}
+
+export interface WorkspaceMoveNoteOptions {
+  targetFolderPath?: string[];
 }
 
 export type WorkspaceMoveChapterOptions = Omit<MoveChapterOptions, "targetChapter"> & {
@@ -113,10 +145,16 @@ export interface WorkspaceMoveResult {
   chapterIdMap: Record<string, string>;
 }
 
+export type WorkspaceLinkResolution =
+  | { status: "resolved"; path: string; reason: string }
+  | { status: "ambiguous"; candidates: WorkspaceNote[]; reason: string }
+  | { status: "unresolved" };
+
 interface ProjectSummary {
   manifest: WorkspaceManifest;
   chapters: WorkspaceChapter[];
   notes: WorkspaceNote[];
+  noteFolders: WorkspaceNoteFolder[];
 }
 
 export interface CompanionConnection {
@@ -220,6 +258,9 @@ function createProjectSession(project: ClarosProject): ProjectSession {
     },
     listNotes(): WorkspaceNote[] {
       return project.listNotes().map(toWorkspaceNote);
+    },
+    listNoteFolders(): WorkspaceNoteFolder[] {
+      return listProjectNoteFolders(project).map(toWorkspaceNoteFolder);
     },
     async readDocument(ref: WorkspaceDocumentRef): Promise<WorkspaceDocument> {
       const path = documentPath(ref);
@@ -332,6 +373,40 @@ function createProjectSession(project: ClarosProject): ProjectSession {
       });
       return { pathMap, chapterIdMap, scene: toWorkspaceScene(scene) };
     },
+    async createNote(title: string, options?: WorkspaceCreateNoteOptions): Promise<WorkspaceNote> {
+      const { note } = await project.createNote(title, { folderPath: options?.folderPath });
+      return toWorkspaceNote(note);
+    },
+    async createNoteFolder(
+      title: string,
+      options?: WorkspaceCreateNoteFolderOptions
+    ): Promise<WorkspaceNoteFolder> {
+      const { folder } = await project.createNoteFolder(title, {
+        parentFolderPath: options?.parentFolderPath,
+      });
+      return toWorkspaceNoteFolder(folder);
+    },
+    async deleteNote(notePath: string): Promise<string> {
+      const { nextDocument } = await project.deleteNote(notePath);
+      return nextDocument?.path ?? firstDocumentPath(this);
+    },
+    async deleteNoteFolder(folderPath: string): Promise<string> {
+      const { nextDocument } = await project.deleteNoteFolder(folderPath);
+      return nextDocument?.path ?? firstDocumentPath(this);
+    },
+    async moveNote(notePath: string, options: WorkspaceMoveNoteOptions): Promise<WorkspaceNote> {
+      const { note } = await project.moveNote(notePath, {
+        targetFolderPath: options.targetFolderPath,
+      });
+      return toWorkspaceNote(note);
+    },
+    resolveWikilink(link: string, fromPath?: string): WorkspaceLinkResolution {
+      const resolution = project.resolveWikilink(
+        link,
+        fromPath === undefined ? undefined : { path: fromPath }
+      );
+      return toWorkspaceLinkResolution(resolution);
+    },
   };
 }
 
@@ -353,6 +428,12 @@ function createCompanionProjectSession(
     },
     listNotes(): WorkspaceNote[] {
       return summary.notes.map((note) => ({ ...note, folderPath: [...note.folderPath] }));
+    },
+    listNoteFolders(): WorkspaceNoteFolder[] {
+      return summary.noteFolders.map((folder) => ({
+        ...folder,
+        folderPath: [...folder.folderPath],
+      }));
     },
     async readDocument(ref: WorkspaceDocumentRef): Promise<WorkspaceDocument> {
       const path = documentPath(ref);
@@ -515,6 +596,69 @@ function createCompanionProjectSession(
         scene: sceneFromMutationResponse(response),
       };
     },
+    async createNote(title: string, options?: WorkspaceCreateNoteOptions): Promise<WorkspaceNote> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create-note",
+          title,
+          folderPath: options?.folderPath,
+        }),
+      });
+      summary = projectFromResponse(response);
+      return noteFromMutationResponse(response);
+    },
+    async createNoteFolder(
+      title: string,
+      options?: WorkspaceCreateNoteFolderOptions
+    ): Promise<WorkspaceNoteFolder> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create-note-folder",
+          title,
+          parentFolderPath: options?.parentFolderPath,
+        }),
+      });
+      summary = projectFromResponse(response);
+      return noteFolderFromMutationResponse(response);
+    },
+    async deleteNote(notePath: string): Promise<string> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete-note", path: notePath }),
+      });
+      summary = projectFromResponse(response);
+      return nextPathFromMutationResponse(response) ?? firstDocumentPath(this);
+    },
+    async deleteNoteFolder(folderPath: string): Promise<string> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete-note-folder", folderPath }),
+      });
+      summary = projectFromResponse(response);
+      return nextPathFromMutationResponse(response) ?? firstDocumentPath(this);
+    },
+    async moveNote(notePath: string, options: WorkspaceMoveNoteOptions): Promise<WorkspaceNote> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "move-note",
+          path: notePath,
+          targetFolderPath: options.targetFolderPath,
+        }),
+      });
+      summary = projectFromResponse(response);
+      return noteFromMutationResponse(response);
+    },
+    resolveWikilink(_link: string, _fromPath?: string): WorkspaceLinkResolution {
+      return { status: "unresolved" };
+    },
   };
 }
 
@@ -640,6 +784,20 @@ function moveResultFromMutationResponse(response: unknown): WorkspaceMoveResult 
   };
 }
 
+function noteFromMutationResponse(response: unknown): WorkspaceNote {
+  if (!isRecord(response) || !isRecord(response.note)) {
+    throw new Error("Companion response did not include a note");
+  }
+  return normalizeWorkspaceNote(response.note);
+}
+
+function noteFolderFromMutationResponse(response: unknown): WorkspaceNoteFolder {
+  if (!isRecord(response) || !isRecord(response.noteFolder)) {
+    throw new Error("Companion response did not include a note folder");
+  }
+  return normalizeWorkspaceNoteFolder(response.noteFolder);
+}
+
 function stringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) {
     return {};
@@ -662,6 +820,9 @@ function normalizeProjectSummary(value: unknown): ProjectSummary {
     },
     chapters: value.chapters.map(normalizeWorkspaceChapter),
     notes: Array.isArray(value.notes) ? value.notes.map(normalizeWorkspaceNote) : [],
+    noteFolders: Array.isArray(value.noteFolders)
+      ? value.noteFolders.map(normalizeWorkspaceNoteFolder)
+      : [],
   };
 }
 
@@ -707,6 +868,21 @@ function normalizeWorkspaceNote(value: unknown): WorkspaceNote {
     id: value.id,
     path: value.path,
     title: typeof value.title === "string" ? value.title : value.path,
+    folderPath: Array.isArray(value.folderPath)
+      ? value.folderPath.filter((part): part is string => typeof part === "string")
+      : [],
+  };
+}
+
+function normalizeWorkspaceNoteFolder(value: unknown): WorkspaceNoteFolder {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.path !== "string") {
+    throw new Error("Companion returned an invalid note folder");
+  }
+  return {
+    kind: "note-folder",
+    id: value.id,
+    path: value.path,
+    title: typeof value.title === "string" ? value.title : titleFromSlug(value.id),
     folderPath: Array.isArray(value.folderPath)
       ? value.folderPath.filter((part): part is string => typeof part === "string")
       : [],
@@ -769,6 +945,53 @@ function toWorkspaceNote(note: NoteRef): WorkspaceNote {
       ? note.path.slice("notes/".length).split("/").slice(0, -1)
       : [],
   };
+}
+
+function toWorkspaceNoteFolder(folder: NoteFolderRef): WorkspaceNoteFolder {
+  return {
+    kind: "note-folder",
+    id: folder.path,
+    path: folder.path,
+    title: titleFromSlug(folder.name),
+    folderPath: [...folder.folderPath],
+  };
+}
+
+function listProjectNoteFolders(project: ClarosProject): NoteFolderRef[] {
+  if ("listNoteFolders" in project && typeof project.listNoteFolders === "function") {
+    return project.listNoteFolders();
+  }
+  const folders = new Map<string, NoteFolderRef>();
+  for (const note of project.listNotes()) {
+    const parts = note.path.startsWith("notes/")
+      ? note.path.slice("notes/".length).split("/").slice(0, -1)
+      : [];
+    for (let index = 0; index < parts.length; index += 1) {
+      const folderPath = parts.slice(0, index + 1);
+      const path = `notes/${folderPath.join("/")}`;
+      folders.set(path, {
+        kind: "note-folder",
+        path,
+        name: folderPath.at(-1) ?? "",
+        folderPath,
+      });
+    }
+  }
+  return [...folders.values()].sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function toWorkspaceLinkResolution(resolution: LinkResolution): WorkspaceLinkResolution {
+  if (resolution.status === "resolved") {
+    return { status: "resolved", path: resolution.path, reason: resolution.reason };
+  }
+  if (resolution.status === "ambiguous") {
+    return {
+      status: "ambiguous",
+      reason: resolution.reason,
+      candidates: resolution.candidates.map(toWorkspaceNote),
+    };
+  }
+  return { status: "unresolved" };
 }
 
 function toWorkspaceDocument(
@@ -837,6 +1060,10 @@ function cloneSummary(summary: ProjectSummary): ProjectSummary {
       scenes: chapter.scenes.map((scene) => ({ ...scene })),
     })),
     notes: summary.notes.map((note) => ({ ...note, folderPath: [...note.folderPath] })),
+    noteFolders: summary.noteFolders.map((folder) => ({
+      ...folder,
+      folderPath: [...folder.folderPath],
+    })),
   };
 }
 

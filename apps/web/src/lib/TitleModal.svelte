@@ -24,12 +24,21 @@
   <section class="modal" aria-label={state.heading}>
     <h2>{state.heading}</h2>
     <form on:submit|preventDefault={submit}>
-      <input
-        bind:this={input}
-        bind:value={state.value}
-        placeholder={state.placeholder}
-        aria-label={state.heading}
-      />
+      {#if state.folderOptions !== undefined}
+        <select bind:value={state.selectedFolderPath} aria-label="Folder">
+          {#each state.folderOptions as folder}
+            <option value={folder.folderPath.join("/")}>{folder.label}</option>
+          {/each}
+        </select>
+      {/if}
+      {#if state.hideValueInput !== true}
+        <input
+          bind:this={input}
+          bind:value={state.value}
+          placeholder={state.placeholder}
+          aria-label={state.heading}
+        />
+      {/if}
       <div class="modal-actions">
         <button type="button" on:click={close}>Cancel</button>
         <button type="submit">Save</button>

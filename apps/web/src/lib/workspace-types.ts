@@ -18,9 +18,12 @@ export type TitleModalTarget =
   | "new-chapter"
   | "new-chapter-scene"
   | "new-scene"
+  | "new-note"
+  | "new-note-folder"
+  | "move-note"
   | "chapter"
   | "scene";
-export type DeleteModalTarget = "chapter" | "scene";
+export type DeleteModalTarget = "chapter" | "scene" | "note" | "note-folder";
 export type WorkspaceFocusTarget =
   | { region: "editor"; path: string; cursor: number }
   | { region: "sidebar"; itemId: string };
@@ -48,6 +51,7 @@ export interface SidebarItem {
   collapsible: boolean;
   collapsed: boolean;
   path?: string;
+  folderPath?: string[];
   chapterId?: string;
 }
 
@@ -60,6 +64,11 @@ export interface TitleModalState {
   chapterTitle?: string;
   chapterId?: string;
   scenePath?: string;
+  notePath?: string;
+  folderPath?: string[];
+  selectedFolderPath?: string;
+  folderOptions?: Array<{ label: string; folderPath: string[] }>;
+  hideValueInput?: boolean;
   createPlacement?: ManuscriptInsertionPlacement;
   targetChapterId?: string;
   targetScenePath?: string;
@@ -72,6 +81,8 @@ export interface DeleteModalState {
   label: string;
   chapterId?: string;
   scenePath?: string;
+  notePath?: string;
+  folderPath?: string[];
   confirmation: string;
 }
 
