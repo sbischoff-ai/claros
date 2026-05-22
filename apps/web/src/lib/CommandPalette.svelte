@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { PaletteCommand } from "./workspace-types";
 
-  export let commandInput: HTMLInputElement;
+  export let commandInput: HTMLInputElement | undefined;
   export let commands: PaletteCommand[] = [];
   export let query = "";
   export let selectedIndex = 0;

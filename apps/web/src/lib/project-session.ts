@@ -9,7 +9,7 @@ import type {
   NoteRef,
   ProjectManifest,
   SceneRef,
-} from "@claros/story-state";
+} from "@claros/story-state/browser";
 import { BrowserProjectFileSystem, type DirectoryHandle } from "./browser-file-system";
 
 export const COMPANION_STORAGE_KEY = "claros.web.localCompanion.v1";

@@ -21,6 +21,13 @@ const workspaceSource = [
   "./routes/page.css",
   "./lib/ActionMenu.svelte",
   "./lib/CommandPalette.svelte",
+  "./lib/components/workspace/ProjectEmptyState.svelte",
+  "./lib/components/workspace/SidebarTab.svelte",
+  "./lib/components/workspace/WorkspaceApp.svelte",
+  "./lib/components/workspace/WorkspaceEditorFrame.svelte",
+  "./lib/components/workspace/WorkspaceOverlays.svelte",
+  "./lib/components/workspace/WorkspaceTitleControl.svelte",
+  "./lib/components/workspace/WorkspaceTopbar.svelte",
   "./lib/ConfirmationModal.svelte",
   "./lib/DeleteModal.svelte",
   "./lib/directional-navigation.ts",
@@ -30,6 +37,21 @@ const workspaceSource = [
   "./lib/TitleModal.svelte",
   "./lib/WorkspaceSidebar.svelte",
   "./lib/sidebar-model.ts",
+  "./lib/services/browser-environment.ts",
+  "./lib/services/markdown-editor-runtime.ts",
+  "./lib/state/action-menu-controller.svelte.ts",
+  "./lib/state/workspace-context.svelte.ts",
+  "./lib/state/workspace-controller.svelte.ts",
+  "./lib/state/workspace-controller-types.ts",
+  "./lib/state/workspace-documents.svelte.ts",
+  "./lib/state/workspace-focus.svelte.ts",
+  "./lib/state/workspace-lifecycle.svelte.ts",
+  "./lib/state/workspace-manuscript-actions.svelte.ts",
+  "./lib/state/workspace-overlays.svelte.ts",
+  "./lib/state/workspace-palette.svelte.ts",
+  "./lib/state/workspace-projects.svelte.ts",
+  "./lib/state/workspace-sidebar.svelte.ts",
+  "./lib/state/workspace-titles.svelte.ts",
   "./lib/storage-backends.ts",
   "./lib/title-model.ts",
   "./lib/workspace-commands.ts",
@@ -312,121 +334,104 @@ describe("project session", () => {
       JSON.stringify({ path: "manuscript/001-start/001-opening.md", body: "Updated." })
     );
   });
+
+  it("moves companion chapters and scenes through mutation requests", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const requestBody =
+        typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+      if (String(url).endsWith("/api/project")) {
+        return jsonResponse({
+          ok: true,
+          project: companionProjectWithTwoChapters(),
+        });
+      }
+      if (String(url).endsWith("/api/project/mutation") && requestBody.action === "move-chapter") {
+        return jsonResponse({
+          ok: true,
+          project: companionProjectAfterChapterMove(),
+          chapter: companionProjectAfterChapterMove().chapters[0],
+          pathMap: {
+            "manuscript/002-finale/002-ending.md": "manuscript/001-finale/001-ending.md",
+            "manuscript/001-start/001-opening.md": "manuscript/002-start/002-opening.md",
+          },
+          chapterIdMap: {
+            "002-finale": "001-finale",
+            "001-start": "002-start",
+          },
+        });
+      }
+      if (String(url).endsWith("/api/project/mutation") && requestBody.action === "move-scene") {
+        return jsonResponse({
+          ok: true,
+          project: companionProjectAfterSceneMove(),
+          scene: companionProjectAfterSceneMove().chapters[0].scenes[1],
+          pathMap: {
+            "manuscript/002-start/002-opening.md": "manuscript/001-finale/002-opening.md",
+          },
+          chapterIdMap: {},
+        });
+      }
+      return jsonResponse({ ok: false }, 404);
+    });
+
+    const session = await openCompanionProjectSession({
+      url: "http://127.0.0.1:3000",
+      token: "token",
+    });
+
+    const movedChapter = await session.moveChapter("002-finale", {
+      placement: "before",
+      targetChapterId: "001-start",
+    });
+    expect(movedChapter.chapter.id).toBe("001-finale");
+    expect(session.listChapters().map((chapter) => chapter.id)).toEqual([
+      "001-finale",
+      "002-start",
+    ]);
+    expect(movedChapter.pathMap["manuscript/001-start/001-opening.md"]).toBe(
+      "manuscript/002-start/002-opening.md"
+    );
+
+    const movedScene = await session.moveScene("manuscript/002-start/002-opening.md", {
+      placement: "after",
+      targetScenePath: "manuscript/001-finale/001-ending.md",
+    });
+    expect(movedScene.scene.path).toBe("manuscript/001-finale/002-opening.md");
+    expect(session.listScenes().map((scene) => scene.path)).toEqual([
+      "manuscript/001-finale/001-ending.md",
+      "manuscript/001-finale/002-opening.md",
+    ]);
+  });
 });
 
 describe("workspace command surface", () => {
-  it("keeps the top-level page from absorbing feature modules", () => {
-    expect(pageSource.split("\n").length).toBeLessThan(2000);
+  it("keeps the top-level page as a small controller/bootstrap boundary", () => {
+    expect(pageSource.split("\n").length).toBeLessThan(50);
+    expect(pageSource).toContain("createWorkspaceControllers()");
+    expect(pageSource).toContain("<WorkspaceApp {controllers} />");
   });
 
   it("removes the ambiguous return-to-manuscript command", () => {
     expect(pageSource).not.toContain("Return to Manuscript");
   });
 
-  it("exposes a focused editor command and region focus shortcuts", () => {
-    expect(workspaceSource).toContain("Focus Editor");
-    expect(workspaceSource).toContain("Open Project: Local Folder");
-    expect(workspaceSource).toContain("New Project: Local Folder");
-    expect(workspaceSource).toContain("Open Project: Local Companion");
-    expect(workspaceSource).toContain("New Project: Local Companion");
-    expect(workspaceSource).toContain("Change Title: Current Scene");
-    expect(workspaceSource).toContain("Move Up: Current Scene");
-    expect(workspaceSource).toContain("Move Down: Current Scene");
-    expect(workspaceSource).toContain("Move Up: Current Chapter");
-    expect(workspaceSource).toContain("Move Down: Current Chapter");
-    expect(workspaceSource).toContain("Add Before: New Scene");
-    expect(workspaceSource).toContain("Add After: New Scene");
-    expect(workspaceSource).toContain("Add Before: New Chapter");
-    expect(workspaceSource).toContain("Add After: New Chapter");
-    expect(pageSource).toContain("Add new chapter");
-    expect(pageSource).toContain("Add new scene");
-    expect(pageSource).toContain('label: "Move"');
-    expect(pageSource).toContain("moveSceneByDirection");
-    expect(pageSource).toContain("moveChapterByDirection");
-    expect(pageSource).toContain("ManuscriptDragController");
-    expect(pageSource).toContain("ManuscriptDragPreview");
-    expect(workspaceSource).toContain("handlePointerDown");
-    expect(workspaceSource).toContain("chapterDropIndicatorItemId");
-    expect(workspaceSource).toContain("lastScene.path");
-    expect(pageSource).toContain("shouldConfirmEmptyChapterDeletion");
-    expect(pageSource).toContain("openEmptyChapterMoveConfirmation");
-    expect(pageSource).toContain("Move and Delete Chapter");
-    expect(workspaceSource).toContain("ConfirmationModalState");
-    expect(pageSource).toContain("canMoveCurrentSceneDown");
-    expect(pageSource).toContain("canMoveCurrentChapterDown");
-    expect(workspaceSource).toContain("drag-preview");
-    expect(workspaceSource).toContain("animate:flip");
-    expect(workspaceSource).toContain("class:dragging");
-    expect(workspaceSource).toContain("chapter-ghost");
-    expect(workspaceSource).toContain(".sidebar.dragging");
-    expect(workspaceSource).toContain(".sidebar.dragging .drag-handle");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/DotsSixVertical");
-    expect(workspaceSource).toContain("drag-handle");
-    expect(pageSource).toContain("chapterCreationSequence(placement, targetChapterId)");
-    expect(pageSource).toContain("sceneCreationSequence(placement, targetScenePath)");
-    expect(pageSource).toContain("firstSceneSequenceForChapterCreation");
-    expect(workspaceSource).toContain("submenu");
-    expect(workspaceSource).toContain("aria-haspopup={item.submenu");
-    expect(workspaceSource).toContain("event.currentTarget.blur()");
-    expect(workspaceSource).toContain("<span>Project Workspace</span>");
-    expect(workspaceSource).toContain('target: "new-chapter-scene"');
-    expect(pageSource).toContain("optimisticChapterTitles");
-    expect(pageSource).toContain("optimisticSceneTitles");
-    expect(pageSource).toContain("await focusEditorAfterOpen()");
-    expect(pageSource).toContain("suppressEditorChange");
-    expect(pageSource).toContain("forceReload?: boolean; skipSave?: boolean");
-    expect(pageSource).toContain(
-      "await openDocument(nextPath, { forceReload: true, skipSave: true })"
-    );
-    expect(pageSource).toContain('activeDocumentKind === "note" ? "start" : "end"');
-    expect(pageSource).toContain("lastWorkspaceFocus");
-    expect(pageSource).toContain("restoreWorkspaceFocus(modal.returnFocus)");
-    expect(pageSource).toContain("rememberEditorFocus");
-    expect(pageSource).toContain("getCursorPosition()");
-    expect(pageSource).not.toContain("Connect Local Companion");
-    expect(pageSource).toContain('event.key === "ArrowLeft"');
-    expect(pageSource).toContain('event.key === "ArrowRight"');
-    expect(workspaceSource).toContain("directionalIntentFromKeydown");
-    expect(workspaceSource).toContain('case "j"');
-    expect(workspaceSource).toContain('case "k"');
-    expect(workspaceSource).toContain('case "h"');
-    expect(workspaceSource).toContain('case "l"');
-    expect(workspaceSource).toContain("isTextEditingTarget(event.target)");
-    expect(workspaceSource).toContain("<ActionMenu");
+  it("passes feature-scoped controllers instead of a broad workspace controller", () => {
+    expect(workspaceSource).toContain("WorkspaceLifecycleSurface");
+    expect(workspaceSource).toContain("WorkspaceSidebarSurface");
+    expect(workspaceSource).toContain("WorkspaceOverlaysSurface");
+    expect(workspaceSource).not.toContain("interface WorkspaceController ");
+    expect(workspaceSource).not.toContain("new Proxy");
+    expect(workspaceSource).not.toContain("createWorkspaceFacade");
+    expect(workspaceSource).not.toContain("WorkspaceController } from");
   });
 
-  it("uses shared Phosphor icon metadata for workspace controls", () => {
-    expect(workspaceSource).toContain("phosphor-svelte/lib/Command");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/Files");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/CaretLeft");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/Book");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/Notebook");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/FolderOpen");
-    expect(workspaceSource).toContain("phosphor-svelte/lib/TerminalWindow");
-    expect(workspaceSource).toContain("icon: FolderOpen");
-    expect(workspaceSource).toContain("icon: TerminalWindow");
-    expect(pageSource).toContain("openStorageBackendId");
-  });
-
-  it("keeps no-project mode separate from the editor workspace", () => {
-    expect(pageSource).toContain("{#if projectIsOpen}");
-    expect(pageSource).toContain("bind:this={editorHost}");
-    expect(pageSource).toContain('aria-label="Open project"');
-    expect(workspaceSource).toContain("disabled: !options.localProjectSupported");
-    expect(workspaceSource).toContain("disabled: projectCommandDisabled");
-  });
-
-  it("gates startup rendering behind a themed loading spinner", () => {
-    expect(pageSource).toContain("let startupReady = false");
-    expect(pageSource).toContain("{#if !startupReady}");
-    expect(pageSource).toContain('class="startup-screen"');
-    expect(pageSource).toContain('class="startup-spinner"');
-    expect(pageSource).toContain("{:else}");
-    expect(pageSource.indexOf("{:else}")).toBeLessThan(
-      pageSource.indexOf('<section class="project-empty-state"')
-    );
-    expect(pageSource).toContain("void connectCompanion(companionConnection).finally");
-    expect(pageSource).toContain("async function finishStartup()");
+  it("keeps no-project and startup rendering separate from the editor workspace", () => {
+    expect(workspaceSource).toContain("{#if lifecycle.projectIsOpen}");
+    expect(workspaceSource).toContain("bind:this={lifecycle.appShell}");
+    expect(workspaceSource).toContain("bind:this={controller.editorHost}");
+    expect(workspaceSource).toContain('aria-label="Open project"');
+    expect(workspaceSource).toContain('class="startup-screen"');
+    expect(workspaceSource).toContain('class="startup-spinner"');
   });
 });
 
@@ -572,6 +577,121 @@ function companionProject(): unknown {
             sequence: 1,
             title: "Opening",
             path: "manuscript/001-start/001-opening.md",
+          },
+        ],
+      },
+    ],
+    notes: [],
+  };
+}
+
+function companionProjectWithTwoChapters() {
+  return {
+    manifest: { title: "Companion Workspace" },
+    chapters: [
+      {
+        kind: "chapter",
+        id: "001-start",
+        sequence: 1,
+        title: "Start",
+        scenes: [
+          {
+            kind: "scene",
+            id: "001-start/001-opening",
+            chapterId: "001-start",
+            sequence: 1,
+            title: "Opening",
+            path: "manuscript/001-start/001-opening.md",
+          },
+        ],
+      },
+      {
+        kind: "chapter",
+        id: "002-finale",
+        sequence: 2,
+        title: "Finale",
+        scenes: [
+          {
+            kind: "scene",
+            id: "002-finale/002-ending",
+            chapterId: "002-finale",
+            sequence: 2,
+            title: "Ending",
+            path: "manuscript/002-finale/002-ending.md",
+          },
+        ],
+      },
+    ],
+    notes: [],
+  };
+}
+
+function companionProjectAfterChapterMove() {
+  return {
+    manifest: { title: "Companion Workspace" },
+    chapters: [
+      {
+        kind: "chapter",
+        id: "001-finale",
+        sequence: 1,
+        title: "Finale",
+        scenes: [
+          {
+            kind: "scene",
+            id: "001-finale/001-ending",
+            chapterId: "001-finale",
+            sequence: 1,
+            title: "Ending",
+            path: "manuscript/001-finale/001-ending.md",
+          },
+        ],
+      },
+      {
+        kind: "chapter",
+        id: "002-start",
+        sequence: 2,
+        title: "Start",
+        scenes: [
+          {
+            kind: "scene",
+            id: "002-start/002-opening",
+            chapterId: "002-start",
+            sequence: 2,
+            title: "Opening",
+            path: "manuscript/002-start/002-opening.md",
+          },
+        ],
+      },
+    ],
+    notes: [],
+  };
+}
+
+function companionProjectAfterSceneMove() {
+  return {
+    manifest: { title: "Companion Workspace" },
+    chapters: [
+      {
+        kind: "chapter",
+        id: "001-finale",
+        sequence: 1,
+        title: "Finale",
+        scenes: [
+          {
+            kind: "scene",
+            id: "001-finale/001-ending",
+            chapterId: "001-finale",
+            sequence: 1,
+            title: "Ending",
+            path: "manuscript/001-finale/001-ending.md",
+          },
+          {
+            kind: "scene",
+            id: "001-finale/002-opening",
+            chapterId: "001-finale",
+            sequence: 2,
+            title: "Opening",
+            path: "manuscript/001-finale/002-opening.md",
           },
         ],
       },

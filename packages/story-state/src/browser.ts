@@ -52,6 +52,48 @@ import type {
   MacroRunRoll,
 } from "./runs/types.js";
 
+export type {
+  ChapterRef,
+  ClarosBlockRef,
+  MarkdownDocument,
+  NoteRef,
+  ProjectDirEntry,
+  ProjectFileReader,
+  ProjectFileStat,
+  ProjectFileWriter,
+  ProjectManifest,
+  SceneFrontmatter,
+  SceneRef,
+  SourceRange,
+  WikilinkRef,
+} from "@claros/story-format/browser";
+
+export type {
+  CheckpointOptions,
+  CheckpointRef,
+  CheckpointStatus,
+  ClarosProject,
+  CreateChapterOptions,
+  CreateSceneOptions,
+  DocumentRef,
+  HistoryOptions,
+  LinkRef,
+  LinkResolution,
+  ManuscriptInsertionPlacement,
+  ManuscriptMoveResult,
+  MoveChapterOptions,
+  MoveSceneOptions,
+  MutationResult,
+  ProjectExecuteMacroInDocumentOptions,
+  RestoreCheckpointOptions,
+  SearchOptions,
+  SearchResult,
+  SetFrontmatterPathOptions,
+  StructuralMutationPlan,
+  TimelineRef,
+  WriteDocumentOptions,
+} from "./project/workspace.js";
+
 export interface BrowserOpenProjectOptions {
   fileReader: ProjectFileReader;
   fileWriter: ProjectFileWriter;
