@@ -9,6 +9,7 @@ import {
 export interface MarkdownEditorRuntimeOptions {
   parent: HTMLDivElement;
   doc: string;
+  documentId: string;
   vimMode: boolean;
   theme: ClarosThemeId;
   wikilinks?: MarkdownWikilinkOptions;
@@ -43,8 +44,8 @@ export class MarkdownEditorRuntime {
     this.editor?.setVimMode(enabled);
   }
 
-  setMarkdown(markdown: string, cursor: "start" | "end"): void {
-    this.editor?.setMarkdown(markdown, { cursor });
+  setMarkdown(markdown: string, cursor: "start" | "end", documentId: string): void {
+    this.editor?.setMarkdown(markdown, { cursor, documentId });
   }
 
   focus(options?: { cursor?: "start" | "end" | number }): void {

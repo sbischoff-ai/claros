@@ -84,6 +84,12 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
   markdown = "";
   vimMode = false;
   theme: ClarosThemeId = "default-light";
+  documentId = "";
+  readonly setMarkdownCalls: Array<{
+    markdown: string;
+    cursor: "start" | "end";
+    documentId: string;
+  }> = [];
   focusedWith: { cursor?: "start" | "end" | number } | undefined;
   appliedThemes: Array<{ element: HTMLElement; theme: ClarosThemeId }> = [];
   wikilinks: MarkdownEditorRuntimeOptions["wikilinks"] | undefined;
@@ -100,6 +106,7 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
   override ensure(options: MarkdownEditorRuntimeOptions): void {
     this.ensured = true;
     this.markdown = options.doc;
+    this.documentId = options.documentId;
     this.vimMode = options.vimMode;
     this.theme = options.theme;
     this.wikilinks = options.wikilinks;
@@ -114,8 +121,10 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
     this.vimMode = enabled;
   }
 
-  override setMarkdown(markdown: string, _cursor: "start" | "end"): void {
+  override setMarkdown(markdown: string, cursor: "start" | "end", documentId: string): void {
     this.markdown = markdown;
+    this.documentId = documentId;
+    this.setMarkdownCalls.push({ markdown, cursor, documentId });
   }
 
   override focus(options?: { cursor?: "start" | "end" | number }): void {

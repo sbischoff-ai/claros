@@ -32,7 +32,31 @@ describe("workspace controllers", () => {
     expect(controllers.sidebar.items.map((item) => item.label)).toContain("Opening");
     expect(editorRuntime.ensured).toBe(true);
     expect(editorRuntime.markdown).toBe("\nStart.");
+    expect(editorRuntime.documentId).toBe("manuscript/001-start/001-opening.md");
     expect(editorRuntime.focusedWith).toEqual({ cursor: "end" });
+  });
+
+  it("uses the active document path as the editor history scope when opening documents", async () => {
+    const editorRuntime = new FakeMarkdownEditorRuntime();
+    const controllers = createWorkspaceControllers(new FakeBrowserEnvironment(), editorRuntime);
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+    const secondScene = controllers.sidebar.items.find((item) => item.label === "Second");
+
+    expect(secondScene).toBeDefined();
+    controllers.sidebar.handleItemClick(secondScene!);
+    await vi.waitFor(() => {
+      expect(controllers.sidebar.activePath).toBe("manuscript/001-start/002-second.md");
+    });
+
+    expect(editorRuntime.documentId).toBe("manuscript/001-start/002-second.md");
+    expect(editorRuntime.setMarkdownCalls.at(-1)).toEqual({
+      markdown: "\nSecond.",
+      cursor: "end",
+      documentId: "manuscript/001-start/002-second.md",
+    });
   });
 
   it("saves editor changes through the active project document", async () => {

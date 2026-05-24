@@ -30,6 +30,7 @@ export class WorkspaceDocuments {
     this.ctx.editorRuntime.ensure({
       parent: this.ctx.editorHost,
       doc: this.ctx.currentMarkdown,
+      documentId: this.ctx.activePath,
       vimMode: this.ctx.vimMode,
       theme: this.ctx.activeTheme,
       wikilinks: this.wikilinkOptions(),
@@ -76,7 +77,11 @@ export class WorkspaceDocuments {
   setEditorMarkdown(markdown: string): void {
     this.ctx.suppressEditorChange = true;
     try {
-      this.ctx.editorRuntime.setMarkdown(markdown, this.defaultCursorForActiveDocument());
+      this.ctx.editorRuntime.setMarkdown(
+        markdown,
+        this.defaultCursorForActiveDocument(),
+        this.ctx.activePath
+      );
     } finally {
       this.ctx.suppressEditorChange = false;
     }
