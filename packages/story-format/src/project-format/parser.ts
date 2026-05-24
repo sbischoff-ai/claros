@@ -100,6 +100,56 @@ export function parseMarkdownDocument(path: string, raw: string): MarkdownDocume
   };
 }
 
+export function parseSceneRefFromMarkdown(path: string, raw: string): SceneRef | undefined {
+  const normalized = normalizePath(path);
+  const parts = normalized.split("/");
+  if (parts.length !== 3 || parts[0] !== "manuscript" || !parts[2].toLowerCase().endsWith(".md")) {
+    return undefined;
+  }
+
+  const chapterId = parts[1];
+  const filename = parts[2];
+  const match = SCENE_FILE_RE.exec(filename);
+  if (match === null) {
+    return undefined;
+  }
+
+  const document = parseMarkdownDocument(normalized, raw);
+  const frontmatter = (document.frontmatter ?? {}) as SceneFrontmatter;
+  const sceneStem = filename.slice(0, -3);
+
+  return {
+    kind: "scene",
+    id: `${chapterId}/${sceneStem}`,
+    path: normalized,
+    chapterId,
+    sequence: Number.parseInt(match[1], 10),
+    slug: match[2],
+    title: typeof frontmatter.title === "string" ? frontmatter.title : undefined,
+    frontmatter,
+  };
+}
+
+export function parseNoteRefFromMarkdown(path: string, raw: string): NoteRef | undefined {
+  const normalized = normalizePath(path);
+  if (!normalized.startsWith("notes/") || !normalized.toLowerCase().endsWith(".md")) {
+    return undefined;
+  }
+
+  const document = parseMarkdownDocument(normalized, raw);
+  const frontmatter = (document.frontmatter ?? {}) as NoteFrontmatter;
+
+  return {
+    kind: "note",
+    path: normalized,
+    slug: basenameWithoutExtension(normalized),
+    title: typeof frontmatter.title === "string" ? frontmatter.title : undefined,
+    aliases: normalizeStringList(frontmatter.aliases),
+    tags: normalizeStringList(frontmatter.tags),
+    frontmatter,
+  };
+}
+
 export function extractWikilinks(path: string, raw: string): WikilinkRef[] {
   const lineStarts = buildLineStarts(raw);
   const wikilinks: WikilinkRef[] = [];
@@ -294,22 +344,16 @@ async function scanScenes(
 
       const raw = await fs.readFile(scenePath);
       const relative = relativePath(root, scenePath);
-      const document = parseMarkdownDocument(relative, raw);
-      const frontmatter = (document.frontmatter ?? {}) as SceneFrontmatter;
-      const sceneStem = entry.name.slice(0, -3);
+      const scene = parseSceneRefFromMarkdown(relative, raw);
+      if (scene === undefined) {
+        throw new ProjectFormatError(
+          `Scene files must match <sequence>-<kebab-slug>.md: ${relativePath(root, scenePath)}`
+        );
+      }
 
-      scenes.push({
-        kind: "scene",
-        id: `${chapter.id}/${sceneStem}`,
-        path: relative,
-        chapterId: chapter.id,
-        sequence: Number.parseInt(match[1], 10),
-        slug: match[2],
-        title: typeof frontmatter.title === "string" ? frontmatter.title : undefined,
-        frontmatter,
-      });
+      scenes.push(scene);
 
-      markdownFiles.push({ path: relative, raw, document });
+      markdownFiles.push({ path: relative, raw, document: parseMarkdownDocument(relative, raw) });
     }
   }
 
@@ -339,20 +383,13 @@ async function scanNotes(
   for (const absolutePath of noteFiles) {
     const raw = await fs.readFile(absolutePath);
     const relative = relativePath(root, absolutePath);
-    const document = parseMarkdownDocument(relative, raw);
-    const frontmatter = (document.frontmatter ?? {}) as NoteFrontmatter;
+    const note = parseNoteRefFromMarkdown(relative, raw);
+    if (note === undefined) {
+      continue;
+    }
 
-    notes.push({
-      kind: "note",
-      path: relative,
-      slug: basenameWithoutExtension(relative),
-      title: typeof frontmatter.title === "string" ? frontmatter.title : undefined,
-      aliases: normalizeStringList(frontmatter.aliases),
-      tags: normalizeStringList(frontmatter.tags),
-      frontmatter,
-    });
-
-    markdownFiles.push({ path: relative, raw, document });
+    notes.push(note);
+    markdownFiles.push({ path: relative, raw, document: parseMarkdownDocument(relative, raw) });
   }
 
   notes.sort((left, right) => left.path.localeCompare(right.path));

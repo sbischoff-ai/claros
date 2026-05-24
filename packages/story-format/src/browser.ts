@@ -30,6 +30,8 @@ export {
   ProjectFormatError,
   scanProjectFormat,
   parseMarkdownDocument,
+  parseNoteRefFromMarkdown,
+  parseSceneRefFromMarkdown,
   extractWikilinks,
   extractClarosBlocks,
   extractClarosRunId,

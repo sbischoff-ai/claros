@@ -76,6 +76,33 @@ export {
   extractWikilinks,
   replaceMarkdownBodyPreservingFrontmatter,
 } from "@claros/story-format/browser";
+export {
+  ProjectAlreadyExistsError,
+  initializeProjectFiles,
+  normalizedProjectTitle,
+} from "./project/initial-project.js";
+export {
+  summarizeWorkspaceProject,
+  titleFromSlug,
+  toWorkspaceChapter,
+  toWorkspaceDocument,
+  toWorkspaceLinkResolution,
+  toWorkspaceManifest,
+  toWorkspaceNote,
+  toWorkspaceNoteFolder,
+  toWorkspaceScene,
+} from "./project/presentation.js";
+export type {
+  WorkspaceChapter,
+  WorkspaceDocument,
+  WorkspaceDocumentRef,
+  WorkspaceLinkResolution,
+  WorkspaceManifest,
+  WorkspaceNote,
+  WorkspaceNoteFolder,
+  WorkspaceProjectSummary,
+  WorkspaceScene,
+} from "./project/presentation.js";
 
 export type {
   CheckpointOptions,
@@ -265,7 +292,7 @@ class BrowserClarosProject implements ClarosProject {
     const current = await this.readYamlObject("claros.yaml");
     await this.fileWriter.writeFileAtomic(
       toRootPath("claros.yaml"),
-      dump({ ...current, title: normalizedProjectTitle(title) }, { lineWidth: -1 })
+      dump({ ...current, title: normalizedBrowserProjectTitle(title) }, { lineWidth: -1 })
     );
     await this.rebuildIndex();
     return { kind: "metadata", changedPaths: ["claros.yaml"], indexUpdated: true };
@@ -621,7 +648,7 @@ function normalizeRelativePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
 }
 
-function normalizedProjectTitle(title: string): string {
+function normalizedBrowserProjectTitle(title: string): string {
   const normalized = title.trim();
   return normalized.length > 0 ? normalized : "Untitled Project";
 }

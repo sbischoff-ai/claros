@@ -44,6 +44,33 @@ export {
   toAbsoluteProjectPath,
   toRelativeProjectPath,
 } from "./project/files.js";
+export {
+  ProjectAlreadyExistsError,
+  initializeProjectFiles,
+  normalizedProjectTitle,
+} from "./project/initial-project.js";
+export {
+  summarizeWorkspaceProject,
+  titleFromSlug,
+  toWorkspaceChapter,
+  toWorkspaceDocument,
+  toWorkspaceLinkResolution,
+  toWorkspaceManifest,
+  toWorkspaceNote,
+  toWorkspaceNoteFolder,
+  toWorkspaceScene,
+} from "./project/presentation.js";
+export type {
+  WorkspaceChapter,
+  WorkspaceDocument,
+  WorkspaceDocumentRef,
+  WorkspaceLinkResolution,
+  WorkspaceManifest,
+  WorkspaceNote,
+  WorkspaceNoteFolder,
+  WorkspaceProjectSummary,
+  WorkspaceScene,
+} from "./project/presentation.js";
 
 export {
   CheckpointNotImplementedError,

@@ -32,12 +32,29 @@ Autonomous agent PRs must not modify `apps/web`, `apps/desktop`, or `@claros/edi
 - **YAML for modules.** All emergence modules (macros, tables) are YAML files under the project's `modules/` directory. No hardcoded system data in engine code.
 - **File format is canonical.** The markdown files are the source of truth. SQLite/IndexedDB are derived state only and must be rebuildable from scratch.
 
+## Architecture Discipline
+
+- **One concept, one implementation.** If a behavior has a canonical implementation or public interface, use it. Do not create near-identical local versions in a consumer package.
+- **Search before adding logic.** Before implementing parsing, projection, mutation, indexing, storage, or workflow behavior, check whether the repo already exposes the needed capability. Prefer adapting the shared implementation over adding a parallel one.
+- **Keep layers separate.** Durable semantics belong in shared lower layers. UI, commands, transports, and platform adapters should translate inputs and outputs, not fork business rules.
+- **Storage is an adapter boundary.** Different storage backends should differ in permission, transport, and file access details. They should not require duplicate domain logic for the same operation.
+- **Derived state is disposable.** Caches, indexes, database rows, and in-memory projections must be rebuildable from canonical files or state.
+- **Consolidate drift promptly.** When two code paths perform the same semantic operation, refactor toward a shared abstraction before adding more behavior on top.
+- **Document intentional duplication.** If temporary duplication is unavoidable, keep it narrow and add a short comment or note explaining the missing shared API and the intended consolidation path.
+
 ## Test Style
 
 - Framework: Vitest
 - Tests live in `tests/` alongside `src/` in each package
 - Descriptive test names: `describe("DiceEvaluator") > it("evaluates 2d20kh1 keeping the highest roll")`
 - Use the injectable RNG for all dice tests — never assert on random output
+
+## Review Expectations
+
+- Call out new abstractions, boundary changes, and any duplicate logic in PR descriptions or handoff notes.
+- Treat reimplementation of existing behavior as a review concern, even when the duplicate works.
+- When shared behavior changes, update nearby docs and tests so future agents can find and trust the canonical path.
+- Prefer small refactors that remove redundant code over adding another special-case path.
 
 ## Codex Note
 

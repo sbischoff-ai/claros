@@ -1,22 +1,33 @@
 import {
+  initializeProjectFiles,
+  normalizedProjectTitle,
   openProject as openBrowserProject,
   replaceMarkdownBodyPreservingFrontmatter,
+  titleFromSlug,
+  toWorkspaceChapter,
+  toWorkspaceDocument,
+  toWorkspaceLinkResolution,
+  toWorkspaceManifest,
+  toWorkspaceNote,
+  toWorkspaceNoteFolder,
+  toWorkspaceScene,
 } from "@claros/story-state/browser";
 import type {
-  ChapterRef,
   ClarosProject,
-  LinkResolution,
   ManuscriptInsertionPlacement,
   MoveChapterOptions,
   MoveSceneOptions,
-  MarkdownDocument,
-  NoteFolderRef,
-  NoteRef,
-  ProjectManifest,
-  SceneRef,
+  WorkspaceChapter,
+  WorkspaceDocument,
+  WorkspaceDocumentRef,
+  WorkspaceLinkResolution,
+  WorkspaceManifest,
+  WorkspaceNote,
+  WorkspaceNoteFolder,
+  WorkspaceProjectSummary,
+  WorkspaceScene,
 } from "@claros/story-state/browser";
 import { BrowserProjectFileSystem, type DirectoryHandle } from "./browser-file-system";
-import { titleFromSlug } from "./text-format";
 
 export const COMPANION_STORAGE_KEY = "claros.web.localCompanion.v1";
 
@@ -26,52 +37,16 @@ export interface ProjectStorage {
   removeItem?(key: string): void;
 }
 
-export interface WorkspaceManifest {
-  title: string;
-}
-
-export interface WorkspaceChapter {
-  kind: "chapter";
-  id: string;
-  sequence: number;
-  title: string;
-  scenes: WorkspaceScene[];
-}
-
-export interface WorkspaceScene {
-  kind: "scene";
-  id: string;
-  chapterId: string;
-  sequence: number;
-  title: string;
-  path: string;
-}
-
-export interface WorkspaceNote {
-  kind: "note";
-  id: string;
-  path: string;
-  title: string;
-  folderPath: string[];
-}
-
-export interface WorkspaceNoteFolder {
-  kind: "note-folder";
-  id: string;
-  path: string;
-  title: string;
-  folderPath: string[];
-}
-
-export type WorkspaceDocumentRef = WorkspaceScene | WorkspaceNote | { path: string };
-
-export interface WorkspaceDocument {
-  path: string;
-  raw: string;
-  body: string;
-  title: string;
-  kind: "scene" | "note";
-}
+export type {
+  WorkspaceChapter,
+  WorkspaceDocument,
+  WorkspaceDocumentRef,
+  WorkspaceLinkResolution,
+  WorkspaceManifest,
+  WorkspaceNote,
+  WorkspaceNoteFolder,
+  WorkspaceScene,
+};
 
 export interface ProjectSession {
   readonly manifest: WorkspaceManifest;
@@ -149,17 +124,7 @@ export interface WorkspaceMoveResult {
   chapterIdMap: Record<string, string>;
 }
 
-export type WorkspaceLinkResolution =
-  | { status: "resolved"; path: string; reason: string }
-  | { status: "ambiguous"; target: string; candidates: WorkspaceNote[]; reason: string }
-  | { status: "unresolved"; target: string };
-
-interface ProjectSummary {
-  manifest: WorkspaceManifest;
-  chapters: WorkspaceChapter[];
-  notes: WorkspaceNote[];
-  noteFolders: WorkspaceNoteFolder[];
-}
+type ProjectSummary = WorkspaceProjectSummary;
 
 export interface CompanionConnection {
   url: string;
@@ -240,7 +205,7 @@ export function documentPath(ref: WorkspaceDocumentRef): string {
 }
 
 function createProjectSession(project: ClarosProject): ProjectSession {
-  let manifest = normalizeManifest(project.manifest);
+  let manifest = toWorkspaceManifest(project.manifest);
   return {
     get manifest(): WorkspaceManifest {
       return manifest;
@@ -264,7 +229,7 @@ function createProjectSession(project: ClarosProject): ProjectSession {
       return project.listNotes().map(toWorkspaceNote);
     },
     listNoteFolders(): WorkspaceNoteFolder[] {
-      return listProjectNoteFolders(project).map(toWorkspaceNoteFolder);
+      return project.listNoteFolders().map(toWorkspaceNoteFolder);
     },
     async readDocument(ref: WorkspaceDocumentRef): Promise<WorkspaceDocument> {
       const path = documentPath(ref);
@@ -676,22 +641,7 @@ async function initializeNewProject(
   fileSystem: BrowserProjectFileSystem,
   title: string
 ): Promise<void> {
-  const manifestStat = await fileSystem.stat("/claros.yaml");
-  if (manifestStat.exists) {
-    throw new Error("claros.yaml already exists");
-  }
-
-  await fileSystem.mkdir("/manuscript/001-draft", true);
-  await fileSystem.mkdir("/notes", true);
-  await fileSystem.writeFileAtomic(
-    "/claros.yaml",
-    `claros: 1\ntitle: ${yamlString(normalizedProjectTitle(title))}\n`
-  );
-  await fileSystem.writeFileAtomic("/manuscript/001-draft/chapter.yaml", "title: Draft\n");
-  await fileSystem.writeFileAtomic(
-    "/manuscript/001-draft/001-opening.md",
-    "---\ntitle: Opening\n---\n\n# Draft\n\n## Opening\n\n"
-  );
+  await initializeProjectFiles("/", fileSystem, fileSystem, { title });
 }
 
 async function companionFetch(
@@ -947,127 +897,6 @@ function normalizeCompanionConnection(value: unknown): CompanionConnection | und
   return {
     url: value.url,
     token: value.token,
-  };
-}
-
-function normalizeManifest(manifest: ProjectManifest): WorkspaceManifest {
-  return {
-    title: typeof manifest.title === "string" && manifest.title.trim() ? manifest.title : "Claros",
-  };
-}
-
-function normalizedProjectTitle(title: string): string {
-  const normalized = title.trim();
-  return normalized.length > 0 ? normalized : "Untitled Project";
-}
-
-function yamlString(value: string): string {
-  return JSON.stringify(value);
-}
-
-function toWorkspaceChapter(chapter: ChapterRef, scenes: WorkspaceScene[]): WorkspaceChapter {
-  return {
-    kind: "chapter",
-    id: chapter.id,
-    sequence: chapter.sequence,
-    title: chapter.title || `Chapter ${chapter.sequence}`,
-    scenes,
-  };
-}
-
-function toWorkspaceScene(scene: SceneRef): WorkspaceScene {
-  return {
-    kind: "scene",
-    id: scene.id,
-    chapterId: scene.chapterId,
-    sequence: scene.sequence,
-    title: scene.title || `Scene ${scene.sequence}`,
-    path: scene.path,
-  };
-}
-
-function toWorkspaceNote(note: NoteRef): WorkspaceNote {
-  return {
-    kind: "note",
-    id: note.path,
-    path: note.path,
-    title: note.title || titleFromSlug(note.slug),
-    folderPath: note.path.startsWith("notes/")
-      ? note.path.slice("notes/".length).split("/").slice(0, -1)
-      : [],
-  };
-}
-
-function toWorkspaceNoteFolder(folder: NoteFolderRef): WorkspaceNoteFolder {
-  return {
-    kind: "note-folder",
-    id: folder.path,
-    path: folder.path,
-    title: titleFromSlug(folder.name),
-    folderPath: [...folder.folderPath],
-  };
-}
-
-function listProjectNoteFolders(project: ClarosProject): NoteFolderRef[] {
-  if ("listNoteFolders" in project && typeof project.listNoteFolders === "function") {
-    return project.listNoteFolders();
-  }
-  const folders = new Map<string, NoteFolderRef>();
-  for (const note of project.listNotes()) {
-    const parts = note.path.startsWith("notes/")
-      ? note.path.slice("notes/".length).split("/").slice(0, -1)
-      : [];
-    for (let index = 0; index < parts.length; index += 1) {
-      const folderPath = parts.slice(0, index + 1);
-      const path = `notes/${folderPath.join("/")}`;
-      folders.set(path, {
-        kind: "note-folder",
-        path,
-        name: folderPath.at(-1) ?? "",
-        folderPath,
-      });
-    }
-  }
-  return [...folders.values()].sort((left, right) => left.path.localeCompare(right.path));
-}
-
-function toWorkspaceLinkResolution(resolution: LinkResolution): WorkspaceLinkResolution {
-  if (resolution.status === "resolved") {
-    return { status: "resolved", path: resolution.path, reason: resolution.reason };
-  }
-  if (resolution.status === "ambiguous") {
-    return {
-      status: "ambiguous",
-      target: resolution.target,
-      reason: resolution.reason,
-      candidates: resolution.candidates.map(toWorkspaceNote),
-    };
-  }
-  return { status: "unresolved", target: resolution.target };
-}
-
-function toWorkspaceDocument(
-  project: ClarosProject,
-  document: MarkdownDocument
-): WorkspaceDocument {
-  const scene = project.listScenes().find((candidate) => candidate.path === document.path);
-  if (scene !== undefined) {
-    return {
-      path: document.path,
-      raw: document.raw,
-      body: document.body,
-      title: scene.title || `Scene ${scene.sequence}`,
-      kind: "scene",
-    };
-  }
-
-  const note = project.listNotes().find((candidate) => candidate.path === document.path);
-  return {
-    path: document.path,
-    raw: document.raw,
-    body: document.body,
-    title: note?.title || document.path,
-    kind: "note",
   };
 }
 

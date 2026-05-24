@@ -1,18 +1,27 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import * as path from "node:path";
-import { replaceMarkdownBodyPreservingFrontmatter } from "@claros/story-format";
 import {
+  NodeProjectFileReader,
+  NodeProjectFileWriter,
+  ProjectAlreadyExistsError,
+  initializeProjectFiles,
   openProject,
+  replaceMarkdownBodyPreservingFrontmatter,
+  summarizeWorkspaceProject,
+  toWorkspaceChapter,
+  toWorkspaceDocument,
+  toWorkspaceLinkResolution,
+  toWorkspaceNote,
+  toWorkspaceNoteFolder,
+  toWorkspaceScene,
   type ChapterRef,
   type ClarosProject,
-  type LinkResolution,
-  type MarkdownDocument,
   type NoteFolderRef,
   type NoteRef,
-  type ProjectManifest,
   type SceneRef,
+  type WorkspaceProjectSummary,
 } from "@claros/story-state";
 
 export interface LocalCompanionOptions {
@@ -28,57 +37,7 @@ export interface LocalCompanionServer {
   close(): Promise<void>;
 }
 
-export interface ProjectSummary {
-  manifest: WorkspaceManifest;
-  chapters: WorkspaceChapter[];
-  notes: WorkspaceNote[];
-  noteFolders: WorkspaceNoteFolder[];
-}
-
-interface WorkspaceManifest {
-  title: string;
-}
-
-interface WorkspaceChapter {
-  kind: "chapter";
-  id: string;
-  sequence: number;
-  title: string;
-  scenes: WorkspaceScene[];
-}
-
-interface WorkspaceScene {
-  kind: "scene";
-  id: string;
-  chapterId: string;
-  sequence: number;
-  title: string;
-  path: string;
-}
-
-interface WorkspaceNote {
-  kind: "note";
-  id: string;
-  path: string;
-  title: string;
-  folderPath: string[];
-}
-
-interface WorkspaceNoteFolder {
-  kind: "note-folder";
-  id: string;
-  path: string;
-  title: string;
-  folderPath: string[];
-}
-
-interface WorkspaceDocument {
-  path: string;
-  raw: string;
-  body: string;
-  title: string;
-  kind: "scene" | "note";
-}
+export type ProjectSummary = WorkspaceProjectSummary;
 
 export const DEFAULT_ALLOWED_ORIGINS = [
   "http://127.0.0.1:5173",
@@ -124,7 +83,7 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
 
       if (request.method === "GET" && url.pathname === "/api/project") {
         project = await openProject(projectRoot);
-        writeJson(response, 200, { ok: true, project: summarizeProject(project) });
+        writeJson(response, 200, { ok: true, project: summarizeWorkspaceProject(project) });
         return;
       }
 
@@ -161,7 +120,7 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
         const after = await current.readDocument({ path: body.path });
         writeJson(response, 200, {
           ok: true,
-          project: summarizeProject(current),
+          project: summarizeWorkspaceProject(current),
           document: toWorkspaceDocument(current, after),
         });
         return;
@@ -171,7 +130,7 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
         const body = await readJsonBody(request);
         await initializeProject(projectRoot, titleFromBody(body));
         project = await openProject(projectRoot);
-        writeJson(response, 201, { ok: true, project: summarizeProject(project) });
+        writeJson(response, 201, { ok: true, project: summarizeWorkspaceProject(project) });
         return;
       }
 
@@ -205,7 +164,7 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
         project = await openProject(projectRoot);
         writeJson(response, 200, {
           ok: true,
-          project: summarizeProject(project),
+          project: summarizeWorkspaceProject(project),
           ...(mutation.chapter === undefined
             ? {}
             : {
@@ -231,7 +190,7 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
 
       if (request.method === "POST" && url.pathname === "/api/reload") {
         project = await openProject(projectRoot);
-        writeJson(response, 200, { ok: true, project: summarizeProject(project) });
+        writeJson(response, 200, { ok: true, project: summarizeWorkspaceProject(project) });
         return;
       }
 
@@ -283,30 +242,16 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
 }
 
 async function initializeProject(projectRoot: string, title = "Untitled Project"): Promise<void> {
-  if (await exists(path.join(projectRoot, "claros.yaml"))) {
-    throw new CompanionError(409, "PROJECT_EXISTS", "claros.yaml already exists");
-  }
-
-  await mkdir(path.join(projectRoot, "manuscript", "001-draft"), { recursive: true });
-  await mkdir(path.join(projectRoot, "notes"), { recursive: true });
-  await writeFile(
-    path.join(projectRoot, "claros.yaml"),
-    `claros: 1\ntitle: ${JSON.stringify(normalizedProjectTitle(title))}\n`,
-    {
-      encoding: "utf8",
-      flag: "wx",
+  const reader = new NodeProjectFileReader();
+  const writer = new NodeProjectFileWriter();
+  try {
+    await initializeProjectFiles(projectRoot, reader, writer, { title });
+  } catch (error) {
+    if (error instanceof ProjectAlreadyExistsError) {
+      throw new CompanionError(409, "PROJECT_EXISTS", error.message);
     }
-  );
-  await writeFile(
-    path.join(projectRoot, "manuscript", "001-draft", "chapter.yaml"),
-    "title: Draft\n",
-    { encoding: "utf8", flag: "wx" }
-  );
-  await writeFile(
-    path.join(projectRoot, "manuscript", "001-draft", "001-opening.md"),
-    "---\ntitle: Opening\n---\n\n# Draft\n\n## Opening\n\n",
-    { encoding: "utf8", flag: "wx" }
-  );
+    throw error;
+  }
 }
 
 async function hasProject(projectRoot: string): Promise<boolean> {
@@ -320,24 +265,6 @@ async function exists(filePath: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function summarizeProject(project: ClarosProject): ProjectSummary {
-  const scenesByChapter = new Map<string, WorkspaceScene[]>();
-  for (const scene of project.listScenes()) {
-    const scenes = scenesByChapter.get(scene.chapterId) ?? [];
-    scenes.push(toWorkspaceScene(scene));
-    scenesByChapter.set(scene.chapterId, scenes);
-  }
-
-  return {
-    manifest: normalizeManifest(project.manifest),
-    chapters: project
-      .listChapters()
-      .map((chapter) => toWorkspaceChapter(chapter, scenesByChapter.get(chapter.id) ?? [])),
-    notes: project.listNotes().map(toWorkspaceNote),
-    noteFolders: listProjectNoteFolders(project).map(toWorkspaceNoteFolder),
-  };
 }
 
 async function applyProjectMutation(
@@ -506,123 +433,6 @@ function stringArrayValue(value: unknown): string[] | undefined {
     : undefined;
 }
 
-function normalizedProjectTitle(title: string): string {
-  const normalized = title.trim();
-  return normalized.length > 0 ? normalized : "Untitled Project";
-}
-
-function normalizeManifest(manifest: ProjectManifest): WorkspaceManifest {
-  return {
-    title: typeof manifest.title === "string" && manifest.title.trim() ? manifest.title : "Claros",
-  };
-}
-
-function toWorkspaceChapter(chapter: ChapterRef, scenes: WorkspaceScene[]): WorkspaceChapter {
-  return {
-    kind: "chapter",
-    id: chapter.id,
-    sequence: chapter.sequence,
-    title: chapter.title || `Chapter ${chapter.sequence}`,
-    scenes,
-  };
-}
-
-function toWorkspaceScene(scene: SceneRef): WorkspaceScene {
-  return {
-    kind: "scene",
-    id: scene.id,
-    chapterId: scene.chapterId,
-    sequence: scene.sequence,
-    title: scene.title || `Scene ${scene.sequence}`,
-    path: scene.path,
-  };
-}
-
-function toWorkspaceNote(note: NoteRef): WorkspaceNote {
-  return {
-    kind: "note",
-    id: note.path,
-    path: note.path,
-    title: note.title || titleFromSlug(note.slug),
-    folderPath: note.path.startsWith("notes/")
-      ? note.path.slice("notes/".length).split("/").slice(0, -1)
-      : [],
-  };
-}
-
-function toWorkspaceNoteFolder(folder: NoteFolderRef): WorkspaceNoteFolder {
-  return {
-    kind: "note-folder",
-    id: folder.path,
-    path: folder.path,
-    title: titleFromSlug(folder.name),
-    folderPath: [...folder.folderPath],
-  };
-}
-
-function toWorkspaceLinkResolution(resolution: LinkResolution): unknown {
-  if (resolution.status === "resolved") {
-    return { status: "resolved", path: resolution.path, reason: resolution.reason };
-  }
-  if (resolution.status === "ambiguous") {
-    return {
-      status: "ambiguous",
-      target: resolution.target,
-      reason: resolution.reason,
-      candidates: resolution.candidates.map(toWorkspaceNote),
-    };
-  }
-  return { status: "unresolved", target: resolution.target };
-}
-
-function listProjectNoteFolders(project: ClarosProject): NoteFolderRef[] {
-  if ("listNoteFolders" in project && typeof project.listNoteFolders === "function") {
-    return project.listNoteFolders();
-  }
-  const folders = new Map<string, NoteFolderRef>();
-  for (const note of project.listNotes()) {
-    const parts = note.path.startsWith("notes/")
-      ? note.path.slice("notes/".length).split("/").slice(0, -1)
-      : [];
-    for (let index = 0; index < parts.length; index += 1) {
-      const folderPath = parts.slice(0, index + 1);
-      const folderPathString = `notes/${folderPath.join("/")}`;
-      folders.set(folderPathString, {
-        kind: "note-folder",
-        path: folderPathString,
-        name: folderPath.at(-1) ?? "",
-        folderPath,
-      });
-    }
-  }
-  return [...folders.values()].sort((left, right) => left.path.localeCompare(right.path));
-}
-
-function toWorkspaceDocument(
-  project: ClarosProject,
-  document: MarkdownDocument
-): WorkspaceDocument {
-  const scene = project.listScenes().find((candidate) => candidate.path === document.path);
-  if (scene !== undefined) {
-    return {
-      path: document.path,
-      raw: document.raw,
-      body: document.body,
-      title: scene.title || `Scene ${scene.sequence}`,
-      kind: "scene",
-    };
-  }
-
-  const note = project.listNotes().find((candidate) => candidate.path === document.path);
-  return {
-    path: document.path,
-    raw: document.raw,
-    body: document.body,
-    title: note?.title || document.path,
-    kind: "note",
-  };
-}
-
 function ensureKnownDocumentPath(project: ClarosProject, candidatePath: string): void {
   if (candidatePath.includes("..") || path.isAbsolute(candidatePath)) {
     throw new CompanionError(400, "INVALID_PATH", "Document path must be project-relative");
@@ -686,14 +496,6 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
 function writeJson(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(body));
-}
-
-function titleFromSlug(slug: string): string {
-  return slug
-    .split("-")
-    .filter((part) => part.length > 0)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

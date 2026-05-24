@@ -8,6 +8,8 @@ import {
   stripClarosMarkers,
   extractWikilinks,
   parseMarkdownDocument,
+  parseNoteRefFromMarkdown,
+  parseSceneRefFromMarkdown,
   scanProjectFormat,
   type ProjectDirEntry,
   type ProjectFileReader,
@@ -457,5 +459,53 @@ describe("scanProjectFormat", () => {
     await expect(scanProjectFormat(root, new NodeProjectFileReader())).rejects.toThrow(
       /Alternate core folder paths are not supported for MVP/
     );
+  });
+});
+
+describe("document ref parsing helpers", () => {
+  it("parses scene refs with canonical manuscript identity from paths", () => {
+    const scene = parseSceneRefFromMarkdown(
+      "manuscript/01-prologue/02-arrival.md",
+      "---\ntitle: Arrival\n---\n\nScene body."
+    );
+
+    expect(scene).toMatchObject({
+      kind: "scene",
+      id: "01-prologue/02-arrival",
+      chapterId: "01-prologue",
+      sequence: 2,
+      slug: "arrival",
+      title: "Arrival",
+    });
+  });
+
+  it("parses note refs with title aliases tags and permissive frontmatter", () => {
+    const note = parseNoteRefFromMarkdown(
+      "notes/characters/kareth.md",
+      [
+        "---",
+        "title: Kareth",
+        "aliases:",
+        "  - Lord of Stormfall",
+        "tags:",
+        "  - character",
+        "osr:",
+        "  hp:",
+        "    current: 12",
+        "---",
+        "",
+        "# Kareth",
+      ].join("\n")
+    );
+
+    expect(note).toMatchObject({
+      kind: "note",
+      path: "notes/characters/kareth.md",
+      slug: "kareth",
+      title: "Kareth",
+      aliases: ["Lord of Stormfall"],
+      tags: ["character"],
+      frontmatter: { osr: { hp: { current: 12 } } },
+    });
   });
 });
