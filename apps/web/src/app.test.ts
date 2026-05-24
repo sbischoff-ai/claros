@@ -53,6 +53,7 @@ const workspaceSource = [
   "./lib/state/workspace-sidebar.svelte.ts",
   "./lib/state/workspace-titles.svelte.ts",
   "./lib/storage-backends.ts",
+  "./lib/text-format.ts",
   "./lib/title-model.ts",
   "./lib/workspace-commands.ts",
   "./lib/workspace-view-model.ts",
@@ -174,6 +175,22 @@ describe("project session", () => {
     expect(written.raw).toContain("---\ntitle: Kareth");
     expect(written.raw).toContain("tags:\n  - character");
     expect(written.body).toBe("# Kareth\n\nUpdated body.");
+  });
+
+  it("resolves local wikilinks through the project session boundary", async () => {
+    const session = await openLocalProjectSession(createProjectHandle());
+
+    await expect(
+      session.resolveWikilink("Kareth", "manuscript/001-start/001-opening.md")
+    ).resolves.toMatchObject({
+      status: "resolved",
+      path: "notes/characters/kareth.md",
+      reason: "title",
+    });
+    await expect(session.resolveWikilink("Missing Note")).resolves.toMatchObject({
+      status: "unresolved",
+      target: "Missing Note",
+    });
   });
 
   it("does not add leading blank lines when saving a body that starts empty", async () => {
@@ -306,6 +323,16 @@ describe("project session", () => {
           },
         });
       }
+      if (String(url).includes("/api/wikilink?")) {
+        return jsonResponse({
+          ok: true,
+          resolution: {
+            status: "resolved",
+            path: "notes/characters/kareth.md",
+            reason: "title",
+          },
+        });
+      }
       if (String(url).endsWith("/api/document") && init?.method === "PUT") {
         return jsonResponse({
           ok: true,
@@ -329,6 +356,12 @@ describe("project session", () => {
 
     expect(session.manifest.title).toBe("Companion Workspace");
     expect((await session.readDocument({ path: firstDocumentPath(session) })).body).toBe("Start.");
+    await expect(
+      session.resolveWikilink("Kareth", firstDocumentPath(session))
+    ).resolves.toMatchObject({
+      status: "resolved",
+      path: "notes/characters/kareth.md",
+    });
     await session.writeDocument({ path: firstDocumentPath(session) }, "Updated.");
     expect(requests.at(-1)?.init?.body).toBe(
       JSON.stringify({ path: "manuscript/001-start/001-opening.md", body: "Updated." })

@@ -72,6 +72,10 @@ export type {
   SourceRange,
   WikilinkRef,
 } from "@claros/story-format/browser";
+export {
+  extractWikilinks,
+  replaceMarkdownBodyPreservingFrontmatter,
+} from "@claros/story-format/browser";
 
 export type {
   CheckpointOptions,

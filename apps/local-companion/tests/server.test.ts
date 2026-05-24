@@ -55,6 +55,32 @@ describe("local companion server", () => {
     expect(written).toContain("# Kareth\n\nUpdated.");
   });
 
+  it("resolves wikilinks through the core project index", async () => {
+    const root = await createProjectRoot();
+    const { baseUrl, token } = await start(root);
+
+    const resolved = (await fetchJson(
+      baseUrl,
+      token,
+      "/api/wikilink?link=Kareth&fromPath=manuscript%2F001-start%2F001-opening.md"
+    )) as WikilinkResponse;
+    expect(resolved.resolution).toMatchObject({
+      status: "resolved",
+      path: "notes/characters/kareth.md",
+      reason: "title",
+    });
+
+    const unresolved = (await fetchJson(
+      baseUrl,
+      token,
+      "/api/wikilink?link=Missing%20Note"
+    )) as WikilinkResponse;
+    expect(unresolved.resolution).toMatchObject({
+      status: "unresolved",
+      target: "Missing Note",
+    });
+  });
+
   it("rejects disallowed origins and unknown document paths", async () => {
     const root = await createProjectRoot();
     const { baseUrl, token } = await start(root, ["http://allowed.example"]);
@@ -234,6 +260,15 @@ interface MutationResponse extends ProjectResponse {
 interface DocumentResponse {
   document: {
     body: string;
+  };
+}
+
+interface WikilinkResponse {
+  resolution: {
+    status: string;
+    path?: string;
+    reason?: string;
+    target?: string;
   };
 }
 

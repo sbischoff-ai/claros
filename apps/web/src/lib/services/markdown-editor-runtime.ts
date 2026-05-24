@@ -3,6 +3,7 @@ import {
   createMarkdownEditor,
   type ClarosMarkdownEditor,
   type ClarosThemeId,
+  type MarkdownWikilinkOptions,
 } from "@claros/editor-core";
 
 export interface MarkdownEditorRuntimeOptions {
@@ -10,6 +11,7 @@ export interface MarkdownEditorRuntimeOptions {
   doc: string;
   vimMode: boolean;
   theme: ClarosThemeId;
+  wikilinks?: MarkdownWikilinkOptions;
   onChange(markdown: string): void;
 }
 

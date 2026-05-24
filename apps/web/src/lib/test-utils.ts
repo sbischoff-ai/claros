@@ -86,6 +86,7 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
   theme: ClarosThemeId = "default-light";
   focusedWith: { cursor?: "start" | "end" | number } | undefined;
   appliedThemes: Array<{ element: HTMLElement; theme: ClarosThemeId }> = [];
+  wikilinks: MarkdownEditorRuntimeOptions["wikilinks"] | undefined;
   private onChange: ((markdown: string) => void) | undefined;
 
   override get exists(): boolean {
@@ -101,6 +102,7 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
     this.markdown = options.doc;
     this.vimMode = options.vimMode;
     this.theme = options.theme;
+    this.wikilinks = options.wikilinks;
     this.onChange = options.onChange;
   }
 

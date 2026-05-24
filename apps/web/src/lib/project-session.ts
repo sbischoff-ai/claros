@@ -1,4 +1,7 @@
-import { openProject as openBrowserProject } from "@claros/story-state/browser";
+import {
+  openProject as openBrowserProject,
+  replaceMarkdownBodyPreservingFrontmatter,
+} from "@claros/story-state/browser";
 import type {
   ChapterRef,
   ClarosProject,
@@ -13,6 +16,7 @@ import type {
   SceneRef,
 } from "@claros/story-state/browser";
 import { BrowserProjectFileSystem, type DirectoryHandle } from "./browser-file-system";
+import { titleFromSlug } from "./text-format";
 
 export const COMPANION_STORAGE_KEY = "claros.web.localCompanion.v1";
 
@@ -106,7 +110,7 @@ export interface ProjectSession {
   deleteNote(notePath: string): Promise<string>;
   deleteNoteFolder(folderPath: string): Promise<string>;
   moveNote(notePath: string, options: WorkspaceMoveNoteOptions): Promise<WorkspaceNote>;
-  resolveWikilink(link: string, fromPath?: string): WorkspaceLinkResolution;
+  resolveWikilink(link: string, fromPath?: string): Promise<WorkspaceLinkResolution>;
 }
 
 export interface WorkspaceCreateSceneOptions {
@@ -147,8 +151,8 @@ export interface WorkspaceMoveResult {
 
 export type WorkspaceLinkResolution =
   | { status: "resolved"; path: string; reason: string }
-  | { status: "ambiguous"; candidates: WorkspaceNote[]; reason: string }
-  | { status: "unresolved" };
+  | { status: "ambiguous"; target: string; candidates: WorkspaceNote[]; reason: string }
+  | { status: "unresolved"; target: string };
 
 interface ProjectSummary {
   manifest: WorkspaceManifest;
@@ -270,7 +274,10 @@ function createProjectSession(project: ClarosProject): ProjectSession {
     async writeDocument(ref: WorkspaceDocumentRef, body: string): Promise<void> {
       const path = documentPath(ref);
       const current = await project.readDocument({ path });
-      await project.writeDocument({ path }, mergeBodyWithExistingFrontmatter(current.raw, body));
+      await project.writeDocument(
+        { path },
+        replaceMarkdownBodyPreservingFrontmatter(current.raw, body)
+      );
     },
     async setProjectTitle(title: string): Promise<void> {
       const normalized = normalizedProjectTitle(title);
@@ -400,7 +407,7 @@ function createProjectSession(project: ClarosProject): ProjectSession {
       });
       return toWorkspaceNote(note);
     },
-    resolveWikilink(link: string, fromPath?: string): WorkspaceLinkResolution {
+    async resolveWikilink(link: string, fromPath?: string): Promise<WorkspaceLinkResolution> {
       const resolution = project.resolveWikilink(
         link,
         fromPath === undefined ? undefined : { path: fromPath }
@@ -656,8 +663,11 @@ function createCompanionProjectSession(
       summary = projectFromResponse(response);
       return noteFromMutationResponse(response);
     },
-    resolveWikilink(_link: string, _fromPath?: string): WorkspaceLinkResolution {
-      return { status: "unresolved" };
+    async resolveWikilink(link: string, fromPath?: string): Promise<WorkspaceLinkResolution> {
+      const search = new URLSearchParams({ link });
+      if (fromPath !== undefined) search.set("fromPath", fromPath);
+      const response = await companionFetch(connection, `/api/wikilink?${search.toString()}`);
+      return linkResolutionFromResponse(response);
     },
   };
 }
@@ -798,6 +808,13 @@ function noteFolderFromMutationResponse(response: unknown): WorkspaceNoteFolder 
   return normalizeWorkspaceNoteFolder(response.noteFolder);
 }
 
+function linkResolutionFromResponse(response: unknown): WorkspaceLinkResolution {
+  if (!isRecord(response) || !isRecord(response.resolution)) {
+    throw new Error("Companion response did not include a wikilink resolution");
+  }
+  return normalizeWorkspaceLinkResolution(response.resolution);
+}
+
 function stringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) {
     return {};
@@ -887,6 +904,40 @@ function normalizeWorkspaceNoteFolder(value: unknown): WorkspaceNoteFolder {
       ? value.folderPath.filter((part): part is string => typeof part === "string")
       : [],
   };
+}
+
+function normalizeWorkspaceLinkResolution(value: unknown): WorkspaceLinkResolution {
+  if (!isRecord(value) || typeof value.status !== "string") {
+    throw new Error("Companion returned an invalid wikilink resolution");
+  }
+  if (value.status === "resolved") {
+    if (typeof value.path !== "string" || typeof value.reason !== "string") {
+      throw new Error("Companion returned an invalid resolved wikilink");
+    }
+    return { status: "resolved", path: value.path, reason: value.reason };
+  }
+  if (value.status === "ambiguous") {
+    if (
+      typeof value.target !== "string" ||
+      typeof value.reason !== "string" ||
+      !Array.isArray(value.candidates)
+    ) {
+      throw new Error("Companion returned an invalid ambiguous wikilink");
+    }
+    return {
+      status: "ambiguous",
+      target: value.target,
+      reason: value.reason,
+      candidates: value.candidates.map(normalizeWorkspaceNote),
+    };
+  }
+  if (value.status === "unresolved") {
+    if (typeof value.target !== "string") {
+      throw new Error("Companion returned an invalid unresolved wikilink");
+    }
+    return { status: "unresolved", target: value.target };
+  }
+  throw new Error("Companion returned an unknown wikilink status");
 }
 
 function normalizeCompanionConnection(value: unknown): CompanionConnection | undefined {
@@ -987,11 +1038,12 @@ function toWorkspaceLinkResolution(resolution: LinkResolution): WorkspaceLinkRes
   if (resolution.status === "ambiguous") {
     return {
       status: "ambiguous",
+      target: resolution.target,
       reason: resolution.reason,
       candidates: resolution.candidates.map(toWorkspaceNote),
     };
   }
-  return { status: "unresolved" };
+  return { status: "unresolved", target: resolution.target };
 }
 
 function toWorkspaceDocument(
@@ -1017,39 +1069,6 @@ function toWorkspaceDocument(
     title: note?.title || document.path,
     kind: "note",
   };
-}
-
-function splitFrontmatter(raw: string): { frontmatter: string; body: string } {
-  if (!raw.startsWith("---\n") && !raw.startsWith("---\r\n")) {
-    return { frontmatter: "", body: raw };
-  }
-
-  const match = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(raw);
-  if (match === null) {
-    return { frontmatter: "", body: raw };
-  }
-
-  return {
-    frontmatter: match[0],
-    body: raw.slice(match[0].length),
-  };
-}
-
-function mergeBodyWithExistingFrontmatter(previousRaw: string, body: string): string {
-  const { frontmatter } = splitFrontmatter(previousRaw);
-  if (frontmatter.length === 0) {
-    return body;
-  }
-
-  return `${frontmatter}${body}`;
-}
-
-function titleFromSlug(slug: string): string {
-  return slug
-    .split("-")
-    .filter((part) => part.length > 0)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 function cloneSummary(summary: ProjectSummary): ProjectSummary {

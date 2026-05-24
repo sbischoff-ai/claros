@@ -51,6 +51,7 @@ export function createWorkspaceControllers(
   const projects = new WorkspaceProjects(ctx, documents);
   const titles = new WorkspaceTitles(ctx, documents, focus, manuscript, projects);
   projects.titles = titles;
+  documents.openWikilinkCreateModal = (target) => titles.openWikilinkNoteModal(target);
   const sidebar = new WorkspaceSidebarController(ctx, documents, focus, manuscript, titles);
   const overlays = new WorkspaceOverlays(ctx, documents, focus);
   const palette = new WorkspacePalette(

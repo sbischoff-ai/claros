@@ -102,6 +102,39 @@ describe("workspace controllers", () => {
     );
   });
 
+  it("creates unresolved wikilink notes through the shared folder modal path", async () => {
+    const environment = new FakeBrowserEnvironment();
+    const editorRuntime = new FakeMarkdownEditorRuntime();
+    const handle = createProjectHandle();
+    environment.pickedDirectory = handle;
+    const controllers = createWorkspaceControllers(environment, editorRuntime);
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+    await editorRuntime.wikilinks?.create(
+      {
+        raw: "[[Hidden Shrine]]",
+        target: "Hidden Shrine",
+        from: 0,
+        to: 17,
+        displayFrom: 2,
+        displayTo: 15,
+      },
+      "manuscript/001-start/001-opening.md",
+      "Hidden Shrine"
+    );
+
+    expect(controllers.overlays.titleModal?.target).toBe("new-wikilink-note");
+    expect(controllers.overlays.titleModal?.value).toBe("Hidden Shrine");
+    await controllers.overlays.submitTitleModal();
+
+    expect(controllers.sidebar.activePath).toBe("notes/hidden-shrine.md");
+    expect(await readHandleFile(handle, "/notes/hidden-shrine.md")).toContain(
+      'title: "Hidden Shrine"'
+    );
+  });
+
   it("keeps title editing and sidebar state scoped to their feature surfaces", async () => {
     const controllers = createWorkspaceControllers(
       new FakeBrowserEnvironment(),

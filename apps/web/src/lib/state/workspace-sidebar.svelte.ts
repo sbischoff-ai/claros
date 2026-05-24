@@ -1,6 +1,7 @@
 import { directionalIntentFromKeydown } from "$lib/directional-navigation";
 import { ManuscriptDragController } from "$lib/manuscript-drag";
 import type { WorkspaceChapter, WorkspaceNote, WorkspaceScene } from "$lib/project-session";
+import { titleFromSlug } from "$lib/text-format";
 import type { ActionMenuItem, SidebarItem } from "$lib/workspace-types";
 import type { WorkspaceContext } from "./workspace-context.svelte";
 import type { WorkspaceDocuments } from "./workspace-documents.svelte";
@@ -419,12 +420,4 @@ export class WorkspaceSidebarController {
       });
     }
   }
-}
-
-function titleFromSlug(slug: string): string {
-  return slug
-    .split("-")
-    .filter((part) => part.length > 0)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(" ");
 }

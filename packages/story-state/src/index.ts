@@ -140,6 +140,7 @@ export type {
   SourceRange,
   WikilinkRef,
 } from "@claros/story-format";
+export { extractWikilinks, replaceMarkdownBodyPreservingFrontmatter } from "@claros/story-format";
 
 export type {
   DocumentInsertionPoint,

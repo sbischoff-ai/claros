@@ -47,3 +47,11 @@ export function serializeNoteFrontmatter(frontmatter: NoteFrontmatter, body: str
   const yamlStr = dump(frontmatter, { lineWidth: -1 }).trimEnd();
   return `---\n${yamlStr}\n---\n${body}`;
 }
+
+export function replaceMarkdownBodyPreservingFrontmatter(
+  previousMarkdown: string,
+  body: string
+): string {
+  const match = FRONTMATTER_FENCE_RE.exec(previousMarkdown);
+  return match === null ? body : `${match[0]}${body}`;
+}

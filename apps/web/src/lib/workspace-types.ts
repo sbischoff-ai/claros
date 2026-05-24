@@ -19,6 +19,7 @@ export type TitleModalTarget =
   | "new-chapter-scene"
   | "new-scene"
   | "new-note"
+  | "new-wikilink-note"
   | "new-note-folder"
   | "move-note"
   | "chapter"
@@ -65,6 +66,7 @@ export interface TitleModalState {
   chapterId?: string;
   scenePath?: string;
   notePath?: string;
+  wikilinkTarget?: string;
   folderPath?: string[];
   selectedFolderPath?: string;
   folderOptions?: Array<{ label: string; folderPath: string[] }>;

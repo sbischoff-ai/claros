@@ -14,6 +14,7 @@ import { vim } from "@replit/codemirror-vim";
 
 import { markdownMarkerDecorations } from "./markdown-markers";
 import { markdownPresentationDecorations } from "./markdown-presentation";
+import { markdownWikilinkExtension, type MarkdownWikilinkOptions } from "./markdown-wikilinks";
 import {
   DEFAULT_CLAROS_THEME_ID,
   applyNamedTheme,
@@ -37,6 +38,7 @@ export interface MarkdownEditorOptions {
   doc?: string;
   vimMode?: boolean;
   theme?: ClarosThemeId | Partial<ClarosThemeTokens>;
+  wikilinks?: MarkdownWikilinkOptions;
   onChange?: (markdown: string) => void;
 }
 
@@ -76,7 +78,7 @@ export function createMarkdownEditor(options: MarkdownEditorOptions): ClarosMark
       doc: options.doc ?? defaultMarkdown,
       extensions: [
         vimCompartment.of(options.vimMode ? vim() : []),
-        ...baseExtensions(),
+        ...baseExtensions(options.wikilinks),
         updateListener,
       ],
     }),
@@ -139,7 +141,7 @@ export function resolveMarkdownCursorPosition(
   return Math.min(Math.max(Math.trunc(cursor), 0), documentLength);
 }
 
-function baseExtensions(): Extension[] {
+function baseExtensions(wikilinks?: MarkdownWikilinkOptions): Extension[] {
   return [
     highlightSpecialChars(),
     history(),
@@ -152,6 +154,7 @@ function baseExtensions(): Extension[] {
     EditorView.lineWrapping,
     createClarosEditorTheme(),
     markdownPresentationDecorations,
+    ...(wikilinks === undefined ? [] : markdownWikilinkExtension(wikilinks)),
     markdownMarkerDecorations,
     keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
   ];

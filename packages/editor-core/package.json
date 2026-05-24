@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@claros/emergence-engine": "workspace:*",
+    "@claros/story-format": "workspace:*",
     "@claros/story-state": "workspace:*",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-markdown": "^6.5.0",

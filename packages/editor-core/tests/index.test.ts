@@ -6,9 +6,11 @@ import {
   buildThemeStyleProperties,
   findMarkdownPresentationRanges,
   findMarkdownMarkerRanges,
+  findMarkdownWikilinkReferences,
   getClarosTheme,
   isClarosThemeId,
   resolveMarkdownCursorPosition,
+  wikilinkAtCursor,
 } from "../src/index";
 
 describe("editor-core", () => {
@@ -96,5 +98,41 @@ describe("editor-core", () => {
 
     expect(ranges).not.toContainEqual({ from: 0, to: 2, kind: "heading" });
     expect(ranges).toContainEqual({ from: 12, to: 14, kind: "emphasis" });
+  });
+
+  it("finds wikilink display ranges and suppresses active-line rendering", () => {
+    const markdown = "See [[Ancient Ruin|the ruin]].\nThen [[Kareth]].";
+
+    expect(findMarkdownWikilinkReferences(markdown)).toEqual([
+      {
+        raw: "[[Ancient Ruin|the ruin]]",
+        target: "Ancient Ruin",
+        alias: "the ruin",
+        from: 4,
+        to: 29,
+        displayFrom: 19,
+        displayTo: 27,
+      },
+      {
+        raw: "[[Kareth]]",
+        target: "Kareth",
+        alias: undefined,
+        from: 36,
+        to: 46,
+        displayFrom: 38,
+        displayTo: 44,
+      },
+    ]);
+
+    expect(findMarkdownWikilinkReferences(markdown, [{ from: 8, to: 8 }])).toHaveLength(1);
+  });
+
+  it("detects a wikilink when the cursor is inside or adjacent to the raw link", () => {
+    const markdown = "See [[Kareth]].";
+
+    expect(wikilinkAtCursor(markdown, 4)?.target).toBe("Kareth");
+    expect(wikilinkAtCursor(markdown, 8)?.target).toBe("Kareth");
+    expect(wikilinkAtCursor(markdown, 15)?.target).toBe("Kareth");
+    expect(wikilinkAtCursor(markdown, 2)).toBeUndefined();
   });
 });

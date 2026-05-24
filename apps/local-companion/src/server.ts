@@ -2,10 +2,12 @@ import { randomBytes } from "node:crypto";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import * as path from "node:path";
+import { replaceMarkdownBodyPreservingFrontmatter } from "@claros/story-format";
 import {
   openProject,
   type ChapterRef,
   type ClarosProject,
+  type LinkResolution,
   type MarkdownDocument,
   type NoteFolderRef,
   type NoteRef,
@@ -154,7 +156,7 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
         const before = await current.readDocument({ path: body.path });
         await current.writeDocument(
           { path: body.path },
-          mergeBodyWithExistingFrontmatter(before.raw, body.body)
+          replaceMarkdownBodyPreservingFrontmatter(before.raw, body.body)
         );
         const after = await current.readDocument({ path: body.path });
         writeJson(response, 200, {
@@ -170,6 +172,21 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
         await initializeProject(projectRoot, titleFromBody(body));
         project = await openProject(projectRoot);
         writeJson(response, 201, { ok: true, project: summarizeProject(project) });
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/wikilink") {
+        const current = await ensureProject();
+        const link = url.searchParams.get("link") ?? "";
+        const fromPath = url.searchParams.get("fromPath") ?? undefined;
+        const resolution = current.resolveWikilink(
+          link,
+          fromPath === undefined ? undefined : { path: fromPath }
+        );
+        writeJson(response, 200, {
+          ok: true,
+          resolution: toWorkspaceLinkResolution(resolution),
+        });
         return;
       }
 
@@ -543,6 +560,21 @@ function toWorkspaceNoteFolder(folder: NoteFolderRef): WorkspaceNoteFolder {
   };
 }
 
+function toWorkspaceLinkResolution(resolution: LinkResolution): unknown {
+  if (resolution.status === "resolved") {
+    return { status: "resolved", path: resolution.path, reason: resolution.reason };
+  }
+  if (resolution.status === "ambiguous") {
+    return {
+      status: "ambiguous",
+      target: resolution.target,
+      reason: resolution.reason,
+      candidates: resolution.candidates.map(toWorkspaceNote),
+    };
+  }
+  return { status: "unresolved", target: resolution.target };
+}
+
 function listProjectNoteFolders(project: ClarosProject): NoteFolderRef[] {
   if ("listNoteFolders" in project && typeof project.listNoteFolders === "function") {
     return project.listNoteFolders();
@@ -654,27 +686,6 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
 function writeJson(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(body));
-}
-
-function splitFrontmatter(raw: string): { frontmatter: string; body: string } {
-  if (!raw.startsWith("---\n") && !raw.startsWith("---\r\n")) {
-    return { frontmatter: "", body: raw };
-  }
-
-  const match = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n)?(?:\r?\n)?/.exec(raw);
-  if (match === null) {
-    return { frontmatter: "", body: raw };
-  }
-
-  return {
-    frontmatter: match[0],
-    body: raw.slice(match[0].length),
-  };
-}
-
-function mergeBodyWithExistingFrontmatter(previousRaw: string, body: string): string {
-  const { frontmatter } = splitFrontmatter(previousRaw);
-  return frontmatter.length === 0 ? body : `${frontmatter}${body}`;
 }
 
 function titleFromSlug(slug: string): string {

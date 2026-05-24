@@ -1,8 +1,16 @@
 import { tick } from "svelte";
+import type {
+  MarkdownWikilinkOptions,
+  MarkdownWikilinkReference,
+  MarkdownWikilinkResolution,
+} from "@claros/editor-core";
 
 import type { WorkspaceContext } from "./workspace-context.svelte";
+import type { WorkspaceLinkResolution } from "$lib/project-session";
 
 export class WorkspaceDocuments {
+  openWikilinkCreateModal: ((target: string) => void) | undefined;
+
   constructor(private readonly ctx: WorkspaceContext) {}
 
   handleEditorChange(markdown: string): void {
@@ -24,6 +32,7 @@ export class WorkspaceDocuments {
       doc: this.ctx.currentMarkdown,
       vimMode: this.ctx.vimMode,
       theme: this.ctx.activeTheme,
+      wikilinks: this.wikilinkOptions(),
       onChange: (markdown) => this.handleEditorChange(markdown),
     });
   }
@@ -162,4 +171,73 @@ export class WorkspaceDocuments {
       cursor: this.ctx.editorRuntime.getCursorPosition(),
     };
   }
+
+  private wikilinkOptions(): MarkdownWikilinkOptions {
+    return {
+      currentPath: () => this.ctx.activePath || undefined,
+      resolve: async (reference, fromPath) => {
+        const resolution = await this.ctx.project?.resolveWikilink(reference.raw, fromPath);
+        return toMarkdownWikilinkResolution(
+          resolution ?? { status: "unresolved", target: reference.target }
+        );
+      },
+      preview: async (path) => {
+        if (this.ctx.project === undefined) {
+          return { path, title: path, excerpt: "" };
+        }
+        const document = await this.ctx.project.readDocument({ path });
+        return {
+          path,
+          title: document.title,
+          excerpt: excerptFromMarkdown(document.body),
+        };
+      },
+      open: async (path) => {
+        await this.openWikilinkPath(path);
+      },
+      create: async (_reference: MarkdownWikilinkReference, _fromPath, target) => {
+        await this.flushSave();
+        this.openWikilinkCreateModal?.(target);
+      },
+    };
+  }
+
+  private async openWikilinkPath(path: string): Promise<void> {
+    await this.flushSave();
+    await this.openDocument(path);
+  }
+}
+
+function toMarkdownWikilinkResolution(
+  resolution: WorkspaceLinkResolution
+): MarkdownWikilinkResolution {
+  if (resolution.status === "resolved") {
+    return { status: "resolved", path: resolution.path, reason: resolution.reason };
+  }
+  if (resolution.status === "ambiguous") {
+    return {
+      status: "ambiguous",
+      target: resolution.target,
+      reason: resolution.reason,
+      candidates: resolution.candidates.map((candidate) => ({
+        path: candidate.path,
+        title: candidate.title,
+      })),
+    };
+  }
+  return { status: "unresolved", target: resolution.target };
+}
+
+function excerptFromMarkdown(markdown: string): string {
+  const text = markdown
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
+    .replace(/\[\[([^\]]+)\]\]/g, "$1")
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(" ");
+  return text.length <= 180 ? text : `${text.slice(0, 177).trimEnd()}...`;
 }

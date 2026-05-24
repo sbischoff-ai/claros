@@ -6,6 +6,7 @@ import {
   normalizedProjectTitle,
   normalizedSceneTitle,
 } from "$lib/title-model";
+import { titleFromSlug } from "$lib/text-format";
 import type { SidebarItem, TitleModalState } from "$lib/workspace-types";
 import type { WorkspaceContext } from "./workspace-context.svelte";
 import type { WorkspaceDocuments } from "./workspace-documents.svelte";
@@ -139,6 +140,19 @@ export class WorkspaceTitles {
       placeholder: "",
       notePath,
       selectedFolderPath: this.currentNoteFolderPath().join("/"),
+      folderOptions: this.noteFolderOptions(),
+      hideValueInput: true,
+    });
+  }
+
+  openWikilinkNoteModal(target: string, folderPath = this.currentNoteFolderPath()): void {
+    this.openTitleModal({
+      target: "new-wikilink-note",
+      heading: "Create Linked Note",
+      value: target,
+      placeholder: "",
+      wikilinkTarget: target,
+      selectedFolderPath: folderPath.join("/"),
       folderOptions: this.noteFolderOptions(),
       hideValueInput: true,
     });
@@ -333,7 +347,7 @@ export class WorkspaceTitles {
       if (modal.scenePath === this.ctx.activePath)
         await this.documents.loadDocument(this.ctx.activePath);
       await this.focus.restoreWorkspaceFocus(modal.returnFocus);
-    } else if (modal.target === "new-note") {
+    } else if (modal.target === "new-note" || modal.target === "new-wikilink-note") {
       const note = await this.ctx.project.createNote(modal.value, {
         folderPath: folderPathFromModal(modal),
       });
@@ -394,12 +408,4 @@ function folderPathFromModal(modal: TitleModalState): string[] {
     .split("/")
     .map((part) => part.trim())
     .filter(Boolean);
-}
-
-function titleFromSlug(slug: string): string {
-  return slug
-    .split("-")
-    .filter((part) => part.length > 0)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(" ");
 }

@@ -1,4 +1,5 @@
 import type { WorkspaceChapter, WorkspaceNote, WorkspaceNoteFolder } from "./project-session";
+import { titleFromSlug } from "./text-format";
 import type { SidebarItem } from "./workspace-types";
 
 export function buildSidebarItems(
@@ -157,12 +158,4 @@ function startsWithPath(path: string[], prefix: string[]): boolean {
 
 function pathsEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && startsWithPath(left, right);
-}
-
-function titleFromSlug(slug: string): string {
-  return slug
-    .split("-")
-    .filter((part) => part.length > 0)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(" ");
 }

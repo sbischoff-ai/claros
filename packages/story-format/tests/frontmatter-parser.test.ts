@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { parseNoteFrontmatter, serializeNoteFrontmatter } from "../src/frontmatter/parser.js";
+import {
+  parseNoteFrontmatter,
+  replaceMarkdownBodyPreservingFrontmatter,
+  serializeNoteFrontmatter,
+} from "../src/frontmatter/parser.js";
 
 describe("parseNoteFrontmatter", () => {
   it("parses title/type/aliases", () => {
@@ -71,5 +75,16 @@ describe("parseNoteFrontmatter", () => {
     const result = serializeNoteFrontmatter({ type: "location" }, body);
     const { body: reparsed } = parseNoteFrontmatter(result);
     expect(reparsed).toBe(body);
+  });
+
+  it("replaces a markdown body while preserving existing frontmatter bytes", () => {
+    const previous = "---\r\ntitle: Kareth\r\naliases: [Merc]\r\n---\r\n\n# Old\n";
+    const next = replaceMarkdownBodyPreservingFrontmatter(previous, "# New\n");
+
+    expect(next).toBe("---\r\ntitle: Kareth\r\naliases: [Merc]\r\n---\r\n# New\n");
+  });
+
+  it("replaces the whole document when no frontmatter exists", () => {
+    expect(replaceMarkdownBodyPreservingFrontmatter("# Old\n", "# New\n")).toBe("# New\n");
   });
 });
