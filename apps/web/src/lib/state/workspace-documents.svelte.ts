@@ -13,6 +13,14 @@ export class WorkspaceDocuments {
 
   constructor(private readonly ctx: WorkspaceContext) {}
 
+  get canNavigateBack(): boolean {
+    return this.ctx.documentTrailIndex > 0;
+  }
+
+  get canNavigateForward(): boolean {
+    return this.ctx.documentTrailIndex < this.ctx.documentTrail.length - 1;
+  }
+
   handleEditorChange(markdown: string): void {
     if (this.ctx.suppressEditorChange || !this.ctx.projectIsOpen) {
       return;
@@ -102,7 +110,11 @@ export class WorkspaceDocuments {
 
   async openDocument(
     path: string,
-    options: { forceReload?: boolean; skipSave?: boolean } = {}
+    options: {
+      forceReload?: boolean;
+      skipSave?: boolean;
+      history?: "record" | "replace" | "preserve";
+    } = {}
   ): Promise<void> {
     if (path === this.ctx.activePath && options.forceReload !== true) {
       await this.focusEditorAfterOpen();
@@ -113,8 +125,38 @@ export class WorkspaceDocuments {
       await this.flushSave();
     }
     await this.loadDocument(path);
+    this.updateDocumentTrail(path, options.history ?? "record");
     this.setEditorMarkdown(this.ctx.currentMarkdown);
     await this.focusEditorAfterOpen();
+  }
+
+  async navigateBack(): Promise<void> {
+    if (!this.canNavigateBack) {
+      return;
+    }
+    await this.openDocument(this.ctx.documentTrail[this.ctx.documentTrailIndex - 1], {
+      history: "preserve",
+    });
+    this.ctx.documentTrailIndex -= 1;
+  }
+
+  async navigateForward(): Promise<void> {
+    if (!this.canNavigateForward) {
+      return;
+    }
+    await this.openDocument(this.ctx.documentTrail[this.ctx.documentTrailIndex + 1], {
+      history: "preserve",
+    });
+    this.ctx.documentTrailIndex += 1;
+  }
+
+  resetDocumentTrail(path: string): void {
+    this.ctx.documentTrail = path.length > 0 ? [path] : [];
+    this.ctx.documentTrailIndex = this.ctx.documentTrail.length - 1;
+  }
+
+  replaceCurrentDocumentInTrail(path: string): void {
+    this.updateDocumentTrail(path, "replace");
   }
 
   async focusEditorAfterOpen(): Promise<void> {
@@ -210,6 +252,29 @@ export class WorkspaceDocuments {
   private async openWikilinkPath(path: string): Promise<void> {
     await this.flushSave();
     await this.openDocument(path);
+  }
+
+  private updateDocumentTrail(path: string, mode: "record" | "replace" | "preserve"): void {
+    if (mode === "preserve") {
+      return;
+    }
+    if (mode === "replace") {
+      if (this.ctx.documentTrailIndex === -1) {
+        this.resetDocumentTrail(path);
+        return;
+      }
+      const next = this.ctx.documentTrail.slice(0, this.ctx.documentTrailIndex + 1);
+      next[this.ctx.documentTrailIndex] = path;
+      this.ctx.documentTrail = next;
+      return;
+    }
+    if (this.ctx.documentTrail[this.ctx.documentTrailIndex] === path) {
+      return;
+    }
+    this.ctx.documentTrail = this.ctx.documentTrail
+      .slice(0, this.ctx.documentTrailIndex + 1)
+      .concat(path);
+    this.ctx.documentTrailIndex = this.ctx.documentTrail.length - 1;
   }
 }
 

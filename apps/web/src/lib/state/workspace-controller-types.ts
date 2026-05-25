@@ -85,8 +85,12 @@ export interface WorkspaceTitleSurface {
 
 export interface WorkspaceEditorSurface {
   editorHost: HTMLDivElement | undefined;
+  readonly canNavigateBack: boolean;
+  readonly canNavigateForward: boolean;
   ensureEditor(): Promise<void>;
   rememberEditorFocus(): void;
+  navigateBack(): Promise<void>;
+  navigateForward(): Promise<void>;
 }
 
 export interface WorkspaceProjectLauncherSurface {

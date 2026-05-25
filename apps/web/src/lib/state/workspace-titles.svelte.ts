@@ -259,6 +259,7 @@ export class WorkspaceTitles {
           : updatedChapter.scenes.find((scene) => scene.sequence === activeSceneSequence);
       if (updatedActiveScene !== undefined) {
         await this.documents.loadDocument(updatedActiveScene.path);
+        this.documents.replaceCurrentDocumentInTrail(updatedActiveScene.path);
         this.documents.setEditorMarkdown(this.ctx.currentMarkdown);
       }
     } finally {
@@ -281,6 +282,7 @@ export class WorkspaceTitles {
       const updatedScene = await this.ctx.project.setSceneTitle(scenePath, title);
       if (scenePath === this.ctx.activePath) {
         await this.documents.loadDocument(updatedScene.path);
+        this.documents.replaceCurrentDocumentInTrail(updatedScene.path);
         this.documents.setEditorMarkdown(this.ctx.currentMarkdown);
       }
     } finally {
@@ -365,7 +367,11 @@ export class WorkspaceTitles {
         targetFolderPath: folderPathFromModal(modal),
       });
       this.documents.refreshProjectView();
-      await this.documents.openDocument(note.path, { forceReload: true, skipSave: true });
+      await this.documents.openDocument(note.path, {
+        forceReload: true,
+        skipSave: true,
+        history: "replace",
+      });
     }
   }
 

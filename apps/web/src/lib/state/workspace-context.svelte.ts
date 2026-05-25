@@ -133,6 +133,20 @@ export class WorkspaceContext {
     this.documents.currentMarkdown = value;
   }
 
+  get documentTrail(): string[] {
+    return this.documents.documentTrail;
+  }
+  set documentTrail(value: string[]) {
+    this.documents.documentTrail = value;
+  }
+
+  get documentTrailIndex(): number {
+    return this.documents.documentTrailIndex;
+  }
+  set documentTrailIndex(value: number) {
+    this.documents.documentTrailIndex = value;
+  }
+
   get vimMode(): boolean {
     return this.documents.vimMode;
   }

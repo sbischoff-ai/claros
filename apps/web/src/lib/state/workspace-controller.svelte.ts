@@ -249,8 +249,16 @@ function createEditorSurface(
     set editorHost(value) {
       ctx.editorHost = value;
     },
+    get canNavigateBack() {
+      return documents.canNavigateBack;
+    },
+    get canNavigateForward() {
+      return documents.canNavigateForward;
+    },
     ensureEditor: () => documents.ensureEditor(),
     rememberEditorFocus: () => documents.rememberEditorFocus(),
+    navigateBack: () => documents.navigateBack(),
+    navigateForward: () => documents.navigateForward(),
   };
 }
 

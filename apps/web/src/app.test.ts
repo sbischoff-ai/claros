@@ -466,6 +466,15 @@ describe("workspace command surface", () => {
     expect(workspaceSource).toContain('class="startup-screen"');
     expect(workspaceSource).toContain('class="startup-spinner"');
   });
+
+  it("renders editor file history navigation with arrow icons", () => {
+    expect(workspaceSource).toContain("phosphor-svelte/lib/ArrowLeft");
+    expect(workspaceSource).toContain("phosphor-svelte/lib/ArrowRight");
+    expect(workspaceSource).toContain('aria-label="Open previous file"');
+    expect(workspaceSource).toContain('aria-label="Open next file"');
+    expect(workspaceSource).toContain("disabled={!controller.canNavigateBack}");
+    expect(workspaceSource).toContain("disabled={!controller.canNavigateForward}");
+  });
 });
 
 class MemoryDirectoryHandle implements DirectoryHandle {

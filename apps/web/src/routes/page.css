@@ -614,6 +614,20 @@ button:disabled {
   background: var(--claros-editor-background);
 }
 
+.editor-file-nav {
+  position: absolute;
+  z-index: 12;
+  top: 3.55rem;
+  left: 2.4rem;
+  display: flex;
+  gap: 0.25rem;
+  color: var(--claros-prose-muted);
+}
+
+.editor-file-nav .icon-button {
+  background: color-mix(in srgb, var(--claros-editor-background) 88%, transparent);
+}
+
 .editor-host {
   height: 100vh;
   overflow: hidden;
