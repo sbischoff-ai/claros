@@ -44,7 +44,7 @@ export class MarkdownEditorRuntime {
     this.editor?.setVimMode(enabled);
   }
 
-  setMarkdown(markdown: string, cursor: "start" | "end", documentId: string): void {
+  setMarkdown(markdown: string, cursor: "start" | "end" | number, documentId: string): void {
     this.editor?.setMarkdown(markdown, { cursor, documentId });
   }
 

@@ -12,6 +12,7 @@ import {
 } from "@codemirror/view";
 import { vim } from "@replit/codemirror-vim";
 
+import { markdownAutoPairExtension } from "./markdown-autopairs";
 import { markdownMarkerDecorations } from "./markdown-markers";
 import { markdownPresentationDecorations } from "./markdown-presentation";
 import { markdownWikilinkExtension, type MarkdownWikilinkOptions } from "./markdown-wikilinks";
@@ -214,6 +215,7 @@ function baseExtensions(wikilinks?: MarkdownWikilinkOptions): Extension[] {
     markdownPresentationDecorations,
     ...(wikilinks === undefined ? [] : markdownWikilinkExtension(wikilinks)),
     markdownMarkerDecorations,
+    markdownAutoPairExtension(),
     keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
   ];
 }

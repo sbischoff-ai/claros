@@ -196,8 +196,10 @@ export class WorkspaceDocuments {
     }
   }
 
-  defaultCursorForActiveDocument(): "start" | "end" {
-    return this.ctx.activeDocumentKind === "note" ? "start" : "end";
+  defaultCursorForActiveDocument(): "start" | "end" | number {
+    return this.ctx.activeDocumentKind === "note"
+      ? cursorAfterFirstHeading(this.ctx.currentMarkdown)
+      : "end";
   }
 
   focusEditorWithDefaultCursor(): void {
@@ -310,4 +312,16 @@ function excerptFromMarkdown(markdown: string): string {
     .filter(Boolean)
     .join(" ");
   return text.length <= 180 ? text : `${text.slice(0, 177).trimEnd()}...`;
+}
+
+function cursorAfterFirstHeading(markdown: string): number {
+  const firstLineEnd = markdown.indexOf("\n");
+  const firstLine = firstLineEnd === -1 ? markdown : markdown.slice(0, firstLineEnd);
+  if (!/^#{1,6}\s+\S/.test(firstLine)) {
+    return 0;
+  }
+  if (firstLineEnd === -1) {
+    return markdown.length;
+  }
+  return firstLineEnd + 1;
 }

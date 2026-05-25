@@ -61,12 +61,27 @@ function collectLineMarkers(line: string, lineStart: number, ranges: MarkdownMar
     });
   }
 
-  collectMatches(line, lineStart, /`+/g, "code", ranges);
-  collectMatches(line, lineStart, /\*\*|\*|__|_/g, "emphasis", ranges);
-  collectMatches(line, lineStart, /\[\[|\]\]|\]\(|\[|\]|\)|\|/g, "link", ranges);
+  collectPairedMarkers(line, lineStart, /(`+)([^`]+)(\1)/g, "code", ranges);
+  collectPairedMarkers(line, lineStart, /(\*\*|__)(?=\S)(.+?\S)\1/g, "emphasis", ranges);
+  collectPairedMarkers(
+    line,
+    lineStart,
+    /(?<!\*)(\*)(?!\*)(?=\S)([^*\n]*?\S)(?<!\*)\*(?!\*)/g,
+    "emphasis",
+    ranges
+  );
+  collectPairedMarkers(
+    line,
+    lineStart,
+    /(?<!_)(_)(?!_)(?=\S)([^_\n]*?\S)(?<!_)_(?!_)/g,
+    "emphasis",
+    ranges
+  );
+  collectPairedMarkers(line, lineStart, /(\[\[)([^\]\n]+)(\]\])/g, "link", ranges);
+  collectPairedMarkers(line, lineStart, /(\[[^\]\n]+\])(\([^\)\n]+\))/g, "link", ranges);
 }
 
-function collectMatches(
+function collectPairedMarkers(
   line: string,
   lineStart: number,
   pattern: RegExp,
@@ -77,12 +92,66 @@ function collectMatches(
     if (match.index === undefined) {
       continue;
     }
+    if (kind === "link" && match[0].startsWith("[")) {
+      collectLinkMarkers(lineStart, match, ranges);
+      continue;
+    }
+    const open = match[1] ?? match[0][0];
+    const close = match[3] ?? open;
+    ranges.push({ from: lineStart + match.index, to: lineStart + match.index + open.length, kind });
     ranges.push({
-      from: lineStart + match.index,
+      from: lineStart + match.index + match[0].length - close.length,
       to: lineStart + match.index + match[0].length,
       kind,
     });
   }
+}
+
+function collectLinkMarkers(
+  lineStart: number,
+  match: RegExpMatchArray,
+  ranges: MarkdownMarkerRange[]
+): void {
+  if (match.index === undefined) {
+    return;
+  }
+  const raw = match[0];
+  if (raw.startsWith("[[")) {
+    ranges.push({ from: lineStart + match.index, to: lineStart + match.index + 2, kind: "link" });
+    const pipe = raw.indexOf("|");
+    if (pipe !== -1) {
+      ranges.push({
+        from: lineStart + match.index + pipe,
+        to: lineStart + match.index + pipe + 1,
+        kind: "link",
+      });
+    }
+    ranges.push({
+      from: lineStart + match.index + raw.length - 2,
+      to: lineStart + match.index + raw.length,
+      kind: "link",
+    });
+    return;
+  }
+
+  const closeBracket = raw.indexOf("]");
+  const openParen = raw.indexOf("(", closeBracket);
+  ranges.push({ from: lineStart + match.index, to: lineStart + match.index + 1, kind: "link" });
+  ranges.push({
+    from: lineStart + match.index + closeBracket,
+    to: lineStart + match.index + closeBracket + 1,
+    kind: "link",
+  });
+  ranges.push({
+    from: lineStart + match.index + openParen,
+    to: lineStart + match.index + openParen + 1,
+    kind: "link",
+  });
+  ranges.push({
+    from: lineStart + match.index + raw.length - 1,
+    to: lineStart + match.index + raw.length,
+    kind: "link",
+  });
 }
 
 function buildDecorations(view: EditorView): DecorationSet {

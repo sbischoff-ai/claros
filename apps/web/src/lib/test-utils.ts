@@ -87,7 +87,7 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
   documentId = "";
   readonly setMarkdownCalls: Array<{
     markdown: string;
-    cursor: "start" | "end";
+    cursor: "start" | "end" | number;
     documentId: string;
   }> = [];
   focusedWith: { cursor?: "start" | "end" | number } | undefined;
@@ -121,7 +121,7 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
     this.vimMode = enabled;
   }
 
-  override setMarkdown(markdown: string, cursor: "start" | "end", documentId: string): void {
+  override setMarkdown(markdown: string, cursor: "start" | "end" | number, documentId: string): void {
     this.markdown = markdown;
     this.documentId = documentId;
     this.setMarkdownCalls.push({ markdown, cursor, documentId });

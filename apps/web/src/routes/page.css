@@ -637,6 +637,11 @@ button:disabled {
   height: 100%;
 }
 
+.editor-host .cm-content {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 6rem, black 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, black 6rem, black 100%);
+}
+
 .project-empty-state {
   position: absolute;
   z-index: 5;

@@ -12,6 +12,7 @@ import {
   getClarosTheme,
   isClarosThemeId,
   resolveMarkdownCursorPosition,
+  shouldInsertMarkdownAutoPair,
   wikilinkAtCursor,
 } from "../src/index";
 import { MarkdownDocumentStateStore } from "../src/editor";
@@ -65,7 +66,7 @@ describe("editor-core", () => {
   });
 
   it("finds markdown markers that should be visually de-emphasized", () => {
-    const markdown = "# Heading\nA **bold** [[Link|label]] and `code`.";
+    const markdown = "# Heading\nA **bold** [[Link|label]] and `code` plus [site](https://x.test).";
     const ranges = findMarkdownMarkerRanges(markdown);
 
     expect(ranges).toEqual(
@@ -77,8 +78,40 @@ describe("editor-core", () => {
         { from: 33, to: 35, kind: "link" },
         { from: 40, to: 41, kind: "code" },
         { from: 45, to: 46, kind: "code" },
+        { from: 52, to: 53, kind: "link" },
+        { from: 57, to: 58, kind: "link" },
+        { from: 58, to: 59, kind: "link" },
+        { from: 73, to: 74, kind: "link" },
       ])
     );
+  });
+
+  it("does not mute unmatched markdown punctuation", () => {
+    const markdown = "A lone [ bracket, _ underscore, and * star.";
+    expect(findMarkdownMarkerRanges(markdown)).toEqual([]);
+  });
+
+  it("mutes only the delimiters for single emphasis spans", () => {
+    const markdown = "*c* *cc* *ccc* _cc_";
+    const ranges = [...findMarkdownMarkerRanges(markdown)].sort((a, b) => a.from - b.from);
+
+    expect(ranges).toEqual([
+      { from: 0, to: 1, kind: "emphasis" },
+      { from: 2, to: 3, kind: "emphasis" },
+      { from: 4, to: 5, kind: "emphasis" },
+      { from: 7, to: 8, kind: "emphasis" },
+      { from: 9, to: 10, kind: "emphasis" },
+      { from: 13, to: 14, kind: "emphasis" },
+      { from: 15, to: 16, kind: "emphasis" },
+      { from: 18, to: 19, kind: "emphasis" },
+    ]);
+  });
+
+  it("auto-pairs markdown delimiters only after whitespace or document start", () => {
+    expect(shouldInsertMarkdownAutoPair("", 0)).toBe(true);
+    expect(shouldInsertMarkdownAutoPair("word ", 5)).toBe(true);
+    expect(shouldInsertMarkdownAutoPair("word", 4)).toBe(false);
+    expect(shouldInsertMarkdownAutoPair("*", 1, true)).toBe(true);
   });
 
   it("finds parser-backed markdown presentation ranges", () => {

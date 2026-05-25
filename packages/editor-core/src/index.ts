@@ -9,6 +9,10 @@ export {
   type MarkdownEditorSetMarkdownOptions,
 } from "./editor";
 export {
+  markdownAutoPairExtension,
+  shouldInsertMarkdownAutoPair,
+} from "./markdown-autopairs";
+export {
   CLAROS_THEMES,
   CLAROS_THEME_ATTRIBUTE,
   DEFAULT_CLAROS_THEME_ID,

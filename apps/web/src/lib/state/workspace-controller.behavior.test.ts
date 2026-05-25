@@ -249,8 +249,13 @@ describe("workspace controllers", () => {
 
     expect(controllers.sidebar.activePath).toBe("notes/hidden-shrine.md");
     expect(editorRuntime.markdown).toContain("# Hidden Shrine");
+    expect(editorRuntime.markdown.startsWith("# Hidden Shrine\n")).toBe(true);
+    expect(editorRuntime.focusedWith).toEqual({ cursor: "# Hidden Shrine\n".length });
     expect(await readHandleFile(handle, "/notes/hidden-shrine.md")).toContain(
       'title: "Hidden Shrine"'
+    );
+    expect(await readHandleFile(handle, "/notes/hidden-shrine.md")).toContain(
+      "---\n# Hidden Shrine\n"
     );
   });
 
