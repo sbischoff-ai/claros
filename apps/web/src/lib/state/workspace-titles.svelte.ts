@@ -6,6 +6,7 @@ import {
   normalizedProjectTitle,
   normalizedSceneTitle,
 } from "$lib/title-model";
+import { titleFromSlug } from "$lib/text-format";
 import type { SidebarItem, TitleModalState } from "$lib/workspace-types";
 import type { WorkspaceContext } from "./workspace-context.svelte";
 import type { WorkspaceDocuments } from "./workspace-documents.svelte";
@@ -105,6 +106,55 @@ export class WorkspaceTitles {
       value: this.ctx.activeScene.title,
       placeholder: `Scene ${this.ctx.activeScene.sequence}`,
       scenePath: this.ctx.activeScene.path,
+    });
+  }
+
+  openNewNoteModal(folderPath = this.currentNoteFolderPath()): void {
+    this.openTitleModal({
+      target: "new-note",
+      heading: "New Note",
+      value: "",
+      placeholder: "Note Title",
+      selectedFolderPath: folderPath.join("/"),
+      folderOptions: this.noteFolderOptions(),
+    });
+  }
+
+  openNewNoteFolderModal(parentFolderPath = this.currentNoteFolderPath()): void {
+    this.openTitleModal({
+      target: "new-note-folder",
+      heading: "New Note Folder",
+      value: "",
+      placeholder: "Folder Title",
+      selectedFolderPath: parentFolderPath.join("/"),
+      folderOptions: this.noteFolderOptions(),
+    });
+  }
+
+  openMoveNoteModal(notePath = this.ctx.activeNote?.path): void {
+    if (notePath === undefined) return;
+    this.openTitleModal({
+      target: "move-note",
+      heading: "Move Note",
+      value: "",
+      placeholder: "",
+      notePath,
+      selectedFolderPath: this.currentNoteFolderPath().join("/"),
+      folderOptions: this.noteFolderOptions(),
+      hideValueInput: true,
+    });
+  }
+
+  openWikilinkNoteModal(target: string, folderPath = this.currentNoteFolderPath()): void {
+    this.openTitleModal({
+      target: "new-wikilink-note",
+      heading: "Create Linked Note",
+      value: target,
+      placeholder: "",
+      wikilinkTarget: target,
+      selectedFolderPath: folderPath.join("/"),
+      folderOptions: this.noteFolderOptions(),
+      hideValueInput: true,
     });
   }
 
@@ -209,6 +259,7 @@ export class WorkspaceTitles {
           : updatedChapter.scenes.find((scene) => scene.sequence === activeSceneSequence);
       if (updatedActiveScene !== undefined) {
         await this.documents.loadDocument(updatedActiveScene.path);
+        this.documents.replaceCurrentDocumentInTrail(updatedActiveScene.path);
         this.documents.setEditorMarkdown(this.ctx.currentMarkdown);
       }
     } finally {
@@ -231,6 +282,7 @@ export class WorkspaceTitles {
       const updatedScene = await this.ctx.project.setSceneTitle(scenePath, title);
       if (scenePath === this.ctx.activePath) {
         await this.documents.loadDocument(updatedScene.path);
+        this.documents.replaceCurrentDocumentInTrail(updatedScene.path);
         this.documents.setEditorMarkdown(this.ctx.currentMarkdown);
       }
     } finally {
@@ -297,7 +349,57 @@ export class WorkspaceTitles {
       if (modal.scenePath === this.ctx.activePath)
         await this.documents.loadDocument(this.ctx.activePath);
       await this.focus.restoreWorkspaceFocus(modal.returnFocus);
+    } else if (modal.target === "new-note" || modal.target === "new-wikilink-note") {
+      const note = await this.ctx.project.createNote(modal.value, {
+        folderPath: folderPathFromModal(modal),
+      });
+      this.documents.refreshProjectView();
+      await this.documents.openDocument(note.path);
+    } else if (modal.target === "new-note-folder") {
+      const folder = await this.ctx.project.createNoteFolder(modal.value, {
+        parentFolderPath: folderPathFromModal(modal),
+      });
+      this.documents.refreshProjectView();
+      this.expandFolderPath(folder.folderPath);
+      await this.focus.restoreWorkspaceFocus(modal.returnFocus);
+    } else if (modal.target === "move-note" && modal.notePath !== undefined) {
+      const note = await this.ctx.project.moveNote(modal.notePath, {
+        targetFolderPath: folderPathFromModal(modal),
+      });
+      this.documents.refreshProjectView();
+      await this.documents.openDocument(note.path, {
+        forceReload: true,
+        skipSave: true,
+        history: "replace",
+      });
     }
+  }
+
+  private currentNoteFolderPath(): string[] {
+    const focused = this.ctx.sidebarItems.find((item) => item.id === this.ctx.focusedSidebarItemId);
+    if (focused?.kind === "folder" && focused.folderPath !== undefined) {
+      return focused.folderPath;
+    }
+    return this.ctx.activeNote?.folderPath ?? [];
+  }
+
+  private noteFolderOptions(): Array<{ label: string; folderPath: string[] }> {
+    return [
+      { label: "Notes", folderPath: [] },
+      ...this.ctx.noteFolders.map((folder) => ({
+        label: `Notes / ${folder.folderPath.map(titleFromSlug).join(" / ")}`,
+        folderPath: folder.folderPath,
+      })),
+    ];
+  }
+
+  private expandFolderPath(folderPath: string[]): void {
+    const next = new Set(this.ctx.collapsedItems);
+    next.delete("notes");
+    for (let index = 0; index < folderPath.length; index += 1) {
+      next.delete(`folder:${folderPath.slice(0, index + 1).join("/")}`);
+    }
+    this.ctx.collapsedItems = next;
   }
 
   private focusTitleInput(selector: string): void {
@@ -305,4 +407,11 @@ export class WorkspaceTitles {
     input?.focus();
     input?.select();
   }
+}
+
+function folderPathFromModal(modal: TitleModalState): string[] {
+  return (modal.selectedFolderPath ?? "")
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
 }

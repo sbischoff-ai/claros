@@ -135,7 +135,11 @@ export class WorkspaceManuscriptActions {
       nextActivePath !== this.ctx.activePath ||
       this.ctx.scenes.some((scene) => scene.path === nextActivePath)
     ) {
-      await this.documents.openDocument(nextActivePath, { forceReload: true, skipSave: true });
+      await this.documents.openDocument(nextActivePath, {
+        forceReload: true,
+        skipSave: true,
+        history: nextActivePath === this.ctx.activePath ? "preserve" : "replace",
+      });
     }
   }
 

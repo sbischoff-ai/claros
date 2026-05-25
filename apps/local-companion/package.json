@@ -13,6 +13,7 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@claros/story-format": "workspace:*",
     "@claros/story-state": "workspace:*"
   },
   "devDependencies": {

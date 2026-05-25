@@ -9,6 +9,7 @@ import {
   type ChapterRef,
   type ClarosBlockRef,
   type MarkdownDocument,
+  type NoteFolderRef,
   type NoteRef,
   type ProjectFileReader,
   type ProjectFileWriter,
@@ -98,6 +99,19 @@ export interface RenameNoteOptions {
 export interface RenameSceneOptions {
   rewriteLinks?: boolean;
   dryRun?: boolean;
+}
+
+export interface CreateNoteOptions {
+  folderPath?: string | string[];
+}
+
+export interface CreateNoteFolderOptions {
+  parentFolderPath?: string | string[];
+}
+
+export interface MoveNoteOptions {
+  targetFolderPath?: string | string[];
+  rewriteLinks?: boolean;
 }
 
 export type ManuscriptInsertionPlacement = "append" | "before" | "after";
@@ -221,6 +235,7 @@ export interface ClarosProject {
   listChapters(): ChapterRef[];
   listScenes(): SceneRef[];
   listNotes(): NoteRef[];
+  listNoteFolders(): NoteFolderRef[];
 
   readDocument(ref: DocumentRef): Promise<MarkdownDocument>;
   writeDocument(
@@ -276,6 +291,24 @@ export interface ClarosProject {
     scene: SceneRef | string,
     options: MoveSceneOptions
   ): Promise<ManuscriptMoveResult & { scene: SceneRef }>;
+  createNote(
+    title: string,
+    options?: CreateNoteOptions
+  ): Promise<{ result: MutationResult; note: NoteRef }>;
+  createNoteFolder(
+    title: string,
+    options?: CreateNoteFolderOptions
+  ): Promise<{ result: MutationResult; folder: NoteFolderRef }>;
+  deleteNote(
+    note: NoteRef | string
+  ): Promise<{ result: MutationResult; nextDocument?: DocumentRef }>;
+  deleteNoteFolder(
+    folder: NoteFolderRef | string
+  ): Promise<{ result: MutationResult; nextDocument?: DocumentRef }>;
+  moveNote(
+    note: NoteRef | string,
+    options?: MoveNoteOptions
+  ): Promise<{ result: MutationResult; note: NoteRef }>;
 
   planRenameNote(
     note: NoteRef | string,
@@ -746,6 +779,10 @@ class ClarosProjectImpl implements ClarosProject {
     return this.index.listNotes();
   }
 
+  listNoteFolders(): NoteFolderRef[] {
+    return this.index.listNoteFolders();
+  }
+
   readDocument(ref: DocumentRef): Promise<MarkdownDocument> {
     return readDocument(this.root, ref, this.fileOptions());
   }
@@ -925,6 +962,39 @@ class ClarosProjectImpl implements ClarosProject {
     options: MoveSceneOptions
   ): Promise<ManuscriptMoveResult & { scene: SceneRef }> {
     return this.mutations.moveScene(scene, options);
+  }
+
+  async createNote(
+    title: string,
+    options?: CreateNoteOptions
+  ): Promise<{ result: MutationResult; note: NoteRef }> {
+    return this.mutations.createNote(title, options);
+  }
+
+  async createNoteFolder(
+    title: string,
+    options?: CreateNoteFolderOptions
+  ): Promise<{ result: MutationResult; folder: NoteFolderRef }> {
+    return this.mutations.createNoteFolder(title, options);
+  }
+
+  async deleteNote(
+    note: NoteRef | string
+  ): Promise<{ result: MutationResult; nextDocument?: DocumentRef }> {
+    return this.mutations.deleteNote(note);
+  }
+
+  async deleteNoteFolder(
+    folder: NoteFolderRef | string
+  ): Promise<{ result: MutationResult; nextDocument?: DocumentRef }> {
+    return this.mutations.deleteNoteFolder(folder);
+  }
+
+  async moveNote(
+    note: NoteRef | string,
+    options?: MoveNoteOptions
+  ): Promise<{ result: MutationResult; note: NoteRef }> {
+    return this.mutations.moveNote(note, options);
   }
 
   async planRenameNote(

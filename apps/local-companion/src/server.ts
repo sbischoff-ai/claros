@@ -1,15 +1,27 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import * as path from "node:path";
 import {
+  NodeProjectFileReader,
+  NodeProjectFileWriter,
+  ProjectAlreadyExistsError,
+  initializeProjectFiles,
   openProject,
+  replaceMarkdownBodyPreservingFrontmatter,
+  summarizeWorkspaceProject,
+  toWorkspaceChapter,
+  toWorkspaceDocument,
+  toWorkspaceLinkResolution,
+  toWorkspaceNote,
+  toWorkspaceNoteFolder,
+  toWorkspaceScene,
   type ChapterRef,
   type ClarosProject,
-  type MarkdownDocument,
+  type NoteFolderRef,
   type NoteRef,
-  type ProjectManifest,
   type SceneRef,
+  type WorkspaceProjectSummary,
 } from "@claros/story-state";
 
 export interface LocalCompanionOptions {
@@ -25,48 +37,7 @@ export interface LocalCompanionServer {
   close(): Promise<void>;
 }
 
-export interface ProjectSummary {
-  manifest: WorkspaceManifest;
-  chapters: WorkspaceChapter[];
-  notes: WorkspaceNote[];
-}
-
-interface WorkspaceManifest {
-  title: string;
-}
-
-interface WorkspaceChapter {
-  kind: "chapter";
-  id: string;
-  sequence: number;
-  title: string;
-  scenes: WorkspaceScene[];
-}
-
-interface WorkspaceScene {
-  kind: "scene";
-  id: string;
-  chapterId: string;
-  sequence: number;
-  title: string;
-  path: string;
-}
-
-interface WorkspaceNote {
-  kind: "note";
-  id: string;
-  path: string;
-  title: string;
-  folderPath: string[];
-}
-
-interface WorkspaceDocument {
-  path: string;
-  raw: string;
-  body: string;
-  title: string;
-  kind: "scene" | "note";
-}
+export type ProjectSummary = WorkspaceProjectSummary;
 
 export const DEFAULT_ALLOWED_ORIGINS = [
   "http://127.0.0.1:5173",
@@ -112,7 +83,7 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
 
       if (request.method === "GET" && url.pathname === "/api/project") {
         project = await openProject(projectRoot);
-        writeJson(response, 200, { ok: true, project: summarizeProject(project) });
+        writeJson(response, 200, { ok: true, project: summarizeWorkspaceProject(project) });
         return;
       }
 
@@ -144,12 +115,12 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
         const before = await current.readDocument({ path: body.path });
         await current.writeDocument(
           { path: body.path },
-          mergeBodyWithExistingFrontmatter(before.raw, body.body)
+          replaceMarkdownBodyPreservingFrontmatter(before.raw, body.body)
         );
         const after = await current.readDocument({ path: body.path });
         writeJson(response, 200, {
           ok: true,
-          project: summarizeProject(current),
+          project: summarizeWorkspaceProject(current),
           document: toWorkspaceDocument(current, after),
         });
         return;
@@ -159,7 +130,22 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
         const body = await readJsonBody(request);
         await initializeProject(projectRoot, titleFromBody(body));
         project = await openProject(projectRoot);
-        writeJson(response, 201, { ok: true, project: summarizeProject(project) });
+        writeJson(response, 201, { ok: true, project: summarizeWorkspaceProject(project) });
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/wikilink") {
+        const current = await ensureProject();
+        const link = url.searchParams.get("link") ?? "";
+        const fromPath = url.searchParams.get("fromPath") ?? undefined;
+        const resolution = current.resolveWikilink(
+          link,
+          fromPath === undefined ? undefined : { path: fromPath }
+        );
+        writeJson(response, 200, {
+          ok: true,
+          resolution: toWorkspaceLinkResolution(resolution),
+        });
         return;
       }
 
@@ -178,7 +164,7 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
         project = await openProject(projectRoot);
         writeJson(response, 200, {
           ok: true,
-          project: summarizeProject(project),
+          project: summarizeWorkspaceProject(project),
           ...(mutation.chapter === undefined
             ? {}
             : {
@@ -191,6 +177,10 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
                 ),
               }),
           ...(mutation.scene === undefined ? {} : { scene: toWorkspaceScene(mutation.scene) }),
+          ...(mutation.note === undefined ? {} : { note: toWorkspaceNote(mutation.note) }),
+          ...(mutation.noteFolder === undefined
+            ? {}
+            : { noteFolder: toWorkspaceNoteFolder(mutation.noteFolder) }),
           ...(mutation.nextPath === undefined ? {} : { nextPath: mutation.nextPath }),
           ...(mutation.pathMap === undefined ? {} : { pathMap: mutation.pathMap }),
           ...(mutation.chapterIdMap === undefined ? {} : { chapterIdMap: mutation.chapterIdMap }),
@@ -200,7 +190,7 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
 
       if (request.method === "POST" && url.pathname === "/api/reload") {
         project = await openProject(projectRoot);
-        writeJson(response, 200, { ok: true, project: summarizeProject(project) });
+        writeJson(response, 200, { ok: true, project: summarizeWorkspaceProject(project) });
         return;
       }
 
@@ -252,30 +242,16 @@ export function createLocalCompanionServer(options: LocalCompanionOptions): Loca
 }
 
 async function initializeProject(projectRoot: string, title = "Untitled Project"): Promise<void> {
-  if (await exists(path.join(projectRoot, "claros.yaml"))) {
-    throw new CompanionError(409, "PROJECT_EXISTS", "claros.yaml already exists");
-  }
-
-  await mkdir(path.join(projectRoot, "manuscript", "001-draft"), { recursive: true });
-  await mkdir(path.join(projectRoot, "notes"), { recursive: true });
-  await writeFile(
-    path.join(projectRoot, "claros.yaml"),
-    `claros: 1\ntitle: ${JSON.stringify(normalizedProjectTitle(title))}\n`,
-    {
-      encoding: "utf8",
-      flag: "wx",
+  const reader = new NodeProjectFileReader();
+  const writer = new NodeProjectFileWriter();
+  try {
+    await initializeProjectFiles(projectRoot, reader, writer, { title });
+  } catch (error) {
+    if (error instanceof ProjectAlreadyExistsError) {
+      throw new CompanionError(409, "PROJECT_EXISTS", error.message);
     }
-  );
-  await writeFile(
-    path.join(projectRoot, "manuscript", "001-draft", "chapter.yaml"),
-    "title: Draft\n",
-    { encoding: "utf8", flag: "wx" }
-  );
-  await writeFile(
-    path.join(projectRoot, "manuscript", "001-draft", "001-opening.md"),
-    "---\ntitle: Opening\n---\n\n# Draft\n\n## Opening\n\n",
-    { encoding: "utf8", flag: "wx" }
-  );
+    throw error;
+  }
 }
 
 async function hasProject(projectRoot: string): Promise<boolean> {
@@ -291,29 +267,14 @@ async function exists(filePath: string): Promise<boolean> {
   }
 }
 
-function summarizeProject(project: ClarosProject): ProjectSummary {
-  const scenesByChapter = new Map<string, WorkspaceScene[]>();
-  for (const scene of project.listScenes()) {
-    const scenes = scenesByChapter.get(scene.chapterId) ?? [];
-    scenes.push(toWorkspaceScene(scene));
-    scenesByChapter.set(scene.chapterId, scenes);
-  }
-
-  return {
-    manifest: normalizeManifest(project.manifest),
-    chapters: project
-      .listChapters()
-      .map((chapter) => toWorkspaceChapter(chapter, scenesByChapter.get(chapter.id) ?? [])),
-    notes: project.listNotes().map(toWorkspaceNote),
-  };
-}
-
 async function applyProjectMutation(
   project: ClarosProject,
   body: Record<string, unknown>
 ): Promise<{
   chapter?: ChapterRef;
   scene?: SceneRef;
+  note?: NoteRef;
+  noteFolder?: NoteFolderRef;
   nextPath?: string;
   pathMap?: Record<string, string>;
   chapterIdMap?: Record<string, string>;
@@ -407,6 +368,41 @@ async function applyProjectMutation(
       });
       return { scene, pathMap, chapterIdMap };
     }
+    case "create-note": {
+      const { note } = await project.createNote(title, {
+        folderPath: stringArrayValue(body.folderPath),
+      });
+      return { note };
+    }
+    case "create-note-folder": {
+      const { folder } = await project.createNoteFolder(title, {
+        parentFolderPath: stringArrayValue(body.parentFolderPath),
+      });
+      return { noteFolder: folder };
+    }
+    case "delete-note": {
+      if (typeof body.path !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected path");
+      }
+      const { nextDocument } = await project.deleteNote(body.path);
+      return { nextPath: nextDocument?.path };
+    }
+    case "delete-note-folder": {
+      if (typeof body.folderPath !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected folderPath");
+      }
+      const { nextDocument } = await project.deleteNoteFolder(body.folderPath);
+      return { nextPath: nextDocument?.path };
+    }
+    case "move-note": {
+      if (typeof body.path !== "string") {
+        throw new CompanionError(400, "BAD_REQUEST", "Expected path");
+      }
+      const { note } = await project.moveNote(body.path, {
+        targetFolderPath: stringArrayValue(body.targetFolderPath),
+      });
+      return { note };
+    }
     default:
       throw new CompanionError(400, "BAD_REQUEST", `Unknown project mutation: ${body.action}`);
   }
@@ -431,73 +427,10 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function normalizedProjectTitle(title: string): string {
-  const normalized = title.trim();
-  return normalized.length > 0 ? normalized : "Untitled Project";
-}
-
-function normalizeManifest(manifest: ProjectManifest): WorkspaceManifest {
-  return {
-    title: typeof manifest.title === "string" && manifest.title.trim() ? manifest.title : "Claros",
-  };
-}
-
-function toWorkspaceChapter(chapter: ChapterRef, scenes: WorkspaceScene[]): WorkspaceChapter {
-  return {
-    kind: "chapter",
-    id: chapter.id,
-    sequence: chapter.sequence,
-    title: chapter.title || `Chapter ${chapter.sequence}`,
-    scenes,
-  };
-}
-
-function toWorkspaceScene(scene: SceneRef): WorkspaceScene {
-  return {
-    kind: "scene",
-    id: scene.id,
-    chapterId: scene.chapterId,
-    sequence: scene.sequence,
-    title: scene.title || `Scene ${scene.sequence}`,
-    path: scene.path,
-  };
-}
-
-function toWorkspaceNote(note: NoteRef): WorkspaceNote {
-  return {
-    kind: "note",
-    id: note.path,
-    path: note.path,
-    title: note.title || titleFromSlug(note.slug),
-    folderPath: note.path.startsWith("notes/")
-      ? note.path.slice("notes/".length).split("/").slice(0, -1)
-      : [],
-  };
-}
-
-function toWorkspaceDocument(
-  project: ClarosProject,
-  document: MarkdownDocument
-): WorkspaceDocument {
-  const scene = project.listScenes().find((candidate) => candidate.path === document.path);
-  if (scene !== undefined) {
-    return {
-      path: document.path,
-      raw: document.raw,
-      body: document.body,
-      title: scene.title || `Scene ${scene.sequence}`,
-      kind: "scene",
-    };
-  }
-
-  const note = project.listNotes().find((candidate) => candidate.path === document.path);
-  return {
-    path: document.path,
-    raw: document.raw,
-    body: document.body,
-    title: note?.title || document.path,
-    kind: "note",
-  };
+function stringArrayValue(value: unknown): string[] | undefined {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
 }
 
 function ensureKnownDocumentPath(project: ClarosProject, candidatePath: string): void {
@@ -563,35 +496,6 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
 function writeJson(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(body));
-}
-
-function splitFrontmatter(raw: string): { frontmatter: string; body: string } {
-  if (!raw.startsWith("---\n") && !raw.startsWith("---\r\n")) {
-    return { frontmatter: "", body: raw };
-  }
-
-  const match = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n)?(?:\r?\n)?/.exec(raw);
-  if (match === null) {
-    return { frontmatter: "", body: raw };
-  }
-
-  return {
-    frontmatter: match[0],
-    body: raw.slice(match[0].length),
-  };
-}
-
-function mergeBodyWithExistingFrontmatter(previousRaw: string, body: string): string {
-  const { frontmatter } = splitFrontmatter(previousRaw);
-  return frontmatter.length === 0 ? body : `${frontmatter}${body}`;
-}
-
-function titleFromSlug(slug: string): string {
-  return slug
-    .split("-")
-    .filter((part) => part.length > 0)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

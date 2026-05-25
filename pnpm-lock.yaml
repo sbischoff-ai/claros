@@ -50,6 +50,9 @@ importers:
 
   apps/local-companion:
     dependencies:
+      '@claros/story-format':
+        specifier: workspace:*
+        version: link:../../packages/story-format
       '@claros/story-state':
         specifier: workspace:*
         version: link:../../packages/story-state
@@ -106,6 +109,9 @@ importers:
       '@claros/emergence-engine':
         specifier: workspace:*
         version: link:../emergence-engine
+      '@claros/story-format':
+        specifier: workspace:*
+        version: link:../story-format
       '@claros/story-state':
         specifier: workspace:*
         version: link:../story-state

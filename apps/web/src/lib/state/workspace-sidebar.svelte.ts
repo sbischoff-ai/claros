@@ -1,6 +1,7 @@
 import { directionalIntentFromKeydown } from "$lib/directional-navigation";
 import { ManuscriptDragController } from "$lib/manuscript-drag";
-import type { WorkspaceChapter, WorkspaceScene } from "$lib/project-session";
+import type { WorkspaceChapter, WorkspaceNote, WorkspaceScene } from "$lib/project-session";
+import { titleFromSlug } from "$lib/text-format";
 import type { ActionMenuItem, SidebarItem } from "$lib/workspace-types";
 import type { WorkspaceContext } from "./workspace-context.svelte";
 import type { WorkspaceDocuments } from "./workspace-documents.svelte";
@@ -62,6 +63,8 @@ export class WorkspaceSidebarController {
       this.titles.openAppendChapterModal();
     } else if (item.kind === "add-scene") {
       this.titles.openAppendSceneModal();
+    } else if (item.kind === "note" || item.kind === "scene") {
+      if (item.path !== undefined) void this.documents.openDocument(item.path);
     } else if (item.path !== undefined) {
       void this.documents.openDocument(item.path);
     } else if (item.collapsible) {
@@ -174,7 +177,13 @@ export class WorkspaceSidebarController {
   }
 
   hasSidebarContextMenu(item: SidebarItem): boolean {
-    return item.kind === "chapter" || item.kind === "scene";
+    return (
+      item.kind === "chapter" ||
+      item.kind === "scene" ||
+      item.kind === "note" ||
+      item.kind === "folder" ||
+      item.id === "notes"
+    );
   }
 
   beginContextMenuTitleEdit(): void {
@@ -183,13 +192,18 @@ export class WorkspaceSidebarController {
   }
 
   buildSidebarContextMenuItems(item: SidebarItem): ActionMenuItem[] {
-    const menuItems: ActionMenuItem[] = [
-      { label: "Change title", run: () => this.beginContextMenuTitleEdit() },
-    ];
+    const menuItems: ActionMenuItem[] =
+      item.kind === "chapter" || item.kind === "scene"
+        ? [{ label: "Change title", run: () => this.beginContextMenuTitleEdit() }]
+        : [];
     if (item.kind === "chapter") {
       this.appendChapterMenuItems(menuItems, this.chapterForItem(item));
-    } else {
+    } else if (item.kind === "scene") {
       this.appendSceneMenuItems(menuItems, this.sceneForItem(item));
+    } else if (item.kind === "note") {
+      this.appendNoteMenuItems(menuItems, this.noteForItem(item));
+    } else if (item.kind === "folder" || item.id === "notes") {
+      this.appendNoteFolderMenuItems(menuItems, item);
     }
     return menuItems;
   }
@@ -253,6 +267,23 @@ export class WorkspaceSidebarController {
     if (scene !== undefined && this.manuscript.canDeleteScene()) this.openDeleteSceneModal(scene);
   }
 
+  openCurrentNoteDeleteModal(): void {
+    const note = this.ctx.activeNote;
+    if (note !== undefined) this.openDeleteNoteModal(note);
+  }
+
+  openCurrentNoteFolderDeleteModal(): void {
+    if (this.ctx.activeNote === undefined) return;
+    const focused = this.ctx.sidebarItems.find((item) => item.id === this.ctx.focusedSidebarItemId);
+    const folderPath =
+      focused?.kind === "folder" && focused.folderPath !== undefined
+        ? focused.folderPath
+        : this.ctx.activeNote?.folderPath;
+    if (folderPath !== undefined && folderPath.length > 0) {
+      this.openDeleteNoteFolderModal(folderPath, titleFromSlug(folderPath.at(-1) ?? ""));
+    }
+  }
+
   openDeleteChapterModal(chapter: WorkspaceChapter): void {
     this.ctx.contextMenu = undefined;
     this.ctx.deleteModal = {
@@ -271,6 +302,29 @@ export class WorkspaceSidebarController {
       heading: "Delete Scene",
       label: scene.title,
       scenePath: scene.path,
+      confirmation: "",
+    };
+  }
+
+  openDeleteNoteModal(note: WorkspaceNote): void {
+    this.ctx.contextMenu = undefined;
+    this.ctx.deleteModal = {
+      target: "note",
+      heading: "Delete Note",
+      label: note.title,
+      notePath: note.path,
+      confirmation: "",
+    };
+  }
+
+  openDeleteNoteFolderModal(folderPath: string[], label: string): void {
+    if (folderPath.length === 0) return;
+    this.ctx.contextMenu = undefined;
+    this.ctx.deleteModal = {
+      target: "note-folder",
+      heading: "Delete Note Folder",
+      label,
+      folderPath,
       confirmation: "",
     };
   }
@@ -323,5 +377,47 @@ export class WorkspaceSidebarController {
     return item.path === undefined
       ? undefined
       : this.ctx.scenes.find((scene) => scene.path === item.path);
+  }
+
+  private noteForItem(item: SidebarItem): WorkspaceNote | undefined {
+    return item.path === undefined
+      ? undefined
+      : this.ctx.notes.find((note) => note.path === item.path);
+  }
+
+  private appendNoteMenuItems(menuItems: ActionMenuItem[], note: WorkspaceNote | undefined): void {
+    menuItems.push({
+      label: "Add new note",
+      run: () => this.titles.openNewNoteModal(note?.folderPath),
+    });
+    menuItems.push({
+      label: "Add new note folder",
+      run: () => this.titles.openNewNoteFolderModal(note?.folderPath),
+    });
+    menuItems.push({
+      label: "Move note",
+      disabled: note === undefined,
+      run: () => note !== undefined && this.titles.openMoveNoteModal(note.path),
+    });
+    menuItems.push({
+      label: "Delete note",
+      disabled: note === undefined,
+      run: () => note !== undefined && this.openDeleteNoteModal(note),
+    });
+  }
+
+  private appendNoteFolderMenuItems(menuItems: ActionMenuItem[], item: SidebarItem): void {
+    const folderPath = item.kind === "folder" ? (item.folderPath ?? []) : [];
+    menuItems.push({ label: "Add new note", run: () => this.titles.openNewNoteModal(folderPath) });
+    menuItems.push({
+      label: "Add new note folder",
+      run: () => this.titles.openNewNoteFolderModal(folderPath),
+    });
+    if (folderPath.length > 0) {
+      menuItems.push({
+        label: "Delete folder",
+        run: () => this.openDeleteNoteFolderModal(folderPath, item.label),
+      });
+    }
   }
 }

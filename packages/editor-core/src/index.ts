@@ -33,3 +33,13 @@ export {
   markdownMarkerDecorations,
   type MarkdownMarkerRange,
 } from "./markdown-markers";
+export {
+  findMarkdownWikilinkReferences,
+  markdownWikilinkExtension,
+  wikilinkAtCursor,
+  type MarkdownWikilinkCandidate,
+  type MarkdownWikilinkOptions,
+  type MarkdownWikilinkPreview,
+  type MarkdownWikilinkReference,
+  type MarkdownWikilinkResolution,
+} from "./markdown-wikilinks";

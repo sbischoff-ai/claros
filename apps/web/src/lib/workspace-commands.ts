@@ -1,6 +1,6 @@
 import { CLAROS_THEMES, type ClarosThemeId } from "@claros/editor-core";
 
-import type { WorkspaceChapter, WorkspaceScene } from "./project-session";
+import type { WorkspaceChapter, WorkspaceNote, WorkspaceScene } from "./project-session";
 import type { PaletteCommand, StorageBackendId } from "./workspace-types";
 import type { ManuscriptInsertionPlacement } from "@claros/story-state/browser";
 
@@ -12,12 +12,15 @@ export interface WorkspacePaletteCommandOptions {
   sidebarOpen: boolean;
   currentScene: WorkspaceScene | undefined;
   currentChapter: WorkspaceChapter | undefined;
+  currentNote: WorkspaceNote | undefined;
   canMoveSceneUp: boolean;
   canMoveSceneDown: boolean;
   canMoveChapterUp: boolean;
   canMoveChapterDown: boolean;
   canDeleteScene: boolean;
   canDeleteChapter: boolean;
+  canDeleteNote: boolean;
+  canDeleteNoteFolder: boolean;
   toggleSidebar(): void;
   openProjectWithBackend(backendId: StorageBackendId): void;
   createProjectWithBackend(backendId: StorageBackendId): void;
@@ -39,6 +42,11 @@ export interface WorkspacePaletteCommandOptions {
   openCurrentSceneTitleModal(): void;
   moveCurrentScene(direction: "up" | "down"): void;
   openCurrentSceneDeleteModal(): void;
+  openNewNoteModal(): void;
+  openNewNoteFolderModal(): void;
+  openCurrentNoteMoveModal(): void;
+  openCurrentNoteDeleteModal(): void;
+  openCurrentNoteFolderDeleteModal(): void;
   toggleVimMode(): void;
   setTheme(themeId: ClarosThemeId): void;
 }
@@ -91,7 +99,7 @@ export function buildWorkspacePaletteCommands(
     },
     {
       label: "Append: New Chapter",
-      disabled: projectCommandDisabled,
+      disabled: projectCommandDisabled || options.currentNote !== undefined,
       focusAfter: "none",
       run: options.openAppendChapterModal,
     },
@@ -133,7 +141,7 @@ export function buildWorkspacePaletteCommands(
     },
     {
       label: "Append: New Scene",
-      disabled: projectCommandDisabled,
+      disabled: projectCommandDisabled || options.currentNote !== undefined,
       focusAfter: "none",
       run: options.openAppendSceneModal,
     },
@@ -172,6 +180,36 @@ export function buildWorkspacePaletteCommands(
       disabled: !options.canDeleteScene,
       focusAfter: "none",
       run: options.openCurrentSceneDeleteModal,
+    },
+    {
+      label: "Add: New Note",
+      disabled: projectCommandDisabled,
+      focusAfter: "none",
+      run: options.openNewNoteModal,
+    },
+    {
+      label: "Add: New Note Folder",
+      disabled: projectCommandDisabled,
+      focusAfter: "none",
+      run: options.openNewNoteFolderModal,
+    },
+    {
+      label: "Move: Note",
+      disabled: projectCommandDisabled || options.currentNote === undefined,
+      focusAfter: "none",
+      run: options.openCurrentNoteMoveModal,
+    },
+    {
+      label: "Delete: Current Note",
+      disabled: !options.canDeleteNote,
+      focusAfter: "none",
+      run: options.openCurrentNoteDeleteModal,
+    },
+    {
+      label: "Delete: Current Note Folder",
+      disabled: !options.canDeleteNoteFolder,
+      focusAfter: "none",
+      run: options.openCurrentNoteFolderDeleteModal,
     },
     {
       label: options.currentVimMode ? "Disable Vim" : "Enable Vim",

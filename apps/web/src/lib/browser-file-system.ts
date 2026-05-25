@@ -89,8 +89,10 @@ export class BrowserProjectFileSystem implements ProjectFileReader, ProjectFileW
     await this.getDirectoryHandle(path, true);
   }
 
-  async renameFile(_fromPath: string, _toPath: string): Promise<void> {
-    throw new Error("Renaming files is not available in the browser file adapter yet");
+  async renameFile(fromPath: string, toPath: string): Promise<void> {
+    const content = await this.readFile(fromPath);
+    await this.writeFileAtomic(toPath, content);
+    await this.removeFile(fromPath);
   }
 
   async removeFile(path: string): Promise<void> {

@@ -37,6 +37,7 @@ export class WorkspaceProjects {
       this.ctx.project = await openLocalProjectSession(handle);
       this.ctx.activePath = firstDocumentPath(this.ctx.project);
       await this.documents.loadDocument(this.ctx.activePath);
+      this.documents.resetDocumentTrail(this.ctx.activePath);
       this.ctx.projectOpenState = "open";
       this.ctx.openStorageBackendId = "file-picker";
       this.ctx.sidebarOpen = false;
@@ -69,6 +70,7 @@ export class WorkspaceProjects {
       this.ctx.project = await createNewLocalProjectSession(handle, title);
       this.ctx.activePath = firstDocumentPath(this.ctx.project);
       await this.documents.loadDocument(this.ctx.activePath);
+      this.documents.resetDocumentTrail(this.ctx.activePath);
       this.ctx.projectOpenState = "open";
       this.ctx.openStorageBackendId = "file-picker";
       this.ctx.sidebarOpen = false;
@@ -145,6 +147,7 @@ export class WorkspaceProjects {
       this.ctx.project = await openCompanionProjectSession(connection);
       this.ctx.activePath = firstDocumentPath(this.ctx.project);
       await this.documents.loadDocument(this.ctx.activePath);
+      this.documents.resetDocumentTrail(this.ctx.activePath);
       this.ctx.projectOpenState = "open";
       this.ctx.openStorageBackendId = "local-companion";
       this.ctx.sidebarOpen = false;
@@ -170,6 +173,7 @@ export class WorkspaceProjects {
       this.ctx.project = await createNewCompanionProjectSession(connection, title);
       this.ctx.activePath = firstDocumentPath(this.ctx.project);
       await this.documents.loadDocument(this.ctx.activePath);
+      this.documents.resetDocumentTrail(this.ctx.activePath);
       this.ctx.projectOpenState = "open";
       this.ctx.openStorageBackendId = "local-companion";
       this.ctx.sidebarOpen = false;

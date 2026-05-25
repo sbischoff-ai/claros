@@ -23,11 +23,37 @@ export class WorkspaceOverlays {
     if (modal.target === "chapter" && modal.chapterId !== undefined) {
       const nextPath = await this.ctx.project.deleteChapter(modal.chapterId);
       this.documents.refreshProjectView();
-      await this.documents.openDocument(nextPath, { forceReload: true, skipSave: true });
+      await this.documents.openDocument(nextPath, {
+        forceReload: true,
+        skipSave: true,
+        history: "replace",
+      });
     } else if (modal.target === "scene" && modal.scenePath !== undefined) {
       const nextPath = await this.ctx.project.deleteScene(modal.scenePath);
       this.documents.refreshProjectView();
-      await this.documents.openDocument(nextPath, { forceReload: true, skipSave: true });
+      await this.documents.openDocument(nextPath, {
+        forceReload: true,
+        skipSave: true,
+        history: "replace",
+      });
+    } else if (modal.target === "note" && modal.notePath !== undefined) {
+      const nextPath = await this.ctx.project.deleteNote(modal.notePath);
+      this.documents.refreshProjectView();
+      await this.documents.openDocument(nextPath, {
+        forceReload: true,
+        skipSave: true,
+        history: "replace",
+      });
+    } else if (modal.target === "note-folder" && modal.folderPath !== undefined) {
+      const nextPath = await this.ctx.project.deleteNoteFolder(
+        `notes/${modal.folderPath.join("/")}`
+      );
+      this.documents.refreshProjectView();
+      await this.documents.openDocument(nextPath, {
+        forceReload: true,
+        skipSave: true,
+        history: "replace",
+      });
     }
   }
 

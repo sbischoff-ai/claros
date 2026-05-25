@@ -24,6 +24,7 @@ import type {
 } from "$lib/workspace-types";
 import {
   listProjectChapters,
+  listProjectNoteFolders,
   listProjectNotes,
   listProjectScenes,
   projectTitleForDisplay,
@@ -130,6 +131,20 @@ export class WorkspaceContext {
   }
   set currentMarkdown(value: string) {
     this.documents.currentMarkdown = value;
+  }
+
+  get documentTrail(): string[] {
+    return this.documents.documentTrail;
+  }
+  set documentTrail(value: string[]) {
+    this.documents.documentTrail = value;
+  }
+
+  get documentTrailIndex(): number {
+    return this.documents.documentTrailIndex;
+  }
+  set documentTrailIndex(value: number) {
+    this.documents.documentTrailIndex = value;
   }
 
   get vimMode(): boolean {
@@ -417,6 +432,10 @@ export class WorkspaceContext {
     return listProjectNotes(this.projectRevision, this.project);
   }
 
+  get noteFolders() {
+    return listProjectNoteFolders(this.projectRevision, this.project);
+  }
+
   get displayProjectTitle(): string {
     return projectTitleForDisplay(this.projectRevision, this.project, this.optimisticProjectTitle);
   }
@@ -432,6 +451,7 @@ export class WorkspaceContext {
     return buildSidebarItems(
       this.visibleChapters,
       this.notes,
+      this.noteFolders,
       this.collapsedItems,
       this.optimisticChapterTitles,
       this.optimisticSceneTitles
@@ -440,6 +460,10 @@ export class WorkspaceContext {
 
   get activeScene(): WorkspaceScene | undefined {
     return this.scenes.find((scene) => scene.path === this.activePath);
+  }
+
+  get activeNote() {
+    return this.notes.find((note) => note.path === this.activePath);
   }
 
   get activeChapter(): WorkspaceChapter | undefined {
@@ -464,6 +488,20 @@ export class WorkspaceContext {
       chapter !== undefined &&
       this.chapters.length > 1 &&
       this.scenes.some((scene) => scene.chapterId !== chapter.id)
+    );
+  }
+
+  get canDeleteCurrentNote(): boolean {
+    return this.projectIsOpen && this.activeNote !== undefined;
+  }
+
+  get canDeleteCurrentNoteFolder(): boolean {
+    const focused = this.sidebarItems.find((item) => item.id === this.focusedSidebarItemId);
+    return (
+      this.projectIsOpen &&
+      this.activeNote !== undefined &&
+      ((focused?.kind === "folder" && (focused.folderPath?.length ?? 0) > 0) ||
+        (this.activeNote?.folderPath.length ?? 0) > 0)
     );
   }
 

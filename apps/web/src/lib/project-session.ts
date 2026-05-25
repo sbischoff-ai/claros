@@ -1,14 +1,31 @@
-import { openProject as openBrowserProject } from "@claros/story-state/browser";
+import {
+  initializeProjectFiles,
+  normalizedProjectTitle,
+  openProject as openBrowserProject,
+  replaceMarkdownBodyPreservingFrontmatter,
+  titleFromSlug,
+  toWorkspaceChapter,
+  toWorkspaceDocument,
+  toWorkspaceLinkResolution,
+  toWorkspaceManifest,
+  toWorkspaceNote,
+  toWorkspaceNoteFolder,
+  toWorkspaceScene,
+} from "@claros/story-state/browser";
 import type {
-  ChapterRef,
   ClarosProject,
   ManuscriptInsertionPlacement,
   MoveChapterOptions,
   MoveSceneOptions,
-  MarkdownDocument,
-  NoteRef,
-  ProjectManifest,
-  SceneRef,
+  WorkspaceChapter,
+  WorkspaceDocument,
+  WorkspaceDocumentRef,
+  WorkspaceLinkResolution,
+  WorkspaceManifest,
+  WorkspaceNote,
+  WorkspaceNoteFolder,
+  WorkspaceProjectSummary,
+  WorkspaceScene,
 } from "@claros/story-state/browser";
 import { BrowserProjectFileSystem, type DirectoryHandle } from "./browser-file-system";
 
@@ -20,50 +37,23 @@ export interface ProjectStorage {
   removeItem?(key: string): void;
 }
 
-export interface WorkspaceManifest {
-  title: string;
-}
-
-export interface WorkspaceChapter {
-  kind: "chapter";
-  id: string;
-  sequence: number;
-  title: string;
-  scenes: WorkspaceScene[];
-}
-
-export interface WorkspaceScene {
-  kind: "scene";
-  id: string;
-  chapterId: string;
-  sequence: number;
-  title: string;
-  path: string;
-}
-
-export interface WorkspaceNote {
-  kind: "note";
-  id: string;
-  path: string;
-  title: string;
-  folderPath: string[];
-}
-
-export type WorkspaceDocumentRef = WorkspaceScene | WorkspaceNote | { path: string };
-
-export interface WorkspaceDocument {
-  path: string;
-  raw: string;
-  body: string;
-  title: string;
-  kind: "scene" | "note";
-}
+export type {
+  WorkspaceChapter,
+  WorkspaceDocument,
+  WorkspaceDocumentRef,
+  WorkspaceLinkResolution,
+  WorkspaceManifest,
+  WorkspaceNote,
+  WorkspaceNoteFolder,
+  WorkspaceScene,
+};
 
 export interface ProjectSession {
   readonly manifest: WorkspaceManifest;
   listChapters(): WorkspaceChapter[];
   listScenes(): WorkspaceScene[];
   listNotes(): WorkspaceNote[];
+  listNoteFolders(): WorkspaceNoteFolder[];
   readDocument(ref: WorkspaceDocumentRef): Promise<WorkspaceDocument>;
   writeDocument(ref: WorkspaceDocumentRef, body: string): Promise<void>;
   setProjectTitle(title: string): Promise<void>;
@@ -87,6 +77,15 @@ export interface ProjectSession {
     scenePath: string,
     options: WorkspaceMoveSceneOptions
   ): Promise<WorkspaceMoveResult & { scene: WorkspaceScene }>;
+  createNote(title: string, options?: WorkspaceCreateNoteOptions): Promise<WorkspaceNote>;
+  createNoteFolder(
+    title: string,
+    options?: WorkspaceCreateNoteFolderOptions
+  ): Promise<WorkspaceNoteFolder>;
+  deleteNote(notePath: string): Promise<string>;
+  deleteNoteFolder(folderPath: string): Promise<string>;
+  moveNote(notePath: string, options: WorkspaceMoveNoteOptions): Promise<WorkspaceNote>;
+  resolveWikilink(link: string, fromPath?: string): Promise<WorkspaceLinkResolution>;
 }
 
 export interface WorkspaceCreateSceneOptions {
@@ -97,6 +96,18 @@ export interface WorkspaceCreateSceneOptions {
 export interface WorkspaceCreateChapterOptions {
   placement?: ManuscriptInsertionPlacement;
   targetChapterId?: string;
+}
+
+export interface WorkspaceCreateNoteOptions {
+  folderPath?: string[];
+}
+
+export interface WorkspaceCreateNoteFolderOptions {
+  parentFolderPath?: string[];
+}
+
+export interface WorkspaceMoveNoteOptions {
+  targetFolderPath?: string[];
 }
 
 export type WorkspaceMoveChapterOptions = Omit<MoveChapterOptions, "targetChapter"> & {
@@ -113,11 +124,7 @@ export interface WorkspaceMoveResult {
   chapterIdMap: Record<string, string>;
 }
 
-interface ProjectSummary {
-  manifest: WorkspaceManifest;
-  chapters: WorkspaceChapter[];
-  notes: WorkspaceNote[];
-}
+type ProjectSummary = WorkspaceProjectSummary;
 
 export interface CompanionConnection {
   url: string;
@@ -198,7 +205,7 @@ export function documentPath(ref: WorkspaceDocumentRef): string {
 }
 
 function createProjectSession(project: ClarosProject): ProjectSession {
-  let manifest = normalizeManifest(project.manifest);
+  let manifest = toWorkspaceManifest(project.manifest);
   return {
     get manifest(): WorkspaceManifest {
       return manifest;
@@ -221,6 +228,9 @@ function createProjectSession(project: ClarosProject): ProjectSession {
     listNotes(): WorkspaceNote[] {
       return project.listNotes().map(toWorkspaceNote);
     },
+    listNoteFolders(): WorkspaceNoteFolder[] {
+      return project.listNoteFolders().map(toWorkspaceNoteFolder);
+    },
     async readDocument(ref: WorkspaceDocumentRef): Promise<WorkspaceDocument> {
       const path = documentPath(ref);
       const document = await project.readDocument({ path });
@@ -229,7 +239,10 @@ function createProjectSession(project: ClarosProject): ProjectSession {
     async writeDocument(ref: WorkspaceDocumentRef, body: string): Promise<void> {
       const path = documentPath(ref);
       const current = await project.readDocument({ path });
-      await project.writeDocument({ path }, mergeBodyWithExistingFrontmatter(current.raw, body));
+      await project.writeDocument(
+        { path },
+        replaceMarkdownBodyPreservingFrontmatter(current.raw, body)
+      );
     },
     async setProjectTitle(title: string): Promise<void> {
       const normalized = normalizedProjectTitle(title);
@@ -332,6 +345,40 @@ function createProjectSession(project: ClarosProject): ProjectSession {
       });
       return { pathMap, chapterIdMap, scene: toWorkspaceScene(scene) };
     },
+    async createNote(title: string, options?: WorkspaceCreateNoteOptions): Promise<WorkspaceNote> {
+      const { note } = await project.createNote(title, { folderPath: options?.folderPath });
+      return toWorkspaceNote(note);
+    },
+    async createNoteFolder(
+      title: string,
+      options?: WorkspaceCreateNoteFolderOptions
+    ): Promise<WorkspaceNoteFolder> {
+      const { folder } = await project.createNoteFolder(title, {
+        parentFolderPath: options?.parentFolderPath,
+      });
+      return toWorkspaceNoteFolder(folder);
+    },
+    async deleteNote(notePath: string): Promise<string> {
+      const { nextDocument } = await project.deleteNote(notePath);
+      return nextDocument?.path ?? firstDocumentPath(this);
+    },
+    async deleteNoteFolder(folderPath: string): Promise<string> {
+      const { nextDocument } = await project.deleteNoteFolder(folderPath);
+      return nextDocument?.path ?? firstDocumentPath(this);
+    },
+    async moveNote(notePath: string, options: WorkspaceMoveNoteOptions): Promise<WorkspaceNote> {
+      const { note } = await project.moveNote(notePath, {
+        targetFolderPath: options.targetFolderPath,
+      });
+      return toWorkspaceNote(note);
+    },
+    async resolveWikilink(link: string, fromPath?: string): Promise<WorkspaceLinkResolution> {
+      const resolution = project.resolveWikilink(
+        link,
+        fromPath === undefined ? undefined : { path: fromPath }
+      );
+      return toWorkspaceLinkResolution(resolution);
+    },
   };
 }
 
@@ -353,6 +400,12 @@ function createCompanionProjectSession(
     },
     listNotes(): WorkspaceNote[] {
       return summary.notes.map((note) => ({ ...note, folderPath: [...note.folderPath] }));
+    },
+    listNoteFolders(): WorkspaceNoteFolder[] {
+      return summary.noteFolders.map((folder) => ({
+        ...folder,
+        folderPath: [...folder.folderPath],
+      }));
     },
     async readDocument(ref: WorkspaceDocumentRef): Promise<WorkspaceDocument> {
       const path = documentPath(ref);
@@ -515,6 +568,72 @@ function createCompanionProjectSession(
         scene: sceneFromMutationResponse(response),
       };
     },
+    async createNote(title: string, options?: WorkspaceCreateNoteOptions): Promise<WorkspaceNote> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create-note",
+          title,
+          folderPath: options?.folderPath,
+        }),
+      });
+      summary = projectFromResponse(response);
+      return noteFromMutationResponse(response);
+    },
+    async createNoteFolder(
+      title: string,
+      options?: WorkspaceCreateNoteFolderOptions
+    ): Promise<WorkspaceNoteFolder> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create-note-folder",
+          title,
+          parentFolderPath: options?.parentFolderPath,
+        }),
+      });
+      summary = projectFromResponse(response);
+      return noteFolderFromMutationResponse(response);
+    },
+    async deleteNote(notePath: string): Promise<string> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete-note", path: notePath }),
+      });
+      summary = projectFromResponse(response);
+      return nextPathFromMutationResponse(response) ?? firstDocumentPath(this);
+    },
+    async deleteNoteFolder(folderPath: string): Promise<string> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete-note-folder", folderPath }),
+      });
+      summary = projectFromResponse(response);
+      return nextPathFromMutationResponse(response) ?? firstDocumentPath(this);
+    },
+    async moveNote(notePath: string, options: WorkspaceMoveNoteOptions): Promise<WorkspaceNote> {
+      const response = await companionFetch(connection, "/api/project/mutation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "move-note",
+          path: notePath,
+          targetFolderPath: options.targetFolderPath,
+        }),
+      });
+      summary = projectFromResponse(response);
+      return noteFromMutationResponse(response);
+    },
+    async resolveWikilink(link: string, fromPath?: string): Promise<WorkspaceLinkResolution> {
+      const search = new URLSearchParams({ link });
+      if (fromPath !== undefined) search.set("fromPath", fromPath);
+      const response = await companionFetch(connection, `/api/wikilink?${search.toString()}`);
+      return linkResolutionFromResponse(response);
+    },
   };
 }
 
@@ -522,22 +641,7 @@ async function initializeNewProject(
   fileSystem: BrowserProjectFileSystem,
   title: string
 ): Promise<void> {
-  const manifestStat = await fileSystem.stat("/claros.yaml");
-  if (manifestStat.exists) {
-    throw new Error("claros.yaml already exists");
-  }
-
-  await fileSystem.mkdir("/manuscript/001-draft", true);
-  await fileSystem.mkdir("/notes", true);
-  await fileSystem.writeFileAtomic(
-    "/claros.yaml",
-    `claros: 1\ntitle: ${yamlString(normalizedProjectTitle(title))}\n`
-  );
-  await fileSystem.writeFileAtomic("/manuscript/001-draft/chapter.yaml", "title: Draft\n");
-  await fileSystem.writeFileAtomic(
-    "/manuscript/001-draft/001-opening.md",
-    "---\ntitle: Opening\n---\n\n# Draft\n\n## Opening\n\n"
-  );
+  await initializeProjectFiles("/", fileSystem, fileSystem, { title });
 }
 
 async function companionFetch(
@@ -640,6 +744,27 @@ function moveResultFromMutationResponse(response: unknown): WorkspaceMoveResult 
   };
 }
 
+function noteFromMutationResponse(response: unknown): WorkspaceNote {
+  if (!isRecord(response) || !isRecord(response.note)) {
+    throw new Error("Companion response did not include a note");
+  }
+  return normalizeWorkspaceNote(response.note);
+}
+
+function noteFolderFromMutationResponse(response: unknown): WorkspaceNoteFolder {
+  if (!isRecord(response) || !isRecord(response.noteFolder)) {
+    throw new Error("Companion response did not include a note folder");
+  }
+  return normalizeWorkspaceNoteFolder(response.noteFolder);
+}
+
+function linkResolutionFromResponse(response: unknown): WorkspaceLinkResolution {
+  if (!isRecord(response) || !isRecord(response.resolution)) {
+    throw new Error("Companion response did not include a wikilink resolution");
+  }
+  return normalizeWorkspaceLinkResolution(response.resolution);
+}
+
 function stringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) {
     return {};
@@ -662,6 +787,9 @@ function normalizeProjectSummary(value: unknown): ProjectSummary {
     },
     chapters: value.chapters.map(normalizeWorkspaceChapter),
     notes: Array.isArray(value.notes) ? value.notes.map(normalizeWorkspaceNote) : [],
+    noteFolders: Array.isArray(value.noteFolders)
+      ? value.noteFolders.map(normalizeWorkspaceNoteFolder)
+      : [],
   };
 }
 
@@ -713,6 +841,55 @@ function normalizeWorkspaceNote(value: unknown): WorkspaceNote {
   };
 }
 
+function normalizeWorkspaceNoteFolder(value: unknown): WorkspaceNoteFolder {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.path !== "string") {
+    throw new Error("Companion returned an invalid note folder");
+  }
+  return {
+    kind: "note-folder",
+    id: value.id,
+    path: value.path,
+    title: typeof value.title === "string" ? value.title : titleFromSlug(value.id),
+    folderPath: Array.isArray(value.folderPath)
+      ? value.folderPath.filter((part): part is string => typeof part === "string")
+      : [],
+  };
+}
+
+function normalizeWorkspaceLinkResolution(value: unknown): WorkspaceLinkResolution {
+  if (!isRecord(value) || typeof value.status !== "string") {
+    throw new Error("Companion returned an invalid wikilink resolution");
+  }
+  if (value.status === "resolved") {
+    if (typeof value.path !== "string" || typeof value.reason !== "string") {
+      throw new Error("Companion returned an invalid resolved wikilink");
+    }
+    return { status: "resolved", path: value.path, reason: value.reason };
+  }
+  if (value.status === "ambiguous") {
+    if (
+      typeof value.target !== "string" ||
+      typeof value.reason !== "string" ||
+      !Array.isArray(value.candidates)
+    ) {
+      throw new Error("Companion returned an invalid ambiguous wikilink");
+    }
+    return {
+      status: "ambiguous",
+      target: value.target,
+      reason: value.reason,
+      candidates: value.candidates.map(normalizeWorkspaceNote),
+    };
+  }
+  if (value.status === "unresolved") {
+    if (typeof value.target !== "string") {
+      throw new Error("Companion returned an invalid unresolved wikilink");
+    }
+    return { status: "unresolved", target: value.target };
+  }
+  throw new Error("Companion returned an unknown wikilink status");
+}
+
 function normalizeCompanionConnection(value: unknown): CompanionConnection | undefined {
   if (!isRecord(value) || typeof value.url !== "string" || typeof value.token !== "string") {
     return undefined;
@@ -723,112 +900,6 @@ function normalizeCompanionConnection(value: unknown): CompanionConnection | und
   };
 }
 
-function normalizeManifest(manifest: ProjectManifest): WorkspaceManifest {
-  return {
-    title: typeof manifest.title === "string" && manifest.title.trim() ? manifest.title : "Claros",
-  };
-}
-
-function normalizedProjectTitle(title: string): string {
-  const normalized = title.trim();
-  return normalized.length > 0 ? normalized : "Untitled Project";
-}
-
-function yamlString(value: string): string {
-  return JSON.stringify(value);
-}
-
-function toWorkspaceChapter(chapter: ChapterRef, scenes: WorkspaceScene[]): WorkspaceChapter {
-  return {
-    kind: "chapter",
-    id: chapter.id,
-    sequence: chapter.sequence,
-    title: chapter.title || `Chapter ${chapter.sequence}`,
-    scenes,
-  };
-}
-
-function toWorkspaceScene(scene: SceneRef): WorkspaceScene {
-  return {
-    kind: "scene",
-    id: scene.id,
-    chapterId: scene.chapterId,
-    sequence: scene.sequence,
-    title: scene.title || `Scene ${scene.sequence}`,
-    path: scene.path,
-  };
-}
-
-function toWorkspaceNote(note: NoteRef): WorkspaceNote {
-  return {
-    kind: "note",
-    id: note.path,
-    path: note.path,
-    title: note.title || titleFromSlug(note.slug),
-    folderPath: note.path.startsWith("notes/")
-      ? note.path.slice("notes/".length).split("/").slice(0, -1)
-      : [],
-  };
-}
-
-function toWorkspaceDocument(
-  project: ClarosProject,
-  document: MarkdownDocument
-): WorkspaceDocument {
-  const scene = project.listScenes().find((candidate) => candidate.path === document.path);
-  if (scene !== undefined) {
-    return {
-      path: document.path,
-      raw: document.raw,
-      body: document.body,
-      title: scene.title || `Scene ${scene.sequence}`,
-      kind: "scene",
-    };
-  }
-
-  const note = project.listNotes().find((candidate) => candidate.path === document.path);
-  return {
-    path: document.path,
-    raw: document.raw,
-    body: document.body,
-    title: note?.title || document.path,
-    kind: "note",
-  };
-}
-
-function splitFrontmatter(raw: string): { frontmatter: string; body: string } {
-  if (!raw.startsWith("---\n") && !raw.startsWith("---\r\n")) {
-    return { frontmatter: "", body: raw };
-  }
-
-  const match = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(raw);
-  if (match === null) {
-    return { frontmatter: "", body: raw };
-  }
-
-  return {
-    frontmatter: match[0],
-    body: raw.slice(match[0].length),
-  };
-}
-
-function mergeBodyWithExistingFrontmatter(previousRaw: string, body: string): string {
-  const { frontmatter } = splitFrontmatter(previousRaw);
-  if (frontmatter.length === 0) {
-    return body;
-  }
-
-  return `${frontmatter}${body}`;
-}
-
-function titleFromSlug(slug: string): string {
-  return slug
-    .split("-")
-    .filter((part) => part.length > 0)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function cloneSummary(summary: ProjectSummary): ProjectSummary {
   return {
     manifest: { ...summary.manifest },
@@ -837,6 +908,10 @@ function cloneSummary(summary: ProjectSummary): ProjectSummary {
       scenes: chapter.scenes.map((scene) => ({ ...scene })),
     })),
     notes: summary.notes.map((note) => ({ ...note, folderPath: [...note.folderPath] })),
+    noteFolders: summary.noteFolders.map((folder) => ({
+      ...folder,
+      folderPath: [...folder.folderPath],
+    })),
   };
 }
 

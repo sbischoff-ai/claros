@@ -9,6 +9,7 @@ export type {
   ChapterRef,
   SceneFrontmatter,
   SceneRef,
+  NoteFolderRef,
   NoteRef,
   MarkdownDocument,
   SourcePosition,
@@ -19,12 +20,18 @@ export type {
 } from "./project-format/types.js";
 
 export { parseStateFile, serializeStateFile } from "./state/parser.js";
-export { parseNoteFrontmatter, serializeNoteFrontmatter } from "./frontmatter/parser.js";
+export {
+  parseNoteFrontmatter,
+  replaceMarkdownBodyPreservingFrontmatter,
+  serializeNoteFrontmatter,
+} from "./frontmatter/parser.js";
 export { getAtPath, setAtPath } from "./state/paths.js";
 export {
   ProjectFormatError,
   scanProjectFormat,
   parseMarkdownDocument,
+  parseNoteRefFromMarkdown,
+  parseSceneRefFromMarkdown,
   extractWikilinks,
   extractClarosBlocks,
   extractClarosRunId,

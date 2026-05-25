@@ -1,14 +1,15 @@
 import {
   extractClarosBlocks,
   extractWikilinks,
-  parseMarkdownDocument,
+  parseNoteRefFromMarkdown,
+  parseSceneRefFromMarkdown,
   type ChapterRef,
   type ClarosBlockRef,
   type NoteFrontmatter,
+  type NoteFolderRef,
   type NoteRef,
   type ProjectFormatSnapshot,
   type ProjectManifest,
-  type SceneFrontmatter,
   type SceneRef,
   type WikilinkRef,
 } from "@claros/story-format/browser";
@@ -16,7 +17,6 @@ import type { MacroRunFilter, MacroRunLedgerEntry } from "../runs/types.js";
 
 const RESERVED_NOTE_FRONTMATTER_KEYS = new Set(["title", "type", "aliases", "tags"]);
 const CHAPTER_ID_RE = /^(\d+)-([a-z0-9]+(?:-[a-z0-9]+)*)$/;
-const SCENE_STEM_RE = /^(\d+)-([a-z0-9]+(?:-[a-z0-9]+)*)$/;
 
 export type ProjectIndexDocumentRef = { path: string };
 
@@ -62,6 +62,7 @@ export interface ProjectIndex {
   listChapters(): ChapterRef[];
   listScenes(): SceneRef[];
   listNotes(): NoteRef[];
+  listNoteFolders(): NoteFolderRef[];
   listClarosBlocks(): ClarosBlockRef[];
   listMacroRuns(filter?: MacroRunFilter): MacroRunLedgerEntry[];
   resolveWikilink(target: string, from?: ProjectIndexDocumentRef): WikilinkResolution;
@@ -85,6 +86,7 @@ class InMemoryProjectIndexImpl implements ProjectIndex {
   private chaptersById = new Map<string, ChapterRef>();
   private scenesByPath = new Map<string, SceneRef>();
   private notesByPath = new Map<string, NoteRef>();
+  private noteFoldersByPath = new Map<string, NoteFolderRef>();
   private wikilinksByPath = new Map<string, WikilinkRef[]>();
   private clarosBlocksByPath = new Map<string, ClarosBlockRef[]>();
   private runs: MacroRunLedgerEntry[] = [];
@@ -101,6 +103,9 @@ class InMemoryProjectIndexImpl implements ProjectIndex {
     this.chaptersById = new Map(snapshot.chapters.map((chapter) => [chapter.id, chapter]));
     this.scenesByPath = new Map(snapshot.scenes.map((scene) => [normalizePath(scene.path), scene]));
     this.notesByPath = new Map(snapshot.notes.map((note) => [normalizePath(note.path), note]));
+    this.noteFoldersByPath = new Map(
+      (snapshot.noteFolders ?? []).map((folder) => [normalizePath(folder.path), folder])
+    );
     this.wikilinksByPath = groupByPath(snapshot.wikilinks);
     this.clarosBlocksByPath = groupByPath(snapshot.clarosBlocks);
     this.runs = runs === undefined ? [] : [...runs];
@@ -113,7 +118,7 @@ class InMemoryProjectIndexImpl implements ProjectIndex {
     this.wikilinksByPath.set(normalizedPath, extractWikilinks(normalizedPath, raw));
     this.clarosBlocksByPath.set(normalizedPath, extractClarosBlocks(normalizedPath, raw));
 
-    const note = parseNoteRef(normalizedPath, raw);
+    const note = parseNoteRefFromMarkdown(normalizedPath, raw);
     if (note !== undefined) {
       this.notesByPath.set(normalizedPath, note);
       this.scenesByPath.delete(normalizedPath);
@@ -121,7 +126,7 @@ class InMemoryProjectIndexImpl implements ProjectIndex {
       return;
     }
 
-    const scene = parseSceneRef(normalizedPath, raw);
+    const scene = parseSceneRefFromMarkdown(normalizedPath, raw);
     if (scene !== undefined) {
       this.scenesByPath.set(normalizedPath, scene);
       this.notesByPath.delete(normalizedPath);
@@ -170,6 +175,26 @@ class InMemoryProjectIndexImpl implements ProjectIndex {
     return [...this.notesByPath.values()].sort((left, right) =>
       left.path.localeCompare(right.path)
     );
+  }
+
+  listNoteFolders(): NoteFolderRef[] {
+    const folders = new Map(this.noteFoldersByPath);
+    for (const note of this.notesByPath.values()) {
+      const parts = normalizePath(note.path).slice("notes/".length).split("/").slice(0, -1);
+      for (let index = 0; index < parts.length; index += 1) {
+        const folderPath = parts.slice(0, index + 1);
+        const path = `notes/${folderPath.join("/")}`;
+        if (!folders.has(path)) {
+          folders.set(path, {
+            kind: "note-folder",
+            path,
+            name: folderPath.at(-1) ?? "",
+            folderPath,
+          });
+        }
+      }
+    }
+    return [...folders.values()].sort((left, right) => left.path.localeCompare(right.path));
   }
 
   listClarosBlocks(): ClarosBlockRef[] {
@@ -445,69 +470,6 @@ export function createInMemoryProjectIndex(): ProjectIndex {
   return new InMemoryProjectIndexImpl();
 }
 
-function parseNoteRef(path: string, raw: string): NoteRef | undefined {
-  if (!isNotePath(path)) {
-    return undefined;
-  }
-
-  const document = parseMarkdownDocument(path, raw);
-  const frontmatter = (document.frontmatter ?? {}) as NoteFrontmatter;
-
-  return {
-    kind: "note",
-    path,
-    slug: basenameWithoutExtension(path),
-    title: typeof frontmatter.title === "string" ? frontmatter.title : undefined,
-    aliases: normalizeStringList(frontmatter.aliases),
-    tags: normalizeStringList(frontmatter.tags),
-    frontmatter,
-  };
-}
-
-function parseSceneRef(path: string, raw: string): SceneRef | undefined {
-  const parsed = parseScenePath(path);
-  if (parsed === undefined) {
-    return undefined;
-  }
-
-  const document = parseMarkdownDocument(path, raw);
-  const frontmatter = (document.frontmatter ?? {}) as SceneFrontmatter;
-
-  return {
-    kind: "scene",
-    id: `${parsed.chapterId}/${parsed.sceneStem}`,
-    path,
-    chapterId: parsed.chapterId,
-    sequence: parsed.sequence,
-    slug: parsed.slug,
-    title: typeof frontmatter.title === "string" ? frontmatter.title : undefined,
-    frontmatter,
-  };
-}
-
-function parseScenePath(
-  path: string
-): { chapterId: string; sceneStem: string; sequence: number; slug: string } | undefined {
-  const parts = normalizePath(path).split("/");
-  if (parts.length !== 3 || parts[0] !== "manuscript" || !parts[2].toLowerCase().endsWith(".md")) {
-    return undefined;
-  }
-
-  const chapterId = parts[1];
-  const sceneStem = parts[2].slice(0, -3);
-  const match = SCENE_STEM_RE.exec(sceneStem);
-  if (match === null) {
-    return undefined;
-  }
-
-  return {
-    chapterId,
-    sceneStem,
-    sequence: Number.parseInt(match[1], 10),
-    slug: match[2],
-  };
-}
-
 function makeDerivedChapter(chapterId: string): ChapterRef | undefined {
   const match = CHAPTER_ID_RE.exec(chapterId);
   if (match === null) {
@@ -525,11 +487,6 @@ function makeDerivedChapter(chapterId: string): ChapterRef | undefined {
     title: `Chapter ${sequence}`,
     metadata: {},
   };
-}
-
-function isNotePath(path: string): boolean {
-  const normalized = normalizePath(path);
-  return normalized.startsWith("notes/") && normalized.toLowerCase().endsWith(".md");
 }
 
 function explicitPathCandidates(target: string, fromPath?: string): string[] {
@@ -614,16 +571,6 @@ function cloneManifestSummary(manifest: ProjectManifest): ProjectManifest {
   return structuredClone(manifest);
 }
 
-function normalizeStringList(value: unknown): string[] {
-  if (typeof value === "string") {
-    return [value];
-  }
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((entry): entry is string => typeof entry === "string");
-}
-
 function compareChapterRefs(left: ChapterRef, right: ChapterRef): number {
   return left.sequence - right.sequence || left.slug.localeCompare(right.slug);
 }
@@ -667,12 +614,6 @@ function pushToMapArray<T>(map: Map<string, T[]>, key: string, item: T): void {
     return;
   }
   existing.push(item);
-}
-
-function basenameWithoutExtension(path: string): string {
-  const segments = normalizePath(path).split("/");
-  const filename = segments[segments.length - 1] ?? path;
-  return filename.replace(/\.md$/i, "");
 }
 
 function dirname(path: string): string {

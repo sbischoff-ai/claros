@@ -44,6 +44,33 @@ export {
   toAbsoluteProjectPath,
   toRelativeProjectPath,
 } from "./project/files.js";
+export {
+  ProjectAlreadyExistsError,
+  initializeProjectFiles,
+  normalizedProjectTitle,
+} from "./project/initial-project.js";
+export {
+  summarizeWorkspaceProject,
+  titleFromSlug,
+  toWorkspaceChapter,
+  toWorkspaceDocument,
+  toWorkspaceLinkResolution,
+  toWorkspaceManifest,
+  toWorkspaceNote,
+  toWorkspaceNoteFolder,
+  toWorkspaceScene,
+} from "./project/presentation.js";
+export type {
+  WorkspaceChapter,
+  WorkspaceDocument,
+  WorkspaceDocumentRef,
+  WorkspaceLinkResolution,
+  WorkspaceManifest,
+  WorkspaceNote,
+  WorkspaceNoteFolder,
+  WorkspaceProjectSummary,
+  WorkspaceScene,
+} from "./project/presentation.js";
 
 export {
   CheckpointNotImplementedError,
@@ -93,6 +120,8 @@ export type {
   CheckpointStatus,
   CreateChapterOptions,
   CreateSceneOptions,
+  CreateNoteFolderOptions,
+  CreateNoteOptions,
   DocumentRef,
   HistoryOptions,
   LinkRef,
@@ -106,6 +135,7 @@ export type {
   OpenProjectOptions,
   ManuscriptInsertionPlacement,
   MoveChapterOptions,
+  MoveNoteOptions,
   MoveSceneOptions,
   ProjectExecuteMacroInDocumentOptions,
   RenameNoteOptions,
@@ -125,6 +155,7 @@ export type {
   ClarosBlockRef,
   MarkdownDocument,
   NoteFrontmatter,
+  NoteFolderRef,
   NoteRef,
   ProjectDirEntry,
   ProjectFileReader,
@@ -136,6 +167,7 @@ export type {
   SourceRange,
   WikilinkRef,
 } from "@claros/story-format";
+export { extractWikilinks, replaceMarkdownBodyPreservingFrontmatter } from "@claros/story-format";
 
 export type {
   DocumentInsertionPoint,

@@ -51,6 +51,7 @@ export function createWorkspaceControllers(
   const projects = new WorkspaceProjects(ctx, documents);
   const titles = new WorkspaceTitles(ctx, documents, focus, manuscript, projects);
   projects.titles = titles;
+  documents.openWikilinkCreateModal = (target) => titles.openWikilinkNoteModal(target);
   const sidebar = new WorkspaceSidebarController(ctx, documents, focus, manuscript, titles);
   const overlays = new WorkspaceOverlays(ctx, documents, focus);
   const palette = new WorkspacePalette(
@@ -248,8 +249,16 @@ function createEditorSurface(
     set editorHost(value) {
       ctx.editorHost = value;
     },
+    get canNavigateBack() {
+      return documents.canNavigateBack;
+    },
+    get canNavigateForward() {
+      return documents.canNavigateForward;
+    },
     ensureEditor: () => documents.ensureEditor(),
     rememberEditorFocus: () => documents.rememberEditorFocus(),
+    navigateBack: () => documents.navigateBack(),
+    navigateForward: () => documents.navigateForward(),
   };
 }
 

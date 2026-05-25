@@ -75,7 +75,17 @@ export class WorkspaceLifecycle {
   }
 
   private handleGlobalKeydown(event: KeyboardEvent): void {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    if (this.isBackShortcut(event)) {
+      if (this.ctx.projectIsOpen && this.documents.canNavigateBack) {
+        event.preventDefault();
+        void this.documents.navigateBack();
+      }
+    } else if (this.isForwardShortcut(event)) {
+      if (this.ctx.projectIsOpen && this.documents.canNavigateForward) {
+        event.preventDefault();
+        void this.documents.navigateForward();
+      }
+    } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       this.palette.togglePalette();
     } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
@@ -97,6 +107,22 @@ export class WorkspaceLifecycle {
     } else if (event.key === "Escape") {
       this.handleEscape(event);
     }
+  }
+
+  private isBackShortcut(event: KeyboardEvent): boolean {
+    const commandKey = event.metaKey || event.ctrlKey;
+    return (
+      (commandKey && event.altKey && event.key === "ArrowLeft") ||
+      (commandKey && !event.altKey && event.key.toLowerCase() === "o")
+    );
+  }
+
+  private isForwardShortcut(event: KeyboardEvent): boolean {
+    const commandKey = event.metaKey || event.ctrlKey;
+    return (
+      (commandKey && event.altKey && event.key === "ArrowRight") ||
+      (commandKey && !event.altKey && event.key.toLowerCase() === "i")
+    );
   }
 
   private handleEscape(event: KeyboardEvent): void {

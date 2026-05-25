@@ -14,7 +14,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -613,6 +614,20 @@ button:disabled {
   background: var(--claros-editor-background);
 }
 
+.editor-file-nav {
+  position: absolute;
+  z-index: 12;
+  top: 3.55rem;
+  left: 2.4rem;
+  display: flex;
+  gap: 0.25rem;
+  color: var(--claros-prose-muted);
+}
+
+.editor-file-nav .icon-button {
+  background: color-mix(in srgb, var(--claros-editor-background) 88%, transparent);
+}
+
 .editor-host {
   height: 100vh;
   overflow: hidden;
@@ -987,7 +1002,8 @@ button:disabled {
   gap: 0.75rem;
 }
 
-.modal input {
+.modal input,
+.modal select {
   min-height: 2.5rem;
   border: 0;
   border-bottom: 1px solid var(--claros-prose-widget-border);
@@ -996,7 +1012,26 @@ button:disabled {
   outline: none;
 }
 
-.modal input:focus {
+.modal select {
+  width: 100%;
+  border-radius: 0;
+  padding: 0 1.85rem 0 0;
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--claros-prose-muted) 50%) calc(100% - 0.85rem)
+      50% / 0.35rem 0.35rem no-repeat,
+    linear-gradient(135deg, var(--claros-prose-muted) 50%, transparent 50%) calc(100% - 0.6rem)
+      50% / 0.35rem 0.35rem no-repeat,
+    transparent;
+}
+
+.modal select option {
+  background: var(--claros-editor-background);
+  color: var(--claros-prose-text);
+}
+
+.modal input:focus,
+.modal select:focus {
   border-bottom-color: var(--claros-prose-focus-ring);
 }
 

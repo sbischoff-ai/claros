@@ -40,6 +40,8 @@ export class WorkspaceDocumentState {
   activeTitle = $state("Draft");
   activeDocumentKind = $state<ActiveDocumentKind>("scene");
   currentMarkdown = $state("");
+  documentTrail = $state<string[]>([]);
+  documentTrailIndex = $state(-1);
   vimMode = $state(false);
   saveState = $state<SaveState>("saved");
   saveTimer: ReturnType<typeof setTimeout> | undefined;

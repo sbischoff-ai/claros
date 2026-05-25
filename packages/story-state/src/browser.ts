@@ -11,6 +11,7 @@ import {
   type ChapterRef,
   type ClarosBlockRef,
   type MarkdownDocument,
+  type NoteFolderRef,
   type NoteRef,
   type ProjectFileReader,
   type ProjectFileWriter,
@@ -25,6 +26,8 @@ import type {
   ClarosProject,
   CreateChapterOptions,
   CreateSceneOptions,
+  CreateNoteFolderOptions,
+  CreateNoteOptions,
   DocumentRef,
   HistoryOptions,
   LinkRef,
@@ -32,6 +35,7 @@ import type {
   ManuscriptMoveResult,
   MutationResult,
   MoveChapterOptions,
+  MoveNoteOptions,
   MoveSceneOptions,
   ProjectExecuteMacroInDocumentOptions,
   RestoreCheckpointOptions,
@@ -57,6 +61,7 @@ export type {
   ClarosBlockRef,
   MarkdownDocument,
   NoteRef,
+  NoteFolderRef,
   ProjectDirEntry,
   ProjectFileReader,
   ProjectFileStat,
@@ -67,6 +72,37 @@ export type {
   SourceRange,
   WikilinkRef,
 } from "@claros/story-format/browser";
+export {
+  extractWikilinks,
+  replaceMarkdownBodyPreservingFrontmatter,
+} from "@claros/story-format/browser";
+export {
+  ProjectAlreadyExistsError,
+  initializeProjectFiles,
+  normalizedProjectTitle,
+} from "./project/initial-project.js";
+export {
+  summarizeWorkspaceProject,
+  titleFromSlug,
+  toWorkspaceChapter,
+  toWorkspaceDocument,
+  toWorkspaceLinkResolution,
+  toWorkspaceManifest,
+  toWorkspaceNote,
+  toWorkspaceNoteFolder,
+  toWorkspaceScene,
+} from "./project/presentation.js";
+export type {
+  WorkspaceChapter,
+  WorkspaceDocument,
+  WorkspaceDocumentRef,
+  WorkspaceLinkResolution,
+  WorkspaceManifest,
+  WorkspaceNote,
+  WorkspaceNoteFolder,
+  WorkspaceProjectSummary,
+  WorkspaceScene,
+} from "./project/presentation.js";
 
 export type {
   CheckpointOptions,
@@ -75,6 +111,8 @@ export type {
   ClarosProject,
   CreateChapterOptions,
   CreateSceneOptions,
+  CreateNoteFolderOptions,
+  CreateNoteOptions,
   DocumentRef,
   HistoryOptions,
   LinkRef,
@@ -82,6 +120,7 @@ export type {
   ManuscriptInsertionPlacement,
   ManuscriptMoveResult,
   MoveChapterOptions,
+  MoveNoteOptions,
   MoveSceneOptions,
   MutationResult,
   ProjectExecuteMacroInDocumentOptions,
@@ -149,6 +188,10 @@ class BrowserClarosProject implements ClarosProject {
 
   listNotes(): NoteRef[] {
     return this.index.listNotes();
+  }
+
+  listNoteFolders(): NoteFolderRef[] {
+    return this.index.listNoteFolders();
   }
 
   async readDocument(ref: DocumentRef): Promise<MarkdownDocument> {
@@ -249,7 +292,7 @@ class BrowserClarosProject implements ClarosProject {
     const current = await this.readYamlObject("claros.yaml");
     await this.fileWriter.writeFileAtomic(
       toRootPath("claros.yaml"),
-      dump({ ...current, title: normalizedProjectTitle(title) }, { lineWidth: -1 })
+      dump({ ...current, title: normalizedBrowserProjectTitle(title) }, { lineWidth: -1 })
     );
     await this.rebuildIndex();
     return { kind: "metadata", changedPaths: ["claros.yaml"], indexUpdated: true };
@@ -313,6 +356,39 @@ class BrowserClarosProject implements ClarosProject {
     options: MoveSceneOptions
   ): Promise<ManuscriptMoveResult & { scene: SceneRef }> {
     return this.mutations.moveScene(scene, options);
+  }
+
+  createNote(
+    title: string,
+    options?: CreateNoteOptions
+  ): Promise<{ result: MutationResult; note: NoteRef }> {
+    return this.mutations.createNote(title, options);
+  }
+
+  createNoteFolder(
+    title: string,
+    options?: CreateNoteFolderOptions
+  ): Promise<{ result: MutationResult; folder: NoteFolderRef }> {
+    return this.mutations.createNoteFolder(title, options);
+  }
+
+  deleteNote(
+    note: NoteRef | string
+  ): Promise<{ result: MutationResult; nextDocument?: DocumentRef }> {
+    return this.mutations.deleteNote(note);
+  }
+
+  deleteNoteFolder(
+    folder: NoteFolderRef | string
+  ): Promise<{ result: MutationResult; nextDocument?: DocumentRef }> {
+    return this.mutations.deleteNoteFolder(folder);
+  }
+
+  moveNote(
+    note: NoteRef | string,
+    options?: MoveNoteOptions
+  ): Promise<{ result: MutationResult; note: NoteRef }> {
+    return this.mutations.moveNote(note, options);
   }
 
   planRenameNote(
@@ -572,7 +648,7 @@ function normalizeRelativePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/");
 }
 
-function normalizedProjectTitle(title: string): string {
+function normalizedBrowserProjectTitle(title: string): string {
   const normalized = title.trim();
   return normalized.length > 0 ? normalized : "Untitled Project";
 }

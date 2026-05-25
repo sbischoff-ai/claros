@@ -80,7 +80,13 @@
           aria-selected={item.path === activePath}
           aria-current={item.path === activePath ? "page" : undefined}
           aria-expanded={item.collapsible ? !item.collapsed : undefined}
-          aria-haspopup={item.kind === "chapter" || item.kind === "scene" ? "menu" : undefined}
+          aria-haspopup={item.kind === "chapter" ||
+          item.kind === "scene" ||
+          item.kind === "note" ||
+          item.kind === "folder" ||
+          item.id === "notes"
+            ? "menu"
+            : undefined}
           on:focus={() => {
             focusedItemId = item.id;
             rememberFocus(item.id);

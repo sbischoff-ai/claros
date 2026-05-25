@@ -5,6 +5,7 @@ import type {
   ChapterRef,
   ClarosBlockRef,
   MarkdownDocument,
+  NoteFolderRef,
   NoteRef,
   ProjectDirEntry,
   ProjectFileReader,
@@ -67,7 +68,11 @@ export async function scanProjectFormat(
 
   const chapters = await scanChapters(normalizedRoot, manuscriptPath, fs);
   const { scenes, markdownFiles: sceneFiles } = await scanScenes(normalizedRoot, fs, chapters);
-  const { notes, markdownFiles: noteFiles } = await scanNotes(normalizedRoot, notesPath, fs);
+  const {
+    notes,
+    noteFolders,
+    markdownFiles: noteFiles,
+  } = await scanNotes(normalizedRoot, notesPath, fs);
 
   const markdownFiles = [...sceneFiles, ...noteFiles];
 
@@ -77,6 +82,7 @@ export async function scanProjectFormat(
     chapters,
     scenes,
     notes,
+    noteFolders,
     wikilinks: markdownFiles.flatMap((file) => extractWikilinks(file.path, file.raw)),
     clarosBlocks: markdownFiles.flatMap((file) => extractClarosBlocks(file.path, file.raw)),
   };
@@ -91,6 +97,56 @@ export function parseMarkdownDocument(path: string, raw: string): MarkdownDocume
     raw,
     frontmatter: hasFrontmatter ? (frontmatter as Record<string, unknown>) : undefined,
     body,
+  };
+}
+
+export function parseSceneRefFromMarkdown(path: string, raw: string): SceneRef | undefined {
+  const normalized = normalizePath(path);
+  const parts = normalized.split("/");
+  if (parts.length !== 3 || parts[0] !== "manuscript" || !parts[2].toLowerCase().endsWith(".md")) {
+    return undefined;
+  }
+
+  const chapterId = parts[1];
+  const filename = parts[2];
+  const match = SCENE_FILE_RE.exec(filename);
+  if (match === null) {
+    return undefined;
+  }
+
+  const document = parseMarkdownDocument(normalized, raw);
+  const frontmatter = (document.frontmatter ?? {}) as SceneFrontmatter;
+  const sceneStem = filename.slice(0, -3);
+
+  return {
+    kind: "scene",
+    id: `${chapterId}/${sceneStem}`,
+    path: normalized,
+    chapterId,
+    sequence: Number.parseInt(match[1], 10),
+    slug: match[2],
+    title: typeof frontmatter.title === "string" ? frontmatter.title : undefined,
+    frontmatter,
+  };
+}
+
+export function parseNoteRefFromMarkdown(path: string, raw: string): NoteRef | undefined {
+  const normalized = normalizePath(path);
+  if (!normalized.startsWith("notes/") || !normalized.toLowerCase().endsWith(".md")) {
+    return undefined;
+  }
+
+  const document = parseMarkdownDocument(normalized, raw);
+  const frontmatter = (document.frontmatter ?? {}) as NoteFrontmatter;
+
+  return {
+    kind: "note",
+    path: normalized,
+    slug: basenameWithoutExtension(normalized),
+    title: typeof frontmatter.title === "string" ? frontmatter.title : undefined,
+    aliases: normalizeStringList(frontmatter.aliases),
+    tags: normalizeStringList(frontmatter.tags),
+    frontmatter,
   };
 }
 
@@ -288,22 +344,16 @@ async function scanScenes(
 
       const raw = await fs.readFile(scenePath);
       const relative = relativePath(root, scenePath);
-      const document = parseMarkdownDocument(relative, raw);
-      const frontmatter = (document.frontmatter ?? {}) as SceneFrontmatter;
-      const sceneStem = entry.name.slice(0, -3);
+      const scene = parseSceneRefFromMarkdown(relative, raw);
+      if (scene === undefined) {
+        throw new ProjectFormatError(
+          `Scene files must match <sequence>-<kebab-slug>.md: ${relativePath(root, scenePath)}`
+        );
+      }
 
-      scenes.push({
-        kind: "scene",
-        id: `${chapter.id}/${sceneStem}`,
-        path: relative,
-        chapterId: chapter.id,
-        sequence: Number.parseInt(match[1], 10),
-        slug: match[2],
-        title: typeof frontmatter.title === "string" ? frontmatter.title : undefined,
-        frontmatter,
-      });
+      scenes.push(scene);
 
-      markdownFiles.push({ path: relative, raw, document });
+      markdownFiles.push({ path: relative, raw, document: parseMarkdownDocument(relative, raw) });
     }
   }
 
@@ -315,37 +365,67 @@ async function scanNotes(
   root: string,
   notesPath: string,
   fs: ProjectFileReader
-): Promise<{ notes: NoteRef[]; markdownFiles: ScannedMarkdownFile[] }> {
+): Promise<{
+  notes: NoteRef[];
+  noteFolders: NoteFolderRef[];
+  markdownFiles: ScannedMarkdownFile[];
+}> {
   const notesStat = await fs.stat(notesPath);
   if (!notesStat.exists || !notesStat.isDirectory) {
-    return { notes: [], markdownFiles: [] };
+    return { notes: [], noteFolders: [], markdownFiles: [] };
   }
 
   const noteFiles = await collectMarkdownFiles(notesPath, fs);
+  const noteFolders = await collectNoteFolders(root, notesPath, fs);
   const notes: NoteRef[] = [];
   const markdownFiles: ScannedMarkdownFile[] = [];
 
   for (const absolutePath of noteFiles) {
     const raw = await fs.readFile(absolutePath);
     const relative = relativePath(root, absolutePath);
-    const document = parseMarkdownDocument(relative, raw);
-    const frontmatter = (document.frontmatter ?? {}) as NoteFrontmatter;
+    const note = parseNoteRefFromMarkdown(relative, raw);
+    if (note === undefined) {
+      continue;
+    }
 
-    notes.push({
-      kind: "note",
-      path: relative,
-      slug: basenameWithoutExtension(relative),
-      title: typeof frontmatter.title === "string" ? frontmatter.title : undefined,
-      aliases: normalizeStringList(frontmatter.aliases),
-      tags: normalizeStringList(frontmatter.tags),
-      frontmatter,
-    });
-
-    markdownFiles.push({ path: relative, raw, document });
+    notes.push(note);
+    markdownFiles.push({ path: relative, raw, document: parseMarkdownDocument(relative, raw) });
   }
 
   notes.sort((left, right) => left.path.localeCompare(right.path));
-  return { notes, markdownFiles };
+  return { notes, noteFolders, markdownFiles };
+}
+
+async function collectNoteFolders(
+  root: string,
+  notesPath: string,
+  fs: ProjectFileReader
+): Promise<NoteFolderRef[]> {
+  const folders: NoteFolderRef[] = [];
+
+  async function walk(currentPath: string): Promise<void> {
+    const entries = await readSortedDir(currentPath, fs);
+    for (const entry of entries) {
+      if (!entry.isDirectory || entry.name.startsWith(".")) {
+        continue;
+      }
+      const entryPath = joinPath(currentPath, entry.name);
+      const relative = relativePath(root, entryPath);
+      const folderPath = relative.startsWith("notes/")
+        ? relative.slice("notes/".length).split("/").filter(Boolean)
+        : [];
+      folders.push({
+        kind: "note-folder",
+        path: relative,
+        name: entry.name,
+        folderPath,
+      });
+      await walk(entryPath);
+    }
+  }
+
+  await walk(notesPath);
+  return folders.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 async function collectMarkdownFiles(rootPath: string, fs: ProjectFileReader): Promise<string[]> {
