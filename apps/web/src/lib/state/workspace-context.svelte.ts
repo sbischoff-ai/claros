@@ -1,6 +1,7 @@
 import type { Unsubscriber } from "svelte/store";
 import type { ClarosThemeId } from "@claros/editor-core";
 
+import type { ManuscriptChapterFlow } from "$lib/manuscript-flow";
 import type { ManuscriptDragController, ManuscriptDragState } from "$lib/manuscript-drag";
 import type {
   CompanionConnection,
@@ -208,6 +209,13 @@ export class WorkspaceContext {
   }
   set saveState(value: SaveState) {
     this.documents.saveState = value;
+  }
+
+  get manuscriptChapterFlow(): ManuscriptChapterFlow | undefined {
+    return this.documents.manuscriptChapterFlow;
+  }
+  set manuscriptChapterFlow(value: ManuscriptChapterFlow | undefined) {
+    this.documents.manuscriptChapterFlow = value;
   }
 
   get projectOpenState(): ProjectOpenState {

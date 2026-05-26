@@ -1,4 +1,5 @@
 import type { ManuscriptDragState } from "$lib/manuscript-drag";
+import type { ManuscriptChapterFlow } from "$lib/manuscript-flow";
 import type { StorageBackendOption } from "$lib/storage-backends";
 import type {
   ActionMenuItem,
@@ -87,6 +88,7 @@ export interface WorkspaceEditorSurface {
   editorHost: HTMLDivElement | undefined;
   readonly canNavigateBack: boolean;
   readonly canNavigateForward: boolean;
+  readonly manuscriptChapterFlow: ManuscriptChapterFlow | undefined;
   ensureEditor(): Promise<void>;
   rememberEditorFocus(): void;
   navigateBack(): Promise<void>;

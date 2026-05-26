@@ -7,6 +7,10 @@ import type {
 
 import type { WorkspaceContext } from "./workspace-context.svelte";
 import type { WorkspaceLinkResolution } from "$lib/project-session";
+import {
+  buildManuscriptChapterFlow,
+  updateCurrentManuscriptFlowMarkdown,
+} from "$lib/manuscript-flow";
 
 export class WorkspaceDocuments {
   openWikilinkCreateModal: ((target: string) => void) | undefined;
@@ -26,6 +30,11 @@ export class WorkspaceDocuments {
       return;
     }
     this.ctx.currentMarkdown = markdown;
+    this.ctx.manuscriptChapterFlow = updateCurrentManuscriptFlowMarkdown(
+      this.ctx.manuscriptChapterFlow,
+      this.ctx.activePath,
+      markdown
+    );
     this.ctx.saveState = "dirty";
     this.scheduleSave();
   }
@@ -105,6 +114,13 @@ export class WorkspaceDocuments {
     this.ctx.activeTitle = document.title;
     this.ctx.activeDocumentKind = document.kind;
     this.ctx.currentMarkdown = document.body;
+    this.ctx.manuscriptChapterFlow = await buildManuscriptChapterFlow({
+      chapters: this.ctx.chapters,
+      scenes: this.ctx.scenes,
+      activePath: document.path,
+      activeMarkdown: document.body,
+      readDocument: (ref) => this.ctx.project!.readDocument(ref),
+    });
     this.ctx.saveState = "saved";
   }
 

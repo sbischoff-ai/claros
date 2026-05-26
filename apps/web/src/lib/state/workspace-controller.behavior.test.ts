@@ -36,6 +36,53 @@ describe("workspace controllers", () => {
     expect(editorRuntime.focusedWith).toEqual({ cursor: "end" });
   });
 
+  it("exposes a chapter flow for the loaded scene", async () => {
+    const controllers = createWorkspaceControllers(
+      new FakeBrowserEnvironment(),
+      new FakeMarkdownEditorRuntime()
+    );
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+
+    expect(controllers.editor.manuscriptChapterFlow?.chapter.title).toBe("Start");
+    expect(controllers.editor.manuscriptChapterFlow?.currentScene.scene.path).toBe(
+      "manuscript/001-start/001-opening.md"
+    );
+    expect(controllers.editor.manuscriptChapterFlow?.currentScene.markdown).toBe("\nStart.");
+    expect(
+      controllers.editor.manuscriptChapterFlow?.followingScenes.map((block) => block.scene.path)
+    ).toEqual(["manuscript/001-start/002-second.md"]);
+  });
+
+  it("clears manuscript flow when a note is loaded", async () => {
+    const editorRuntime = new FakeMarkdownEditorRuntime();
+    const controllers = createWorkspaceControllers(new FakeBrowserEnvironment(), editorRuntime);
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+    await editorRuntime.wikilinks?.open("notes/characters/kareth.md");
+
+    expect(controllers.sidebar.activePath).toBe("notes/characters/kareth.md");
+    expect(controllers.editor.manuscriptChapterFlow).toBeUndefined();
+  });
+
+  it("keeps the current scene flow body synced to unsaved editor changes", async () => {
+    const editorRuntime = new FakeMarkdownEditorRuntime();
+    const controllers = createWorkspaceControllers(new FakeBrowserEnvironment(), editorRuntime);
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+    editorRuntime.emitChange("\nUnsaved scene body.");
+
+    expect(controllers.editor.manuscriptChapterFlow?.currentScene.markdown).toBe(
+      "\nUnsaved scene body."
+    );
+  });
+
   it("uses the active document path as the editor history scope when opening documents", async () => {
     const editorRuntime = new FakeMarkdownEditorRuntime();
     const controllers = createWorkspaceControllers(new FakeBrowserEnvironment(), editorRuntime);

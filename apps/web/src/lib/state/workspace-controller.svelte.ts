@@ -255,6 +255,9 @@ function createEditorSurface(
     get canNavigateForward() {
       return documents.canNavigateForward;
     },
+    get manuscriptChapterFlow() {
+      return ctx.manuscriptChapterFlow;
+    },
     ensureEditor: () => documents.ensureEditor(),
     rememberEditorFocus: () => documents.rememberEditorFocus(),
     navigateBack: () => documents.navigateBack(),
