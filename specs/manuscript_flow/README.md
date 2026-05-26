@@ -1,19 +1,26 @@
-# Manuscript Flow Rebuild
+# Manuscript Flow
 
-This spec set defines a safer phased rebuild for continuous manuscript view after the first composite CodeMirror implementation proved unstable.
+This spec set defines the web editor manuscript flow for scenes. It is chapter-scoped:
+the editor surface shows one chapter at a time, and only the current scene is editable in
+CodeMirror. Notes are not part of manuscript flow and keep the existing single-document
+editor view.
 
-The primary rule for all phases: CodeMirror navigation and ordinary text input must remain native and predictable. Do not override vertical cursor movement, do not dispatch selection changes from selection-change handlers, and do not replace the editor document as a side effect of cursor movement.
+The primary rule for every iteration: `@claros/editor-core` remains a single-document
+Markdown editor. Do not introduce composite CodeMirror documents, protected delimiter
+ranges, lazy-loaded scene windows, keyboard-driven scene crossing, or multi-scene editing.
 
-## Phase Order
+## Iteration Order
 
-1. `phase_1_readonly_context.md` - current scene remains the only editable CodeMirror document; surrounding scenes render as readonly context outside the editor document.
-2. `phase_2_delimiters.md` - add visual scene and chapter delimiters outside editable markdown content.
-3. `phase_3_scene_switching.md` - allow sidebar/click/keyboard-driven scene switching while keeping a single editable document.
-4. `phase_4_editable_multiscene.md` - optional future true multi-scene editing, gated by cursor-stability tests.
+1. `iteration_1_chapter_flow_model.md` - derive a chapter-scoped view model around the active scene.
+2. `iteration_2_rendered_layout.md` - render the chapter heading, readonly markdown scene blocks, delimiters, and current CodeMirror host.
+3. `iteration_3_scene_switching.md` - make readonly scene blocks switch scenes through the existing document-open flow.
+4. `iteration_4_regression_hardening.md` - harden notes, saving, cursor placement, scrolling, and no-regression behavior.
 
 ## Shared Acceptance Criteria
 
-- The header and editor controls never fade; only editor text content can fade.
-- Sidebar active scene, header scene title, and editor current scene agree at all times.
-- Selecting a scene in the sidebar remains reliable and places the cursor at the end of the selected scene.
-- Arrow keys, Vim movement, mouse placement, and normal typing behave like the underlying CodeMirror editor unless a phase explicitly adds a tested behavior.
+- Opening a scene loads that scene body into CodeMirror and loads all other scenes in the same chapter as rendered readonly context.
+- Opening a note renders only the normal editor; no chapter heading, delimiters, or scene context appears.
+- Sidebar active scene, topbar scene title, CodeMirror document id, and current scene block agree with `activePath`.
+- Selecting a scene from the sidebar or manuscript context places the cursor at the end of that scene.
+- The chapter heading and centered `***` delimiters are DOM-only presentation and are never written to markdown files.
+- Arrow keys, Vim movement, mouse placement, selection, undo, and normal typing behave like the underlying single CodeMirror editor.
