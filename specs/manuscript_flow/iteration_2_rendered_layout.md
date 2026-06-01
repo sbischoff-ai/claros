@@ -14,6 +14,7 @@ Render the chapter flow around the existing CodeMirror host. The current scene r
 - Keep note mode as the existing editor-only layout.
 - Use a standard markdown renderer in `apps/web`, specifically `marked`, and sanitize rendered HTML with `DOMPurify` before passing it to Svelte `{@html ...}`.
 - Render context blocks from scene document bodies. Do not add separate scene-title chrome; any scene heading should come only from that scene's markdown body.
+- Render readonly scene wikilinks without `[[` / `]]` syntax and bind them through the shared `@claros/editor-core` wikilink interaction adapter so previews, ambiguity lists, opening, and unresolved-link creation match CodeMirror.
 - Style rendered context blocks with the same Claros prose font, size, line height, column width, and heading rhythm as CodeMirror, but use a slightly muted text color based on `--claros-prose-muted`.
 - Do not make context blocks look like buttons. Avoid hover backgrounds, borders, cards, or button cursor styling.
 - Make manuscript scene mode scroll as one document surface: chapter heading, previous scenes, CodeMirror, and following scenes move together. CodeMirror should grow with its active scene instead of owning the whole viewport scroll in this mode.

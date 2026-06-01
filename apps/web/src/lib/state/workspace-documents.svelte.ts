@@ -1,8 +1,9 @@
 import { tick } from "svelte";
-import type {
-  MarkdownWikilinkOptions,
-  MarkdownWikilinkReference,
-  MarkdownWikilinkResolution,
+import {
+  bindReadonlyMarkdownWikilinks,
+  type MarkdownWikilinkOptions,
+  type MarkdownWikilinkReference,
+  type MarkdownWikilinkResolution,
 } from "@claros/editor-core";
 
 import type { WorkspaceContext } from "./workspace-context.svelte";
@@ -235,6 +236,18 @@ export class WorkspaceDocuments {
       path: this.ctx.activePath,
       cursor: this.ctx.editorRuntime.getCursorPosition(),
     };
+  }
+
+  bindReadonlyWikilinks(
+    container: HTMLElement,
+    references: readonly MarkdownWikilinkReference[],
+    fromPath: string
+  ): () => void {
+    return bindReadonlyMarkdownWikilinks(container, {
+      references,
+      fromPath,
+      options: this.wikilinkOptions(),
+    });
   }
 
   private wikilinkOptions(): MarkdownWikilinkOptions {

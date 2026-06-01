@@ -258,6 +258,8 @@ function createEditorSurface(
     get manuscriptChapterFlow() {
       return ctx.manuscriptChapterFlow;
     },
+    bindReadonlyWikilinks: (container, references, fromPath) =>
+      documents.bindReadonlyWikilinks(container, references, fromPath),
     ensureEditor: () => documents.ensureEditor(),
     rememberEditorFocus: () => documents.rememberEditorFocus(),
     navigateBack: () => documents.navigateBack(),

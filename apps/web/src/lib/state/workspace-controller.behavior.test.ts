@@ -56,6 +56,30 @@ describe("workspace controllers", () => {
     ).toEqual(["manuscript/001-start/002-second.md"]);
   });
 
+  it("keeps manuscript presentation outside the editable markdown", async () => {
+    const editorRuntime = new FakeMarkdownEditorRuntime();
+    const controllers = createWorkspaceControllers(new FakeBrowserEnvironment(), editorRuntime);
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+
+    expect(editorRuntime.markdown).toBe("\nStart.");
+    expect(editorRuntime.markdown).not.toContain("***");
+    expect(editorRuntime.markdown).not.toContain("# Start");
+
+    controllers.sidebar.handleItemClick(
+      controllers.sidebar.items.find((item) => item.label === "Second")!
+    );
+    await vi.waitFor(() => {
+      expect(controllers.sidebar.activePath).toBe("manuscript/001-start/002-second.md");
+    });
+
+    expect(editorRuntime.setMarkdownCalls.at(-1)?.markdown).toBe("\nSecond.");
+    expect(editorRuntime.setMarkdownCalls.at(-1)?.markdown).not.toContain("***");
+    expect(editorRuntime.setMarkdownCalls.at(-1)?.markdown).not.toContain("# Start");
+  });
+
   it("clears manuscript flow when a note is loaded", async () => {
     const editorRuntime = new FakeMarkdownEditorRuntime();
     const controllers = createWorkspaceControllers(new FakeBrowserEnvironment(), editorRuntime);

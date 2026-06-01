@@ -633,6 +633,105 @@ button:disabled {
   overflow: hidden;
 }
 
+.manuscript-scroll {
+  height: 100vh;
+}
+
+.manuscript-scroll.manuscript-mode {
+  overflow: auto;
+  scrollbar-color: color-mix(in srgb, var(--claros-prose-muted) 58%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+.manuscript-mode .editor-host {
+  height: auto;
+  overflow: visible;
+}
+
+.manuscript-mode .editor-host .cm-editor {
+  height: auto;
+}
+
+.manuscript-mode .editor-host .cm-scroller {
+  overflow: visible;
+}
+
+.manuscript-mode .editor-host .cm-content {
+  min-height: 0;
+  padding: 1.5rem 2rem;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.manuscript-flow {
+  color: var(--claros-prose-muted);
+  font-family: var(--claros-prose-font);
+  font-size: var(--claros-prose-font-size);
+  line-height: var(--claros-prose-line-height);
+}
+
+.manuscript-chapter-heading,
+.manuscript-context-scene,
+.manuscript-delimiter {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--claros-prose-column-width);
+  margin-right: auto;
+  margin-left: auto;
+  padding-right: 2rem;
+  padding-left: 2rem;
+}
+
+.manuscript-chapter-heading {
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 12vh;
+  padding-bottom: 2rem;
+  color: var(--claros-prose-heading);
+  font-size: 1.8em;
+  font-weight: 650;
+  line-height: 1.34;
+  text-align: center;
+}
+
+.manuscript-context-scene h1,
+.manuscript-context-scene h2,
+.manuscript-context-scene h3,
+.manuscript-context-scene h4,
+.manuscript-context-scene h5,
+.manuscript-context-scene h6 {
+  color: var(--claros-prose-heading);
+  line-height: 1.34;
+}
+
+.manuscript-context-scene h1,
+.manuscript-context-scene h2 {
+  text-align: center;
+}
+
+.manuscript-context-scene h1 {
+  font-size: 1.8em;
+}
+
+.manuscript-context-scene h2 {
+  font-size: 1.32em;
+}
+
+.manuscript-context-scene h3 {
+  font-size: 1.12em;
+}
+
+.manuscript-delimiter {
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+  color: var(--claros-prose-muted);
+  text-align: center;
+}
+
+.manuscript-flow:last-child {
+  padding-bottom: 18vh;
+}
+
 .editor-host .cm-editor {
   height: 100%;
 }

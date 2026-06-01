@@ -38,9 +38,11 @@ export {
   type MarkdownMarkerRange,
 } from "./markdown-markers";
 export {
+  bindReadonlyMarkdownWikilinks,
   findMarkdownWikilinkReferences,
   markdownWikilinkExtension,
   wikilinkAtCursor,
+  type BindReadonlyMarkdownWikilinksOptions,
   type MarkdownWikilinkCandidate,
   type MarkdownWikilinkOptions,
   type MarkdownWikilinkPreview,
