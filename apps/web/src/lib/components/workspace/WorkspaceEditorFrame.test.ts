@@ -20,6 +20,7 @@ describe("WorkspaceEditorFrame", () => {
     );
     expect(html.match(/class="editor-host"/g)).toHaveLength(1);
     expect(html.match(/class="manuscript-context-scene"/g)).toHaveLength(2);
+    expect(html.match(/role="button" tabindex="0"/g)).toHaveLength(2);
   });
 
   it("renders delimiters after previous scenes for the last scene", () => {

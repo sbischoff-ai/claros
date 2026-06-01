@@ -31,6 +31,17 @@
     };
   }
 
+  function openManuscriptScene(event: MouseEvent | KeyboardEvent, path: string): void {
+    if (event.target instanceof Element && event.target.closest("button, a, input, textarea")) {
+      return;
+    }
+    if (event instanceof KeyboardEvent) {
+      if (event.target !== event.currentTarget || !["Enter", " "].includes(event.key)) return;
+      event.preventDefault();
+    }
+    void controller.openManuscriptScene(path);
+  }
+
   onMount(() => {
     void controller.ensureEditor();
   });
@@ -73,13 +84,17 @@
           {controller.manuscriptChapterFlow.chapter.title}
         </h1>
         {#each controller.manuscriptChapterFlow.previousScenes as block (block.scene.path)}
-          <article
+          <div
             class="manuscript-context-scene"
             data-scene-path={block.scene.path}
+            role="button"
+            tabindex="0"
+            onclick={(event) => openManuscriptScene(event, block.scene.path)}
+            onkeydown={(event) => openManuscriptScene(event, block.scene.path)}
             use:bindReadonlyWikilinks={{ markdown: block.markdown, path: block.scene.path }}
           >
             {@html renderReadonlyMarkdown(block.markdown).html}
-          </article>
+          </div>
           <div class="manuscript-delimiter" aria-hidden="true">***</div>
         {/each}
       </div>
@@ -93,13 +108,17 @@
       <div class="manuscript-flow" aria-label="Chapter manuscript continuation">
         {#each controller.manuscriptChapterFlow.followingScenes as block (block.scene.path)}
           <div class="manuscript-delimiter" aria-hidden="true">***</div>
-          <article
+          <div
             class="manuscript-context-scene"
             data-scene-path={block.scene.path}
+            role="button"
+            tabindex="0"
+            onclick={(event) => openManuscriptScene(event, block.scene.path)}
+            onkeydown={(event) => openManuscriptScene(event, block.scene.path)}
             use:bindReadonlyWikilinks={{ markdown: block.markdown, path: block.scene.path }}
           >
             {@html renderReadonlyMarkdown(block.markdown).html}
-          </article>
+          </div>
         {/each}
       </div>
     {/if}

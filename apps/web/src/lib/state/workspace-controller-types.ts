@@ -95,6 +95,7 @@ export interface WorkspaceEditorSurface {
     references: readonly MarkdownWikilinkReference[],
     fromPath: string
   ): () => void;
+  openManuscriptScene(path: string): Promise<void>;
   ensureEditor(): Promise<void>;
   rememberEditorFocus(): void;
   navigateBack(): Promise<void>;

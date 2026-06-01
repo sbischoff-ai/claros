@@ -704,6 +704,11 @@ button:disabled {
   line-height: 1.34;
 }
 
+.manuscript-context-scene:focus-visible {
+  outline: 1px solid var(--claros-prose-focus-ring);
+  outline-offset: 0.35rem;
+}
+
 .manuscript-context-scene h1,
 .manuscript-context-scene h2 {
   text-align: center;

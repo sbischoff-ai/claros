@@ -107,6 +107,54 @@ describe("workspace controllers", () => {
     );
   });
 
+  it("opens manuscript context scenes through the document-open flow", async () => {
+    const handle = createProjectHandle();
+    const environment = new FakeBrowserEnvironment();
+    environment.pickedDirectory = handle;
+    const editorRuntime = new FakeMarkdownEditorRuntime();
+    const controllers = createWorkspaceControllers(environment, editorRuntime);
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+    editorRuntime.emitChange("\nEdited before context switch.");
+
+    await controllers.editor.openManuscriptScene("manuscript/001-start/002-second.md");
+
+    expect(await readHandleFile(handle, "/manuscript/001-start/001-opening.md")).toContain(
+      "Edited before context switch."
+    );
+    expect(controllers.sidebar.activePath).toBe("manuscript/001-start/002-second.md");
+    expect(controllers.topbar.activeTitle).toBe("Second");
+    expect(controllers.editor.manuscriptChapterFlow?.currentScene.scene.path).toBe(
+      "manuscript/001-start/002-second.md"
+    );
+    expect(editorRuntime.setMarkdownCalls.at(-1)).toEqual({
+      markdown: "\nSecond.",
+      cursor: "end",
+      documentId: "manuscript/001-start/002-second.md",
+    });
+    expect(editorRuntime.focusedWith).toEqual({ cursor: "end" });
+  });
+
+  it("keeps ordinary editor changes and arrow movement inside the active scene", async () => {
+    const environment = new FakeBrowserEnvironment();
+    const editorRuntime = new FakeMarkdownEditorRuntime();
+    const controllers = createWorkspaceControllers(environment, editorRuntime);
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+    const initialSetMarkdownCalls = editorRuntime.setMarkdownCalls.length;
+    editorRuntime.emitChange("\nTyped in the opening scene.");
+    environment.dispatchWindowEvent(keydownEvent({ key: "ArrowUp" }));
+    environment.dispatchWindowEvent(keydownEvent({ key: "ArrowDown" }));
+
+    expect(controllers.sidebar.activePath).toBe("manuscript/001-start/001-opening.md");
+    expect(editorRuntime.documentId).toBe("manuscript/001-start/001-opening.md");
+    expect(editorRuntime.setMarkdownCalls).toHaveLength(initialSetMarkdownCalls);
+  });
+
   it("uses the active document path as the editor history scope when opening documents", async () => {
     const editorRuntime = new FakeMarkdownEditorRuntime();
     const controllers = createWorkspaceControllers(new FakeBrowserEnvironment(), editorRuntime);

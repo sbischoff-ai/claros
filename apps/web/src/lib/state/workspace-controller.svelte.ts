@@ -260,6 +260,7 @@ function createEditorSurface(
     },
     bindReadonlyWikilinks: (container, references, fromPath) =>
       documents.bindReadonlyWikilinks(container, references, fromPath),
+    openManuscriptScene: (path) => documents.openManuscriptScene(path),
     ensureEditor: () => documents.ensureEditor(),
     rememberEditorFocus: () => documents.rememberEditorFocus(),
     navigateBack: () => documents.navigateBack(),

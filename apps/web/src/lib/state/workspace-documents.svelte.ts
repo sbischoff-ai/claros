@@ -147,6 +147,10 @@ export class WorkspaceDocuments {
     await this.focusEditorAfterOpen();
   }
 
+  async openManuscriptScene(path: string): Promise<void> {
+    await this.openDocument(path);
+  }
+
   async navigateBack(): Promise<void> {
     if (!this.canNavigateBack) {
       return;
