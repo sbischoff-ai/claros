@@ -42,6 +42,14 @@ Headings use conventional prose presentation:
 
 Emphasis and strong emphasis are rendered inline as italic and bold text while preserving the underlying Markdown.
 
+Outside Vim mode, `Enter` starts a new paragraph by inserting the blank line required by
+Markdown. Use `Shift+Enter` for a single continued line, including when continuing blockquotes,
+lists, or indented text. On an empty line, `Enter` inserts a single line break.
+
+When a chapter has adjacent scenes, press `ArrowUp` twice quickly from the first editable line to
+open the previous scene, or `ArrowDown` twice quickly from the last editable line to open the next
+scene. The next scene opens at its first editable line.
+
 ## Project Persistence
 
 The editor opens a local Claros project folder using the browser File System Access API when the browser provides it.
@@ -80,7 +88,9 @@ Use it after clicking the top bar or command palette if you want to return immed
 
 When Vim mode is enabled, the editor uses the Vim keybinding layer provided by `@replit/codemirror-vim`. This includes standard Vim-like normal and insert mode behavior, such as movement, insertion, deletion, search, and mode switching.
 
-Claros does not yet define custom Vim mappings or Claros-specific Vim commands.
+In Vim normal mode, pressing `k` or `j` twice quickly at the corresponding scene boundary provides
+the same previous-scene or next-scene navigation. Claros does not yet define other custom Vim
+mappings or Claros-specific Vim commands.
 
 ## Sidebar
 

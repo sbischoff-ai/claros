@@ -12,8 +12,14 @@ import {
 } from "@codemirror/view";
 import { vim } from "@replit/codemirror-vim";
 
+import { markdownAutoPairExtension } from "./markdown-autopairs";
+import {
+  markdownBoundaryNavigationExtension,
+  type MarkdownBoundaryNavigationDirection,
+} from "./boundary-navigation";
 import { markdownMarkerDecorations } from "./markdown-markers";
 import { markdownPresentationDecorations } from "./markdown-presentation";
+import { markdownProseEditingExtension } from "./prose-editing";
 import { markdownWikilinkExtension, type MarkdownWikilinkOptions } from "./markdown-wikilinks";
 import {
   DEFAULT_CLAROS_THEME_ID,
@@ -41,6 +47,7 @@ export interface MarkdownEditorOptions {
   theme?: ClarosThemeId | Partial<ClarosThemeTokens>;
   wikilinks?: MarkdownWikilinkOptions;
   onChange?: (markdown: string) => void;
+  onBoundaryNavigation?: (direction: MarkdownBoundaryNavigationDirection) => boolean;
 }
 
 export type MarkdownEditorCursor = "start" | "end" | number;
@@ -58,6 +65,7 @@ export interface ClarosMarkdownEditor {
   focus(options?: MarkdownEditorFocusOptions): void;
   getCursorPosition(): number;
   getMarkdown(): string;
+  scrollSelectionIntoView(): void;
   setMarkdown(markdown: string, options?: MarkdownEditorSetMarkdownOptions): void;
   setVimMode(enabled: boolean): void;
   setTheme(theme: ClarosThemeId | Partial<ClarosThemeTokens>): void;
@@ -102,7 +110,7 @@ export class MarkdownDocumentStateStore {
 export function createMarkdownEditor(options: MarkdownEditorOptions): ClarosMarkdownEditor {
   applyEditorTheme(options.parent, options.theme ?? DEFAULT_CLAROS_THEME_ID);
 
-  const vimCompartment = new Compartment();
+  const editingModeCompartment = new Compartment();
   let vimMode = options.vimMode === true;
   const updateListener = EditorView.updateListener.of((update) => {
     if (update.docChanged) {
@@ -123,8 +131,15 @@ export function createMarkdownEditor(options: MarkdownEditorOptions): ClarosMark
       doc: markdownText,
       selection: cursor === undefined ? undefined : { anchor: cursor },
       extensions: [
-        vimCompartment.of(vimMode ? vim() : []),
+        editingModeCompartment.of(vimMode ? vim() : markdownProseEditingExtension()),
         ...baseExtensions(options.wikilinks),
+        ...(options.onBoundaryNavigation === undefined
+          ? []
+          : [
+              markdownBoundaryNavigationExtension({
+                onNavigate: options.onBoundaryNavigation,
+              }),
+            ]),
         updateListener,
       ],
     });
@@ -152,6 +167,11 @@ export function createMarkdownEditor(options: MarkdownEditorOptions): ClarosMark
     getMarkdown(): string {
       return view.state.doc.toString();
     },
+    scrollSelectionIntoView(): void {
+      view.dispatch({
+        effects: EditorView.scrollIntoView(view.state.selection.main, { y: "nearest" }),
+      });
+    },
     setMarkdown(markdownText: string, setOptions?: MarkdownEditorSetMarkdownOptions): void {
       documentStateStore.setActiveState(view.state);
       const state = documentStateStore.loadDocument(
@@ -167,13 +187,19 @@ export function createMarkdownEditor(options: MarkdownEditorOptions): ClarosMark
           },
         });
       }
-      view.dispatch({ effects: vimCompartment.reconfigure(vimMode ? vim() : []) });
+      view.dispatch({
+        effects: editingModeCompartment.reconfigure(
+          vimMode ? vim() : markdownProseEditingExtension()
+        ),
+      });
       documentStateStore.setActiveState(view.state);
     },
     setVimMode(enabled: boolean): void {
       vimMode = enabled;
       view.dispatch({
-        effects: vimCompartment.reconfigure(vimMode ? vim() : []),
+        effects: editingModeCompartment.reconfigure(
+          vimMode ? vim() : markdownProseEditingExtension()
+        ),
       });
       documentStateStore.setActiveState(view.state);
     },
@@ -214,6 +240,7 @@ function baseExtensions(wikilinks?: MarkdownWikilinkOptions): Extension[] {
     markdownPresentationDecorations,
     ...(wikilinks === undefined ? [] : markdownWikilinkExtension(wikilinks)),
     markdownMarkerDecorations,
+    markdownAutoPairExtension(),
     keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
   ];
 }

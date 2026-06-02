@@ -1,5 +1,6 @@
 import type { Unsubscriber } from "svelte/store";
 import type { ClarosThemeId } from "@claros/editor-core";
+import type { ManuscriptChapterFlow } from "$lib/manuscript-flow";
 import type { ManuscriptDragController, ManuscriptDragState } from "$lib/manuscript-drag";
 import type { CompanionConnection, ProjectSession } from "$lib/project-session";
 import type {
@@ -44,6 +45,7 @@ export class WorkspaceDocumentState {
   documentTrailIndex = $state(-1);
   vimMode = $state(false);
   saveState = $state<SaveState>("saved");
+  manuscriptChapterFlow = $state<ManuscriptChapterFlow>();
   saveTimer: ReturnType<typeof setTimeout> | undefined;
   suppressEditorChange = false;
 }

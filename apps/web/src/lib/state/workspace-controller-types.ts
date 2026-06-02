@@ -1,5 +1,7 @@
 import type { ManuscriptDragState } from "$lib/manuscript-drag";
+import type { ManuscriptChapterFlow } from "$lib/manuscript-flow";
 import type { StorageBackendOption } from "$lib/storage-backends";
+import type { MarkdownWikilinkReference } from "@claros/editor-core";
 import type {
   ActionMenuItem,
   ConfirmationModalState,
@@ -87,6 +89,13 @@ export interface WorkspaceEditorSurface {
   editorHost: HTMLDivElement | undefined;
   readonly canNavigateBack: boolean;
   readonly canNavigateForward: boolean;
+  readonly manuscriptChapterFlow: ManuscriptChapterFlow | undefined;
+  bindReadonlyWikilinks(
+    container: HTMLElement,
+    references: readonly MarkdownWikilinkReference[],
+    fromPath: string
+  ): () => void;
+  openManuscriptScene(path: string): Promise<void>;
   ensureEditor(): Promise<void>;
   rememberEditorFocus(): void;
   navigateBack(): Promise<void>;

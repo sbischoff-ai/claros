@@ -59,6 +59,74 @@ export interface MarkdownWikilinkOptions {
 
 const linkDecoration = Decoration.mark({ class: "cm-claros-wikilink" });
 const HOVER_DELAY_MS = 500;
+const READONLY_WIKILINK_SELECTOR = "[data-claros-wikilink-index]";
+const WIKILINK_STYLE_ID = "claros-wikilink-styles";
+
+export interface BindReadonlyMarkdownWikilinksOptions {
+  references: readonly MarkdownWikilinkReference[];
+  fromPath: string;
+  options: MarkdownWikilinkOptions;
+}
+
+export function bindReadonlyMarkdownWikilinks(
+  container: HTMLElement,
+  binding: BindReadonlyMarkdownWikilinksOptions
+): () => void {
+  installWikilinkStyles();
+  const interaction = new WikilinkInteraction(container, binding.options);
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  let hoverKey = "";
+
+  const referenceForEvent = (event: Event): MarkdownWikilinkReference | undefined => {
+    const element = (event.target as Element | null)?.closest<HTMLElement>(
+      READONLY_WIKILINK_SELECTOR
+    );
+    if (element == null || !container.contains(element)) return undefined;
+    const index = Number(element.dataset.clarosWikilinkIndex);
+    return Number.isInteger(index) ? binding.references[index] : undefined;
+  };
+  const clearHoverTimer = (): void => {
+    if (hoverTimer === undefined) return;
+    clearTimeout(hoverTimer);
+    hoverTimer = undefined;
+  };
+  const mouseover = (event: MouseEvent): void => {
+    const reference = referenceForEvent(event);
+    if (reference === undefined) return;
+    const key = `${reference.from}:${reference.to}`;
+    if (key === hoverKey && (hoverTimer !== undefined || interaction.tooltipIsOpen)) return;
+    hoverKey = key;
+    clearHoverTimer();
+    hoverTimer = setTimeout(() => {
+      hoverTimer = undefined;
+      void interaction.showReference(reference, event.clientX, event.clientY, binding.fromPath);
+    }, HOVER_DELAY_MS);
+  };
+  const mouseout = (event: MouseEvent): void => {
+    if (referenceForEvent(event) === undefined) return;
+    clearHoverTimer();
+    hoverKey = "";
+    interaction.leave();
+  };
+  const click = (event: MouseEvent): void => {
+    const reference = referenceForEvent(event);
+    if (reference === undefined) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void interaction.activateReference(reference, event.clientX, event.clientY, binding.fromPath);
+  };
+
+  container.addEventListener("mouseover", mouseover);
+  container.addEventListener("mouseout", mouseout);
+  container.addEventListener("click", click);
+  return () => {
+    clearHoverTimer();
+    interaction.destroy();
+    container.removeEventListener("mouseover", mouseover);
+    container.removeEventListener("mouseout", mouseout);
+    container.removeEventListener("click", click);
+  };
+}
 
 export function findMarkdownWikilinkReferences(
   markdown: string,
@@ -79,18 +147,17 @@ export function wikilinkAtCursor(
 }
 
 export function markdownWikilinkExtension(options: MarkdownWikilinkOptions) {
+  installWikilinkStyles();
   const plugin = ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
       private hoverTimer: ReturnType<typeof setTimeout> | undefined;
       private hoverKey = "";
-      private tooltip: HTMLDivElement | undefined;
-      private keyboardMode = false;
-      private focusedCandidateIndex = 0;
-      private cleanupKeyboardListener: (() => void) | undefined;
+      private readonly interaction: WikilinkInteraction;
 
       constructor(private readonly view: EditorView) {
         this.decorations = buildDecorations(view);
+        this.interaction = new WikilinkInteraction(view.dom, options, () => this.view.focus());
       }
 
       update(update: ViewUpdate): void {
@@ -101,7 +168,7 @@ export function markdownWikilinkExtension(options: MarkdownWikilinkOptions) {
       }
 
       destroy(): void {
-        this.closeTooltip();
+        this.interaction.destroy();
         this.clearHoverTimer();
       }
 
@@ -113,22 +180,24 @@ export function markdownWikilinkExtension(options: MarkdownWikilinkOptions) {
           return;
         }
         const key = `${reference.from}:${reference.to}`;
-        if (this.hoverKey === key && this.tooltip !== undefined) return;
+        if (this.hoverKey === key && this.interaction.tooltipIsOpen) return;
         if (this.hoverKey === key && this.hoverTimer !== undefined) return;
         this.hoverKey = key;
         this.clearHoverTimer();
         this.hoverTimer = setTimeout(() => {
           this.hoverTimer = undefined;
-          void this.showReference(reference, event.clientX, event.clientY, false);
+          void this.interaction.showReference(
+            reference,
+            event.clientX,
+            event.clientY,
+            options.currentPath()
+          );
         }, HOVER_DELAY_MS);
       }
 
       leave(): void {
         this.clearHoverTimer();
-        if (this.keyboardMode) return;
-        window.setTimeout(() => {
-          if (this.tooltip?.matches(":hover") !== true) this.closeTooltip();
-        }, 40);
+        this.interaction.leave();
       }
 
       handleMousedown(event: MouseEvent): boolean {
@@ -136,41 +205,17 @@ export function markdownWikilinkExtension(options: MarkdownWikilinkOptions) {
         if (reference === undefined) return false;
         event.preventDefault();
         event.stopPropagation();
-        void this.activateReference(reference, event.clientX, event.clientY);
+        void this.interaction.activateReference(
+          reference,
+          event.clientX,
+          event.clientY,
+          options.currentPath()
+        );
         return true;
       }
 
       keydown(event: KeyboardEvent): boolean {
-        if (!this.keyboardMode || this.tooltip === undefined) return false;
-        if (event.key === "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          this.closeTooltip();
-          this.view.focus();
-          return true;
-        }
-        if (event.key === "ArrowDown" || event.key === "j") {
-          event.preventDefault();
-          event.stopPropagation();
-          this.moveCandidate(1);
-          return true;
-        }
-        if (event.key === "ArrowUp" || event.key === "k") {
-          event.preventDefault();
-          event.stopPropagation();
-          this.moveCandidate(-1);
-          return true;
-        }
-        if (event.key === "Enter") {
-          event.preventDefault();
-          event.stopPropagation();
-          const candidate = this.tooltip.querySelector<HTMLButtonElement>(
-            ".cm-claros-wikilink-candidate[data-focused='true']"
-          );
-          candidate?.click();
-          return true;
-        }
-        return false;
+        return this.interaction.keydown(event);
       }
 
       async activateFromKeyboard(): Promise<boolean> {
@@ -185,135 +230,18 @@ export function markdownWikilinkExtension(options: MarkdownWikilinkOptions) {
           top: 0,
           bottom: 0,
         };
-        await this.activateReference(reference, coords.left, coords.bottom, true);
+        await this.interaction.activateReference(
+          reference,
+          coords.left,
+          coords.bottom,
+          options.currentPath(),
+          true
+        );
         return true;
       }
 
-      private async activateReference(
-        reference: MarkdownWikilinkReference,
-        x: number,
-        y: number,
-        keyboard = false
-      ): Promise<void> {
-        const resolution = await options.resolve(reference, options.currentPath());
-        if (resolution.status === "resolved") {
-          await options.open(resolution.path);
-          return;
-        }
-        if (resolution.status === "unresolved") {
-          await options.create(reference, options.currentPath(), resolution.target);
-          return;
-        }
-        this.showAmbiguous(resolution, x, y, keyboard);
-      }
-
-      private async showReference(
-        reference: MarkdownWikilinkReference,
-        x: number,
-        y: number,
-        keyboard: boolean
-      ): Promise<void> {
-        const resolution = await options.resolve(reference, options.currentPath());
-        if (resolution.status === "resolved") {
-          const preview = await options.preview(resolution.path);
-          this.showPreview(preview, x, y, keyboard);
-          return;
-        }
-        if (resolution.status === "ambiguous") {
-          this.showAmbiguous(resolution, x, y, keyboard);
-        }
-      }
-
-      private showPreview(
-        preview: MarkdownWikilinkPreview,
-        x: number,
-        y: number,
-        keyboard: boolean
-      ): void {
-        const tooltip = this.createTooltip(x, y);
-        this.keyboardMode = keyboard;
-        tooltip.append(previewNode(preview));
-      }
-
-      private showAmbiguous(
-        resolution: Extract<MarkdownWikilinkResolution, { status: "ambiguous" }>,
-        x: number,
-        y: number,
-        keyboard: boolean
-      ): void {
-        this.focusedCandidateIndex = 0;
-        const tooltip = this.createTooltip(x, y);
-        this.keyboardMode = keyboard;
-        if (keyboard) this.installKeyboardListener();
-        const title = document.createElement("div");
-        title.className = "cm-claros-wikilink-tooltip-title";
-        title.textContent = `Matches for ${resolution.target}`;
-        tooltip.append(title);
-
-        for (const [index, candidate] of resolution.candidates.entries()) {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "cm-claros-wikilink-candidate";
-          button.dataset.index = String(index);
-          button.dataset.focused = String(index === this.focusedCandidateIndex);
-          button.innerHTML = `<span></span><small></small>`;
-          button.querySelector("span")!.textContent = candidate.title;
-          button.querySelector("small")!.textContent = candidate.path;
-          button.addEventListener("mouseenter", () => {
-            this.focusedCandidateIndex = index;
-            this.renderCandidateFocus();
-            void Promise.resolve(options.preview(candidate.path)).then((preview) => {
-              const existing = tooltip.querySelector(".cm-claros-wikilink-preview");
-              existing?.remove();
-              tooltip.append(previewNode(preview));
-            });
-          });
-          button.addEventListener("click", () => void options.open(candidate.path));
-          tooltip.append(button);
-        }
-        this.renderCandidateFocus();
-      }
-
-      private moveCandidate(delta: number): void {
-        const count = this.tooltip?.querySelectorAll(".cm-claros-wikilink-candidate").length ?? 0;
-        if (count === 0) return;
-        this.focusedCandidateIndex = (this.focusedCandidateIndex + delta + count) % count;
-        this.renderCandidateFocus();
-      }
-
-      private renderCandidateFocus(): void {
-        this.tooltip
-          ?.querySelectorAll<HTMLButtonElement>(".cm-claros-wikilink-candidate")
-          .forEach((button, index) => {
-            const focused = index === this.focusedCandidateIndex;
-            button.dataset.focused = String(focused);
-          });
-      }
-
-      private createTooltip(x: number, y: number): HTMLDivElement {
-        this.closeTooltip();
-        const tooltip = document.createElement("div");
-        tooltip.className = "cm-claros-wikilink-tooltip";
-        tooltip.tabIndex = -1;
-        tooltip.style.left = `${Math.min(x + 12, window.innerWidth - 340)}px`;
-        tooltip.style.top = `${Math.min(y + 16, window.innerHeight - 220)}px`;
-        tooltip.addEventListener("mouseleave", () => {
-          if (!this.keyboardMode) this.closeTooltip();
-        });
-        tooltip.addEventListener("keydown", (event) => {
-          this.keydown(event);
-        });
-        this.view.dom.append(tooltip);
-        this.tooltip = tooltip;
-        return tooltip;
-      }
-
       private closeTooltip(): void {
-        this.tooltip?.remove();
-        this.tooltip = undefined;
-        this.keyboardMode = false;
-        this.cleanupKeyboardListener?.();
-        this.cleanupKeyboardListener = undefined;
+        this.interaction.closeTooltip();
       }
 
       private clearHoverTimer(): void {
@@ -321,17 +249,6 @@ export function markdownWikilinkExtension(options: MarkdownWikilinkOptions) {
           clearTimeout(this.hoverTimer);
           this.hoverTimer = undefined;
         }
-      }
-
-      private installKeyboardListener(): void {
-        this.cleanupKeyboardListener?.();
-        const listener = (event: KeyboardEvent) => {
-          if (this.keydown(event)) event.stopImmediatePropagation();
-        };
-        window.addEventListener("keydown", listener, { capture: true });
-        this.cleanupKeyboardListener = () => {
-          window.removeEventListener("keydown", listener, { capture: true });
-        };
       }
     },
     {
@@ -365,7 +282,216 @@ export function markdownWikilinkExtension(options: MarkdownWikilinkOptions) {
     },
   ];
 
-  return [Prec.highest(plugin), keymap.of(bindings), wikilinkTheme];
+  return [Prec.highest(plugin), keymap.of(bindings)];
+}
+
+class WikilinkInteraction {
+  private tooltip: HTMLDivElement | undefined;
+  private keyboardMode = false;
+  private focusedCandidateIndex = 0;
+  private cleanupKeyboardListener: (() => void) | undefined;
+
+  constructor(
+    private readonly tooltipParent: HTMLElement,
+    private readonly options: MarkdownWikilinkOptions,
+    private readonly returnFocus?: () => void
+  ) {}
+
+  get tooltipIsOpen(): boolean {
+    return this.tooltip !== undefined;
+  }
+
+  destroy(): void {
+    this.closeTooltip();
+  }
+
+  leave(): void {
+    if (this.keyboardMode) return;
+    window.setTimeout(() => {
+      if (this.tooltip?.matches(":hover") !== true) this.closeTooltip();
+    }, 40);
+  }
+
+  keydown(event: KeyboardEvent): boolean {
+    if (!this.keyboardMode || this.tooltip === undefined) return false;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      this.closeTooltip();
+      this.returnFocus?.();
+      return true;
+    }
+    if (event.key === "ArrowDown" || event.key === "j") {
+      event.preventDefault();
+      event.stopPropagation();
+      this.moveCandidate(1);
+      return true;
+    }
+    if (event.key === "ArrowUp" || event.key === "k") {
+      event.preventDefault();
+      event.stopPropagation();
+      this.moveCandidate(-1);
+      return true;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      const candidate = this.tooltip.querySelector<HTMLButtonElement>(
+        ".cm-claros-wikilink-candidate[data-focused='true']"
+      );
+      candidate?.click();
+      return true;
+    }
+    return false;
+  }
+
+  async activateReference(
+    reference: MarkdownWikilinkReference,
+    x: number,
+    y: number,
+    fromPath: string | undefined,
+    keyboard = false
+  ): Promise<void> {
+    const resolution = await this.options.resolve(reference, fromPath);
+    if (resolution.status === "resolved") {
+      await this.options.open(resolution.path);
+      return;
+    }
+    if (resolution.status === "unresolved") {
+      await this.options.create(reference, fromPath, resolution.target);
+      return;
+    }
+    this.showAmbiguous(resolution, x, y, keyboard);
+  }
+
+  async showReference(
+    reference: MarkdownWikilinkReference,
+    x: number,
+    y: number,
+    fromPath: string | undefined,
+    keyboard = false
+  ): Promise<void> {
+    const resolution = await this.options.resolve(reference, fromPath);
+    if (resolution.status === "resolved") {
+      const preview = await this.options.preview(resolution.path);
+      this.showPreview(preview, x, y, keyboard);
+      return;
+    }
+    if (resolution.status === "ambiguous") {
+      this.showAmbiguous(resolution, x, y, keyboard);
+    }
+  }
+
+  closeTooltip(): void {
+    this.tooltip?.remove();
+    this.tooltip = undefined;
+    this.keyboardMode = false;
+    this.cleanupKeyboardListener?.();
+    this.cleanupKeyboardListener = undefined;
+  }
+
+  private showPreview(
+    preview: MarkdownWikilinkPreview,
+    x: number,
+    y: number,
+    keyboard: boolean
+  ): void {
+    const tooltip = this.createTooltip(x, y);
+    this.keyboardMode = keyboard;
+    tooltip.append(previewNode(preview));
+  }
+
+  private showAmbiguous(
+    resolution: Extract<MarkdownWikilinkResolution, { status: "ambiguous" }>,
+    x: number,
+    y: number,
+    keyboard: boolean
+  ): void {
+    this.focusedCandidateIndex = 0;
+    const tooltip = this.createTooltip(x, y);
+    this.keyboardMode = keyboard;
+    if (keyboard) this.installKeyboardListener();
+    const title = document.createElement("div");
+    title.className = "cm-claros-wikilink-tooltip-title";
+    title.textContent = `Matches for ${resolution.target}`;
+    tooltip.append(title);
+
+    for (const [index, candidate] of resolution.candidates.entries()) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "cm-claros-wikilink-candidate";
+      button.dataset.index = String(index);
+      button.dataset.focused = String(index === this.focusedCandidateIndex);
+      button.innerHTML = `<span></span><small></small>`;
+      button.querySelector("span")!.textContent = candidate.title;
+      button.querySelector("small")!.textContent = candidate.path;
+      button.addEventListener("mouseenter", () => {
+        this.focusedCandidateIndex = index;
+        this.renderCandidateFocus();
+        void Promise.resolve(this.options.preview(candidate.path)).then((preview) => {
+          const existing = tooltip.querySelector(".cm-claros-wikilink-preview");
+          existing?.remove();
+          tooltip.append(previewNode(preview));
+        });
+      });
+      button.addEventListener("click", () => void this.options.open(candidate.path));
+      tooltip.append(button);
+    }
+    this.renderCandidateFocus();
+  }
+
+  private moveCandidate(delta: number): void {
+    const count = this.tooltip?.querySelectorAll(".cm-claros-wikilink-candidate").length ?? 0;
+    if (count === 0) return;
+    this.focusedCandidateIndex = (this.focusedCandidateIndex + delta + count) % count;
+    this.renderCandidateFocus();
+  }
+
+  private renderCandidateFocus(): void {
+    this.tooltip
+      ?.querySelectorAll<HTMLButtonElement>(".cm-claros-wikilink-candidate")
+      .forEach((button, index) => {
+        button.dataset.focused = String(index === this.focusedCandidateIndex);
+      });
+  }
+
+  private createTooltip(x: number, y: number): HTMLDivElement {
+    this.closeTooltip();
+    const tooltip = document.createElement("div");
+    tooltip.className = "cm-claros-wikilink-tooltip";
+    tooltip.tabIndex = -1;
+    tooltip.style.left = `${Math.min(x + 12, window.innerWidth - 340)}px`;
+    tooltip.style.top = `${Math.min(y + 16, window.innerHeight - 220)}px`;
+    tooltip.addEventListener("mouseleave", () => {
+      if (!this.keyboardMode) this.closeTooltip();
+    });
+    tooltip.addEventListener("keydown", (event) => {
+      this.keydown(event);
+    });
+    this.tooltipParent.append(tooltip);
+    this.tooltip = tooltip;
+    return tooltip;
+  }
+
+  private installKeyboardListener(): void {
+    this.cleanupKeyboardListener?.();
+    const listener = (event: KeyboardEvent) => {
+      if (this.keydown(event)) event.stopImmediatePropagation();
+    };
+    window.addEventListener("keydown", listener, { capture: true });
+    this.cleanupKeyboardListener = () => {
+      window.removeEventListener("keydown", listener, { capture: true });
+    };
+  }
+}
+
+function installWikilinkStyles(): void {
+  if (typeof document === "undefined" || document.getElementById(WIKILINK_STYLE_ID) !== null)
+    return;
+  const style = document.createElement("style");
+  style.id = WIKILINK_STYLE_ID;
+  style.textContent = wikilinkStyles;
+  document.head.append(style);
 }
 
 function buildDecorations(view: EditorView): DecorationSet {
@@ -457,64 +583,75 @@ function previewNode(preview: MarkdownWikilinkPreview): HTMLDivElement {
   return wrapper;
 }
 
-const wikilinkTheme = EditorView.theme({
-  ".cm-claros-wikilink": {
-    textDecoration: "underline dotted color-mix(in srgb, currentColor 45%, transparent)",
-    textUnderlineOffset: "0.18em",
-    cursor: "pointer",
-  },
-  ".cm-claros-wikilink:hover": {
-    textDecorationColor: "currentColor",
-  },
-  ".cm-claros-wikilink-tooltip": {
-    position: "fixed",
-    zIndex: "100",
-    boxSizing: "border-box",
-    display: "grid",
-    gap: "0.45rem",
-    width: "min(20rem, calc(100vw - 1rem))",
-    maxHeight: "min(22rem, calc(100vh - 1rem))",
-    overflow: "auto",
-    border: "1px solid var(--claros-prose-widget-border)",
-    borderRadius: "8px",
-    padding: "0.75rem",
-    background: "var(--claros-editor-background)",
-    color: "var(--claros-prose-text)",
-    boxShadow: "0 1rem 3rem color-mix(in srgb, var(--claros-prose-text) 18%, transparent)",
-    fontFamily: "system-ui, sans-serif",
-    fontSize: "0.84rem",
-    lineHeight: "1.35",
-  },
-  ".cm-claros-wikilink-tooltip-title": {
-    fontWeight: "650",
-  },
-  ".cm-claros-wikilink-tooltip-path": {
-    color: "var(--claros-prose-muted)",
-    fontFamily: "var(--claros-prose-mono-font)",
-    fontSize: "0.72rem",
-  },
-  ".cm-claros-wikilink-tooltip p": {
-    margin: "0",
-    color: "var(--claros-prose-muted)",
-  },
-  ".cm-claros-wikilink-candidate": {
-    display: "grid",
-    gap: "0.15rem",
-    width: "100%",
-    border: "1px solid transparent",
-    borderRadius: "6px",
-    padding: "0.4rem 0.5rem",
-    background: "transparent",
-    color: "inherit",
-    textAlign: "left",
-  },
-  ".cm-claros-wikilink-candidate[data-focused='true'], .cm-claros-wikilink-candidate:hover": {
-    borderColor: "var(--claros-prose-focus-ring)",
-    background: "var(--claros-prose-widget-background)",
-  },
-  ".cm-claros-wikilink-candidate small": {
-    color: "var(--claros-prose-muted)",
-    fontFamily: "var(--claros-prose-mono-font)",
-    fontSize: "0.72rem",
-  },
-});
+const wikilinkStyles = `
+.claros-readonly-wikilink {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.claros-readonly-wikilink:hover {
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+}
+.cm-claros-wikilink {
+  text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+}
+.cm-claros-wikilink:hover {
+  text-decoration-color: currentColor;
+}
+.cm-claros-wikilink-tooltip {
+  position: fixed;
+  z-index: 100;
+  box-sizing: border-box;
+  display: grid;
+  gap: 0.45rem;
+  width: min(20rem, calc(100vw - 1rem));
+  max-height: min(22rem, calc(100vh - 1rem));
+  overflow: auto;
+  border: 1px solid var(--claros-prose-widget-border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: var(--claros-editor-background);
+  color: var(--claros-prose-text);
+  box-shadow: 0 1rem 3rem color-mix(in srgb, var(--claros-prose-text) 18%, transparent);
+  font-family: system-ui, sans-serif;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+.cm-claros-wikilink-tooltip-title {
+  font-weight: 650;
+}
+.cm-claros-wikilink-tooltip-path,
+.cm-claros-wikilink-candidate small {
+  color: var(--claros-prose-muted);
+  font-family: var(--claros-prose-mono-font);
+  font-size: 0.72rem;
+}
+.cm-claros-wikilink-tooltip p {
+  margin: 0;
+  color: var(--claros-prose-muted);
+}
+.cm-claros-wikilink-candidate {
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.cm-claros-wikilink-candidate[data-focused="true"],
+.cm-claros-wikilink-candidate:hover {
+  border-color: var(--claros-prose-focus-ring);
+  background: var(--claros-prose-widget-background);
+}
+`;

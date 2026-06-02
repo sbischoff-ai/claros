@@ -1,4 +1,9 @@
 export {
+  markdownBoundaryNavigationExtension,
+  type MarkdownBoundaryNavigationDirection,
+  type MarkdownBoundaryNavigationOptions,
+} from "./boundary-navigation";
+export {
   createMarkdownEditor,
   defaultMarkdown,
   resolveMarkdownCursorPosition,
@@ -8,6 +13,7 @@ export {
   type MarkdownEditorOptions,
   type MarkdownEditorSetMarkdownOptions,
 } from "./editor";
+export { markdownAutoPairExtension, shouldInsertMarkdownAutoPair } from "./markdown-autopairs";
 export {
   CLAROS_THEMES,
   CLAROS_THEME_ATTRIBUTE,
@@ -34,9 +40,11 @@ export {
   type MarkdownMarkerRange,
 } from "./markdown-markers";
 export {
+  bindReadonlyMarkdownWikilinks,
   findMarkdownWikilinkReferences,
   markdownWikilinkExtension,
   wikilinkAtCursor,
+  type BindReadonlyMarkdownWikilinksOptions,
   type MarkdownWikilinkCandidate,
   type MarkdownWikilinkOptions,
   type MarkdownWikilinkPreview,

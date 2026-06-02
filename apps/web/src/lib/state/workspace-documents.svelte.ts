@@ -1,12 +1,19 @@
 import { tick } from "svelte";
-import type {
-  MarkdownWikilinkOptions,
-  MarkdownWikilinkReference,
-  MarkdownWikilinkResolution,
+import {
+  bindReadonlyMarkdownWikilinks,
+  type MarkdownBoundaryNavigationDirection,
+  type MarkdownEditorCursor,
+  type MarkdownWikilinkOptions,
+  type MarkdownWikilinkReference,
+  type MarkdownWikilinkResolution,
 } from "@claros/editor-core";
 
 import type { WorkspaceContext } from "./workspace-context.svelte";
 import type { WorkspaceLinkResolution } from "$lib/project-session";
+import {
+  buildManuscriptChapterFlow,
+  updateCurrentManuscriptFlowMarkdown,
+} from "$lib/manuscript-flow";
 
 export class WorkspaceDocuments {
   openWikilinkCreateModal: ((target: string) => void) | undefined;
@@ -26,6 +33,11 @@ export class WorkspaceDocuments {
       return;
     }
     this.ctx.currentMarkdown = markdown;
+    this.ctx.manuscriptChapterFlow = updateCurrentManuscriptFlowMarkdown(
+      this.ctx.manuscriptChapterFlow,
+      this.ctx.activePath,
+      markdown
+    );
     this.ctx.saveState = "dirty";
     this.scheduleSave();
   }
@@ -43,6 +55,7 @@ export class WorkspaceDocuments {
       theme: this.ctx.activeTheme,
       wikilinks: this.wikilinkOptions(),
       onChange: (markdown) => this.handleEditorChange(markdown),
+      onBoundaryNavigation: (direction) => this.handleBoundaryNavigation(direction),
     });
   }
 
@@ -82,14 +95,10 @@ export class WorkspaceDocuments {
     this.ctx.projectRevision += 1;
   }
 
-  setEditorMarkdown(markdown: string): void {
+  setEditorMarkdown(markdown: string, cursor = this.defaultCursorForActiveDocument()): void {
     this.ctx.suppressEditorChange = true;
     try {
-      this.ctx.editorRuntime.setMarkdown(
-        markdown,
-        this.defaultCursorForActiveDocument(),
-        this.ctx.activePath
-      );
+      this.ctx.editorRuntime.setMarkdown(markdown, cursor, this.ctx.activePath);
     } finally {
       this.ctx.suppressEditorChange = false;
     }
@@ -105,6 +114,13 @@ export class WorkspaceDocuments {
     this.ctx.activeTitle = document.title;
     this.ctx.activeDocumentKind = document.kind;
     this.ctx.currentMarkdown = document.body;
+    this.ctx.manuscriptChapterFlow = await buildManuscriptChapterFlow({
+      chapters: this.ctx.chapters,
+      scenes: this.ctx.scenes,
+      activePath: document.path,
+      activeMarkdown: document.body,
+      readDocument: (ref) => this.ctx.project!.readDocument(ref),
+    });
     this.ctx.saveState = "saved";
   }
 
@@ -114,10 +130,11 @@ export class WorkspaceDocuments {
       forceReload?: boolean;
       skipSave?: boolean;
       history?: "record" | "replace" | "preserve";
+      cursor?: MarkdownEditorCursor;
     } = {}
   ): Promise<void> {
     if (path === this.ctx.activePath && options.forceReload !== true) {
-      await this.focusEditorAfterOpen();
+      await this.focusEditorAfterOpen(options.cursor);
       return;
     }
 
@@ -126,8 +143,12 @@ export class WorkspaceDocuments {
     }
     await this.loadDocument(path);
     this.updateDocumentTrail(path, options.history ?? "record");
-    this.setEditorMarkdown(this.ctx.currentMarkdown);
-    await this.focusEditorAfterOpen();
+    this.setEditorMarkdown(this.ctx.currentMarkdown, options.cursor);
+    await this.focusEditorAfterOpen(options.cursor);
+  }
+
+  async openManuscriptScene(path: string): Promise<void> {
+    await this.openDocument(path);
   }
 
   async navigateBack(): Promise<void> {
@@ -159,9 +180,12 @@ export class WorkspaceDocuments {
     this.updateDocumentTrail(path, "replace");
   }
 
-  async focusEditorAfterOpen(): Promise<void> {
+  async focusEditorAfterOpen(cursor = this.defaultCursorForActiveDocument()): Promise<void> {
     await tick();
-    this.focusEditorWithDefaultCursor();
+    this.focusEditorWithCursor(cursor);
+    if (this.ctx.activeDocumentKind === "scene") {
+      this.ctx.editorRuntime.scrollSelectionIntoView();
+    }
   }
 
   toggleVimMode(): void {
@@ -196,15 +220,21 @@ export class WorkspaceDocuments {
     }
   }
 
-  defaultCursorForActiveDocument(): "start" | "end" {
-    return this.ctx.activeDocumentKind === "note" ? "start" : "end";
+  defaultCursorForActiveDocument(): "start" | "end" | number {
+    return this.ctx.activeDocumentKind === "note"
+      ? cursorAfterFirstHeading(this.ctx.currentMarkdown)
+      : "end";
   }
 
   focusEditorWithDefaultCursor(): void {
+    this.focusEditorWithCursor(this.defaultCursorForActiveDocument());
+  }
+
+  focusEditorWithCursor(cursor: MarkdownEditorCursor): void {
     if (!this.ctx.projectIsOpen) {
       return;
     }
-    this.ctx.editorRuntime.focus({ cursor: this.defaultCursorForActiveDocument() });
+    this.ctx.editorRuntime.focus({ cursor });
     this.rememberEditorFocus();
   }
 
@@ -217,6 +247,18 @@ export class WorkspaceDocuments {
       path: this.ctx.activePath,
       cursor: this.ctx.editorRuntime.getCursorPosition(),
     };
+  }
+
+  bindReadonlyWikilinks(
+    container: HTMLElement,
+    references: readonly MarkdownWikilinkReference[],
+    fromPath: string
+  ): () => void {
+    return bindReadonlyMarkdownWikilinks(container, {
+      references,
+      fromPath,
+      options: this.wikilinkOptions(),
+    });
   }
 
   private wikilinkOptions(): MarkdownWikilinkOptions {
@@ -252,6 +294,23 @@ export class WorkspaceDocuments {
   private async openWikilinkPath(path: string): Promise<void> {
     await this.flushSave();
     await this.openDocument(path);
+  }
+
+  private handleBoundaryNavigation(direction: MarkdownBoundaryNavigationDirection): boolean {
+    const flow = this.ctx.manuscriptChapterFlow;
+    if (flow === undefined) {
+      return false;
+    }
+
+    const target = direction === "up" ? flow.previousScenes.at(-1) : flow.followingScenes[0];
+    if (target === undefined) {
+      return false;
+    }
+
+    void this.openDocument(target.scene.path, {
+      cursor: direction === "down" ? "start" : undefined,
+    });
+    return true;
   }
 
   private updateDocumentTrail(path: string, mode: "record" | "replace" | "preserve"): void {
@@ -310,4 +369,16 @@ function excerptFromMarkdown(markdown: string): string {
     .filter(Boolean)
     .join(" ");
   return text.length <= 180 ? text : `${text.slice(0, 177).trimEnd()}...`;
+}
+
+function cursorAfterFirstHeading(markdown: string): number {
+  const firstLineEnd = markdown.indexOf("\n");
+  const firstLine = firstLineEnd === -1 ? markdown : markdown.slice(0, firstLineEnd);
+  if (!/^#{1,6}\s+\S/.test(firstLine)) {
+    return 0;
+  }
+  if (firstLineEnd === -1) {
+    return markdown.length;
+  }
+  return firstLineEnd + 1;
 }

@@ -387,7 +387,10 @@ export function createClarosEditorTheme() {
     },
     ".cm-claros-markdown-marker": {
       color: "var(--claros-prose-marker)",
-      fontFamily: "var(--claros-prose-mono-font)",
+      fontFamily:
+        '"Latin Modern Mono Light Cond", "Latin Modern Mono Light Condensed", "Arial Narrow", "Roboto Condensed", var(--claros-prose-mono-font)',
+      fontStretch: "condensed",
+      letterSpacing: "-0.12em",
     },
     ".cm-claros-heading-marker": {
       color: "var(--claros-prose-marker)",

@@ -3,6 +3,7 @@ import {
   createMarkdownEditor,
   type ClarosMarkdownEditor,
   type ClarosThemeId,
+  type MarkdownBoundaryNavigationDirection,
   type MarkdownWikilinkOptions,
 } from "@claros/editor-core";
 
@@ -14,6 +15,7 @@ export interface MarkdownEditorRuntimeOptions {
   theme: ClarosThemeId;
   wikilinks?: MarkdownWikilinkOptions;
   onChange(markdown: string): void;
+  onBoundaryNavigation(direction: MarkdownBoundaryNavigationDirection): boolean;
 }
 
 export class MarkdownEditorRuntime {
@@ -44,12 +46,16 @@ export class MarkdownEditorRuntime {
     this.editor?.setVimMode(enabled);
   }
 
-  setMarkdown(markdown: string, cursor: "start" | "end", documentId: string): void {
+  setMarkdown(markdown: string, cursor: "start" | "end" | number, documentId: string): void {
     this.editor?.setMarkdown(markdown, { cursor, documentId });
   }
 
   focus(options?: { cursor?: "start" | "end" | number }): void {
     this.editor?.focus(options);
+  }
+
+  scrollSelectionIntoView(): void {
+    this.editor?.scrollSelectionIntoView();
   }
 
   getCursorPosition(): number {

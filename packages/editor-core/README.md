@@ -11,3 +11,7 @@ Claros emergence results in manuscripts are `[!claros]` Markdown blockquotes. Th
 ## API Contract
 
 The editor consumes `@claros/story-state`'s `ClarosProject` API. See `packages/story-state` and `docs/EDITOR.md`.
+
+Wikilink interaction is shared between CodeMirror and readonly rendered Markdown. Consumers
+can bind rendered wikilink markers with `bindReadonlyMarkdownWikilinks()` so resolution,
+previews, ambiguous candidate lists, opening, and unresolved-link creation stay consistent.

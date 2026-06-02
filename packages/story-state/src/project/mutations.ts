@@ -1192,7 +1192,7 @@ function resolveNoteFolderPath(folder: NoteFolderRef | string): string {
 
 function serializeNoteMarkdown(title: string): string {
   const normalizedTitle = title.trim().length > 0 ? title.trim() : "Untitled Note";
-  return `---\ntitle: ${JSON.stringify(normalizedTitle)}\n---\n\n# ${normalizedTitle}\n`;
+  return `---\ntitle: ${JSON.stringify(normalizedTitle)}\n---\n# ${normalizedTitle}\n`;
 }
 
 function nextDocumentAfterNoteRemoval(

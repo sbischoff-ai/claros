@@ -17,6 +17,7 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "happy-dom": "^20.9.0",
     "typescript": "*",
     "vitest": "*"
   },
