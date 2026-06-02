@@ -139,6 +139,71 @@ describe("workspace controllers", () => {
     expect(editorRuntime.scrollSelectionIntoViewCalls).toBe(1);
   });
 
+  it("opens the next scene at its first editable line from boundary navigation", async () => {
+    const handle = createProjectHandle();
+    const environment = new FakeBrowserEnvironment();
+    environment.pickedDirectory = handle;
+    const editorRuntime = new FakeMarkdownEditorRuntime();
+    const controllers = createWorkspaceControllers(environment, editorRuntime);
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+    editorRuntime.emitChange("\nEdited before moving down.");
+
+    expect(editorRuntime.emitBoundaryNavigation("down")).toBe(true);
+    await vi.waitFor(() => {
+      expect(controllers.sidebar.activePath).toBe("manuscript/001-start/002-second.md");
+    });
+
+    expect(await readHandleFile(handle, "/manuscript/001-start/001-opening.md")).toContain(
+      "Edited before moving down."
+    );
+    expect(controllers.topbar.activeTitle).toBe("Second");
+    expect(editorRuntime.setMarkdownCalls.at(-1)).toEqual({
+      markdown: "\nSecond.",
+      cursor: "start",
+      documentId: "manuscript/001-start/002-second.md",
+    });
+    expect(editorRuntime.focusedWith).toEqual({ cursor: "start" });
+  });
+
+  it("opens the previous scene with normal end placement from boundary navigation", async () => {
+    const editorRuntime = new FakeMarkdownEditorRuntime();
+    const controllers = createWorkspaceControllers(new FakeBrowserEnvironment(), editorRuntime);
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+    await controllers.editor.openManuscriptScene("manuscript/001-start/002-second.md");
+
+    expect(editorRuntime.emitBoundaryNavigation("up")).toBe(true);
+    await vi.waitFor(() => {
+      expect(controllers.sidebar.activePath).toBe("manuscript/001-start/001-opening.md");
+    });
+
+    expect(controllers.topbar.activeTitle).toBe("Opening");
+    expect(editorRuntime.setMarkdownCalls.at(-1)).toEqual({
+      markdown: "\nStart.",
+      cursor: "end",
+      documentId: "manuscript/001-start/001-opening.md",
+    });
+    expect(editorRuntime.focusedWith).toEqual({ cursor: "end" });
+  });
+
+  it("keeps boundary navigation inside the active chapter", async () => {
+    const editorRuntime = new FakeMarkdownEditorRuntime();
+    const controllers = createWorkspaceControllers(new FakeBrowserEnvironment(), editorRuntime);
+    controllers.editor.editorHost = {} as HTMLDivElement;
+
+    await controllers.lifecycle.mount();
+    await controllers.projectLauncher.openProjectWithBackend("file-picker");
+
+    expect(editorRuntime.emitBoundaryNavigation("up")).toBe(false);
+    await controllers.editor.openManuscriptScene("manuscript/001-start/002-second.md");
+    expect(editorRuntime.emitBoundaryNavigation("down")).toBe(false);
+  });
+
   it("keeps ordinary editor changes and arrow movement inside the active scene", async () => {
     const environment = new FakeBrowserEnvironment();
     const editorRuntime = new FakeMarkdownEditorRuntime();

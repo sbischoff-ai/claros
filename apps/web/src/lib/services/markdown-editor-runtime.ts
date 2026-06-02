@@ -3,6 +3,7 @@ import {
   createMarkdownEditor,
   type ClarosMarkdownEditor,
   type ClarosThemeId,
+  type MarkdownBoundaryNavigationDirection,
   type MarkdownWikilinkOptions,
 } from "@claros/editor-core";
 
@@ -14,6 +15,7 @@ export interface MarkdownEditorRuntimeOptions {
   theme: ClarosThemeId;
   wikilinks?: MarkdownWikilinkOptions;
   onChange(markdown: string): void;
+  onBoundaryNavigation(direction: MarkdownBoundaryNavigationDirection): boolean;
 }
 
 export class MarkdownEditorRuntime {

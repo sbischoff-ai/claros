@@ -13,6 +13,10 @@ import {
 import { vim } from "@replit/codemirror-vim";
 
 import { markdownAutoPairExtension } from "./markdown-autopairs";
+import {
+  markdownBoundaryNavigationExtension,
+  type MarkdownBoundaryNavigationDirection,
+} from "./boundary-navigation";
 import { markdownMarkerDecorations } from "./markdown-markers";
 import { markdownPresentationDecorations } from "./markdown-presentation";
 import { markdownProseEditingExtension } from "./prose-editing";
@@ -43,6 +47,7 @@ export interface MarkdownEditorOptions {
   theme?: ClarosThemeId | Partial<ClarosThemeTokens>;
   wikilinks?: MarkdownWikilinkOptions;
   onChange?: (markdown: string) => void;
+  onBoundaryNavigation?: (direction: MarkdownBoundaryNavigationDirection) => boolean;
 }
 
 export type MarkdownEditorCursor = "start" | "end" | number;
@@ -128,6 +133,13 @@ export function createMarkdownEditor(options: MarkdownEditorOptions): ClarosMark
       extensions: [
         editingModeCompartment.of(vimMode ? vim() : markdownProseEditingExtension()),
         ...baseExtensions(options.wikilinks),
+        ...(options.onBoundaryNavigation === undefined
+          ? []
+          : [
+              markdownBoundaryNavigationExtension({
+                onNavigate: options.onBoundaryNavigation,
+              }),
+            ]),
         updateListener,
       ],
     });

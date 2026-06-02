@@ -1,4 +1,4 @@
-import type { ClarosThemeId } from "@claros/editor-core";
+import type { ClarosThemeId, MarkdownBoundaryNavigationDirection } from "@claros/editor-core";
 import type { DirectoryHandle } from "./browser-file-system";
 import { BrowserEnvironment } from "./services/browser-environment";
 import {
@@ -95,6 +95,9 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
   appliedThemes: Array<{ element: HTMLElement; theme: ClarosThemeId }> = [];
   wikilinks: MarkdownEditorRuntimeOptions["wikilinks"] | undefined;
   private onChange: ((markdown: string) => void) | undefined;
+  private onBoundaryNavigation:
+    | ((direction: MarkdownBoundaryNavigationDirection) => boolean)
+    | undefined;
 
   override get exists(): boolean {
     return this.ensured;
@@ -112,6 +115,7 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
     this.theme = options.theme;
     this.wikilinks = options.wikilinks;
     this.onChange = options.onChange;
+    this.onBoundaryNavigation = options.onBoundaryNavigation;
   }
 
   override setTheme(theme: ClarosThemeId): void {
@@ -151,6 +155,10 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
 
   emitChange(markdown: string): void {
     this.onChange?.(markdown);
+  }
+
+  emitBoundaryNavigation(direction: MarkdownBoundaryNavigationDirection): boolean {
+    return this.onBoundaryNavigation?.(direction) ?? false;
   }
 }
 

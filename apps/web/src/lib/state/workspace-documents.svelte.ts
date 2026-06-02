@@ -1,6 +1,8 @@
 import { tick } from "svelte";
 import {
   bindReadonlyMarkdownWikilinks,
+  type MarkdownBoundaryNavigationDirection,
+  type MarkdownEditorCursor,
   type MarkdownWikilinkOptions,
   type MarkdownWikilinkReference,
   type MarkdownWikilinkResolution,
@@ -53,6 +55,7 @@ export class WorkspaceDocuments {
       theme: this.ctx.activeTheme,
       wikilinks: this.wikilinkOptions(),
       onChange: (markdown) => this.handleEditorChange(markdown),
+      onBoundaryNavigation: (direction) => this.handleBoundaryNavigation(direction),
     });
   }
 
@@ -92,14 +95,10 @@ export class WorkspaceDocuments {
     this.ctx.projectRevision += 1;
   }
 
-  setEditorMarkdown(markdown: string): void {
+  setEditorMarkdown(markdown: string, cursor = this.defaultCursorForActiveDocument()): void {
     this.ctx.suppressEditorChange = true;
     try {
-      this.ctx.editorRuntime.setMarkdown(
-        markdown,
-        this.defaultCursorForActiveDocument(),
-        this.ctx.activePath
-      );
+      this.ctx.editorRuntime.setMarkdown(markdown, cursor, this.ctx.activePath);
     } finally {
       this.ctx.suppressEditorChange = false;
     }
@@ -131,10 +130,11 @@ export class WorkspaceDocuments {
       forceReload?: boolean;
       skipSave?: boolean;
       history?: "record" | "replace" | "preserve";
+      cursor?: MarkdownEditorCursor;
     } = {}
   ): Promise<void> {
     if (path === this.ctx.activePath && options.forceReload !== true) {
-      await this.focusEditorAfterOpen();
+      await this.focusEditorAfterOpen(options.cursor);
       return;
     }
 
@@ -143,8 +143,8 @@ export class WorkspaceDocuments {
     }
     await this.loadDocument(path);
     this.updateDocumentTrail(path, options.history ?? "record");
-    this.setEditorMarkdown(this.ctx.currentMarkdown);
-    await this.focusEditorAfterOpen();
+    this.setEditorMarkdown(this.ctx.currentMarkdown, options.cursor);
+    await this.focusEditorAfterOpen(options.cursor);
   }
 
   async openManuscriptScene(path: string): Promise<void> {
@@ -180,9 +180,9 @@ export class WorkspaceDocuments {
     this.updateDocumentTrail(path, "replace");
   }
 
-  async focusEditorAfterOpen(): Promise<void> {
+  async focusEditorAfterOpen(cursor = this.defaultCursorForActiveDocument()): Promise<void> {
     await tick();
-    this.focusEditorWithDefaultCursor();
+    this.focusEditorWithCursor(cursor);
     if (this.ctx.activeDocumentKind === "scene") {
       this.ctx.editorRuntime.scrollSelectionIntoView();
     }
@@ -227,10 +227,14 @@ export class WorkspaceDocuments {
   }
 
   focusEditorWithDefaultCursor(): void {
+    this.focusEditorWithCursor(this.defaultCursorForActiveDocument());
+  }
+
+  focusEditorWithCursor(cursor: MarkdownEditorCursor): void {
     if (!this.ctx.projectIsOpen) {
       return;
     }
-    this.ctx.editorRuntime.focus({ cursor: this.defaultCursorForActiveDocument() });
+    this.ctx.editorRuntime.focus({ cursor });
     this.rememberEditorFocus();
   }
 
@@ -290,6 +294,23 @@ export class WorkspaceDocuments {
   private async openWikilinkPath(path: string): Promise<void> {
     await this.flushSave();
     await this.openDocument(path);
+  }
+
+  private handleBoundaryNavigation(direction: MarkdownBoundaryNavigationDirection): boolean {
+    const flow = this.ctx.manuscriptChapterFlow;
+    if (flow === undefined) {
+      return false;
+    }
+
+    const target = direction === "up" ? flow.previousScenes.at(-1) : flow.followingScenes[0];
+    if (target === undefined) {
+      return false;
+    }
+
+    void this.openDocument(target.scene.path, {
+      cursor: direction === "down" ? "start" : undefined,
+    });
+    return true;
   }
 
   private updateDocumentTrail(path: string, mode: "record" | "replace" | "preserve"): void {
