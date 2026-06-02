@@ -42,6 +42,10 @@ Headings use conventional prose presentation:
 
 Emphasis and strong emphasis are rendered inline as italic and bold text while preserving the underlying Markdown.
 
+Outside Vim mode, `Enter` starts a new paragraph by inserting the blank line required by
+Markdown. Use `Shift+Enter` for a single continued line, including when continuing blockquotes,
+lists, or indented text. On an empty line, `Enter` inserts a single line break.
+
 ## Project Persistence
 
 The editor opens a local Claros project folder using the browser File System Access API when the browser provides it.
