@@ -59,6 +59,7 @@ export interface ClarosMarkdownEditor {
   focus(options?: MarkdownEditorFocusOptions): void;
   getCursorPosition(): number;
   getMarkdown(): string;
+  scrollSelectionIntoView(): void;
   setMarkdown(markdown: string, options?: MarkdownEditorSetMarkdownOptions): void;
   setVimMode(enabled: boolean): void;
   setTheme(theme: ClarosThemeId | Partial<ClarosThemeTokens>): void;
@@ -152,6 +153,11 @@ export function createMarkdownEditor(options: MarkdownEditorOptions): ClarosMark
     },
     getMarkdown(): string {
       return view.state.doc.toString();
+    },
+    scrollSelectionIntoView(): void {
+      view.dispatch({
+        effects: EditorView.scrollIntoView(view.state.selection.main, { y: "nearest" }),
+      });
     },
     setMarkdown(markdownText: string, setOptions?: MarkdownEditorSetMarkdownOptions): void {
       documentStateStore.setActiveState(view.state);

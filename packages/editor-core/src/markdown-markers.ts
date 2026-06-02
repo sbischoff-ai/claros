@@ -121,6 +121,11 @@ function collectLinkMarkers(
     const pipe = raw.indexOf("|");
     if (pipe !== -1) {
       ranges.push({
+        from: lineStart + match.index + 2,
+        to: lineStart + match.index + pipe,
+        kind: "link",
+      });
+      ranges.push({
         from: lineStart + match.index + pipe,
         to: lineStart + match.index + pipe + 1,
         kind: "link",

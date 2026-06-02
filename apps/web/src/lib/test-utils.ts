@@ -90,6 +90,7 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
     cursor: "start" | "end" | number;
     documentId: string;
   }> = [];
+  scrollSelectionIntoViewCalls = 0;
   focusedWith: { cursor?: "start" | "end" | number } | undefined;
   appliedThemes: Array<{ element: HTMLElement; theme: ClarosThemeId }> = [];
   wikilinks: MarkdownEditorRuntimeOptions["wikilinks"] | undefined;
@@ -121,7 +122,11 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
     this.vimMode = enabled;
   }
 
-  override setMarkdown(markdown: string, cursor: "start" | "end" | number, documentId: string): void {
+  override setMarkdown(
+    markdown: string,
+    cursor: "start" | "end" | number,
+    documentId: string
+  ): void {
     this.markdown = markdown;
     this.documentId = documentId;
     this.setMarkdownCalls.push({ markdown, cursor, documentId });
@@ -129,6 +134,10 @@ export class FakeMarkdownEditorRuntime extends MarkdownEditorRuntime {
 
   override focus(options?: { cursor?: "start" | "end" | number }): void {
     this.focusedWith = options;
+  }
+
+  override scrollSelectionIntoView(): void {
+    this.scrollSelectionIntoViewCalls += 1;
   }
 
   override getCursorPosition(): number {

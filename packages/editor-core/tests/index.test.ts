@@ -75,6 +75,7 @@ describe("editor-core", () => {
         { from: 12, to: 14, kind: "emphasis" },
         { from: 18, to: 20, kind: "emphasis" },
         { from: 21, to: 23, kind: "link" },
+        { from: 23, to: 27, kind: "link" },
         { from: 33, to: 35, kind: "link" },
         { from: 40, to: 41, kind: "code" },
         { from: 45, to: 46, kind: "code" },
@@ -89,6 +90,19 @@ describe("editor-core", () => {
   it("does not mute unmatched markdown punctuation", () => {
     const markdown = "A lone [ bracket, _ underscore, and * star.";
     expect(findMarkdownMarkerRanges(markdown)).toEqual([]);
+  });
+
+  it("mutes aliased wikilink targets while keeping the rendered alias in prose style", () => {
+    const markdown = "[[Note title|alternative text]]";
+    const ranges = findMarkdownMarkerRanges(markdown);
+
+    expect(ranges).toEqual([
+      { from: 0, to: 2, kind: "link" },
+      { from: 2, to: 12, kind: "link" },
+      { from: 12, to: 13, kind: "link" },
+      { from: 29, to: 31, kind: "link" },
+    ]);
+    expect(findMarkdownMarkerRanges(markdown, [{ from: 3, to: 3 }])).toEqual([]);
   });
 
   it("mutes only the delimiters for single emphasis spans", () => {

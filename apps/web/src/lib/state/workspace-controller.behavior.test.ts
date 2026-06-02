@@ -91,6 +91,7 @@ describe("workspace controllers", () => {
 
     expect(controllers.sidebar.activePath).toBe("notes/characters/kareth.md");
     expect(controllers.editor.manuscriptChapterFlow).toBeUndefined();
+    expect(editorRuntime.scrollSelectionIntoViewCalls).toBe(0);
   });
 
   it("keeps the current scene flow body synced to unsaved editor changes", async () => {
@@ -135,6 +136,7 @@ describe("workspace controllers", () => {
       documentId: "manuscript/001-start/002-second.md",
     });
     expect(editorRuntime.focusedWith).toEqual({ cursor: "end" });
+    expect(editorRuntime.scrollSelectionIntoViewCalls).toBe(1);
   });
 
   it("keeps ordinary editor changes and arrow movement inside the active scene", async () => {

@@ -52,6 +52,10 @@ export class MarkdownEditorRuntime {
     this.editor?.focus(options);
   }
 
+  scrollSelectionIntoView(): void {
+    this.editor?.scrollSelectionIntoView();
+  }
+
   getCursorPosition(): number {
     return this.editor?.getCursorPosition() ?? 0;
   }

@@ -183,6 +183,9 @@ export class WorkspaceDocuments {
   async focusEditorAfterOpen(): Promise<void> {
     await tick();
     this.focusEditorWithDefaultCursor();
+    if (this.ctx.activeDocumentKind === "scene") {
+      this.ctx.editorRuntime.scrollSelectionIntoView();
+    }
   }
 
   toggleVimMode(): void {

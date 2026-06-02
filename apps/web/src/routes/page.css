@@ -709,6 +709,10 @@ button:disabled {
   outline-offset: 0.35rem;
 }
 
+.manuscript-context-scene-content {
+  opacity: 0.95;
+}
+
 .manuscript-context-scene h1,
 .manuscript-context-scene h2 {
   text-align: center;
@@ -727,8 +731,8 @@ button:disabled {
 }
 
 .manuscript-delimiter {
-  padding-top: 1.5rem;
-  padding-bottom: 1.5rem;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
   color: var(--claros-prose-muted);
   text-align: center;
 }

@@ -93,7 +93,9 @@
             onkeydown={(event) => openManuscriptScene(event, block.scene.path)}
             use:bindReadonlyWikilinks={{ markdown: block.markdown, path: block.scene.path }}
           >
-            {@html renderReadonlyMarkdown(block.markdown).html}
+            <div class="manuscript-context-scene-content">
+              {@html renderReadonlyMarkdown(block.markdown).html}
+            </div>
           </div>
           <div class="manuscript-delimiter" aria-hidden="true">***</div>
         {/each}
@@ -117,7 +119,9 @@
             onkeydown={(event) => openManuscriptScene(event, block.scene.path)}
             use:bindReadonlyWikilinks={{ markdown: block.markdown, path: block.scene.path }}
           >
-            {@html renderReadonlyMarkdown(block.markdown).html}
+            <div class="manuscript-context-scene-content">
+              {@html renderReadonlyMarkdown(block.markdown).html}
+            </div>
           </div>
         {/each}
       </div>
